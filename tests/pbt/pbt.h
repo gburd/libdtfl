@@ -11,6 +11,7 @@
  *   bool b = pbt_bool(tc);
  *   PBT_ASSERT(cond);                  counterexample if false
  *   PBT_ASSUME(cond);                  discard the case if false
+ *   pbt_defer(tc, fn, arg);            run fn(arg) when the case ends
  *
  * Without --with-hegel each suite prints SKIP with the number of
  * properties left unverified and exits 77 (automake's SKIP status), so
@@ -45,13 +46,46 @@ typedef struct pbt_prop {
 
 #include "hegel.h"
 
+#define PBT_MAX_DEFER 64
+
 struct pbt_tc {
 	hegel_context_t *ctx;
 	hegel_test_case_t *tc;
 	jmp_buf jmp;
 	int status;
 	const char *origin;
+	/* Cleanups run after the case, however it ends (PBT_DEFER). */
+	void (*defer_fn[PBT_MAX_DEFER])(void *);
+	void *defer_arg[PBT_MAX_DEFER];
+	int ndefer;
 };
+
+/*
+ * Registers fn(arg) to run when the current case ends, including when a
+ * PBT_ASSERT or an exhausted draw unwinds out of the property.  Use it
+ * for anything the property allocates, so ASan builds stay leak-free.
+ * Cleanups run in reverse registration order.
+ */
+static inline void
+pbt_defer(pbt_tc *tc, void (*fn)(void *), void *arg)
+{
+	if (tc->ndefer < PBT_MAX_DEFER) {
+		tc->defer_fn[tc->ndefer] = fn;
+		tc->defer_arg[tc->ndefer] = arg;
+		tc->ndefer++;
+	} else {
+		fn(arg);	/* no room: release now rather than leak */
+	}
+}
+
+static inline void
+pbt_run_defers(pbt_tc *tc)
+{
+	while (tc->ndefer > 0) {
+		tc->ndefer--;
+		tc->defer_fn[tc->ndefer](tc->defer_arg[tc->ndefer]);
+	}
+}
 
 #define PBT_STR2(x) #x
 #define PBT_STR(x) PBT_STR2(x)
@@ -134,6 +168,7 @@ pbt_run_one(hegel_context_t *ctx, const char *suite, const pbt_prop *p)
 		cur.status = HEGEL_STATUS_VALID;
 		if (setjmp(cur.jmp) == 0)
 			p->fn(&cur);
+		pbt_run_defers(&cur);
 		if (cur.status == HEGEL_STATUS_VALID)
 			nvalid++;
 		else if (cur.status == HEGEL_STATUS_INVALID)
@@ -197,6 +232,8 @@ pbt_run_one(hegel_context_t *ctx, const char *suite, const pbt_prop *p)
 
 /* Compile the property bodies so they cannot rot, but never run them. */
 struct pbt_tc { int unused; };
+static inline void pbt_defer(pbt_tc *tc, void (*fn)(void *), void *arg)
+{ (void)tc; fn(arg); }
 #define PBT_ASSERT(cond) ((void)(cond))
 #define PBT_ASSUME(cond) ((void)(cond))
 static inline int64_t pbt_int(pbt_tc *tc, int64_t lo, int64_t hi)

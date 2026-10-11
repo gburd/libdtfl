@@ -118,31 +118,74 @@ in_frontier(const uint64_t *f, size_t n, const uint64_t *t)
 	return false;
 }
 
+static void
+class_release(void *c)
+{
+	dtfl_time_class_free(c);
+}
+
+static void
+cb_release(void *p)
+{
+	__dtfl_cb_free(p);
+	__dtfl_free(p);
+}
+
+static void
+mantichain_release(void *p)
+{
+	__dtfl_mantichain_free(p);
+	__dtfl_free(p);
+}
+
+static void
+antichain_release(void *p)
+{
+	__dtfl_antichain_free(p);
+	__dtfl_free(p);
+}
+
+/* A change batch released when the case ends (PBT_ASSERT may unwind). */
+static __dtfl_change_batch *
+new_cb(pbt_tc *tc, unsigned kw)
+{
+	__dtfl_change_batch *cb = __dtfl_alloc(sizeof *cb);
+
+	__dtfl_cb_init(cb, kw);
+	pbt_defer(tc, cb_release, cb);
+	return cb;
+}
+
 static dtfl_time_class *
-pair_class(void)
+pair_class(pbt_tc *tc)
 {
 	dtfl_time_class *u = dtfl_time_u64(), *p = dtfl_time_product(u, u);
 
 	dtfl_time_class_free(u);
+	pbt_defer(tc, class_release, p);
 	return p;
 }
 
 static void
 prop_mutable_antichain_model(pbt_tc *tc)
 {
-	dtfl_time_class *k = pair_class();
-	__dtfl_mutable_antichain ma;
-	__dtfl_change_batch batch;
+	dtfl_time_class *k = pair_class(tc);
+	__dtfl_mutable_antichain *map = __dtfl_alloc(sizeof *map);
+	__dtfl_change_batch *batchp;
 	model m = { .n = 0 };
 	uint64_t old[2 * NT], t[2];
 	size_t old_n, i, n, rounds = (size_t)pbt_int(tc, 1, 30), j, nb;
 	int64_t total;
 
-	__dtfl_mantichain_init(&ma, k);
-	__dtfl_cb_init(&batch, 2);
+	__dtfl_mantichain_init(map, k);
+	pbt_defer(tc, mantichain_release, map);
+	batchp = new_cb(tc, 2);
+#define ma (*map)
+#define batch (*batchp)
 	while (rounds-- > 0) {
 		old_n = __dtfl_mantichain_frontier_len(&ma);
-		memcpy(old, __dtfl_mantichain_frontier(&ma), old_n * 16);
+		if (old_n > 0)
+			memcpy(old, __dtfl_mantichain_frontier(&ma), old_n * 16);
 		/* A batch of updates, or a single one. */
 		nb = (size_t)pbt_int(tc, 1, 6);
 		for (j = 0; j < nb; j++) {
@@ -195,22 +238,26 @@ prop_mutable_antichain_model(pbt_tc *tc)
 		PBT_ASSERT(__dtfl_mantichain_is_empty(&ma) ==
 		    (model_frontier_len(&m) == 0));
 	}
-	__dtfl_cb_free(&batch);
-	__dtfl_mantichain_free(&ma);
-	dtfl_time_class_free(k);
+#undef ma
+#undef batch
 }
 
 static void
 prop_antichain_insert_model(pbt_tc *tc)
 {
-	dtfl_time_class *k = pair_class();
-	__dtfl_antichain a, b;
+	dtfl_time_class *k = pair_class(tc);
+	__dtfl_antichain *ap = __dtfl_alloc(sizeof *ap), *bp = __dtfl_alloc(sizeof *bp);
 	model m = { .n = 0 };
 	uint64_t t[2];
 	size_t steps = (size_t)pbt_int(tc, 1, 40), i, n;
 	bool before, added;
 
-	__dtfl_antichain_init(&a, k);
+	__dtfl_antichain_init(ap, k);
+	__dtfl_antichain_init(bp, k);
+	pbt_defer(tc, antichain_release, ap);
+	pbt_defer(tc, antichain_release, bp);
+#define a (*ap)
+#define b (*bp)
 	while (steps-- > 0 && m.n < NT) {
 		draw_t(tc, t);
 		before = false;
@@ -231,7 +278,6 @@ prop_antichain_insert_model(pbt_tc *tc)
 		PBT_ASSERT(__dtfl_antichain_less_equal(&a, t) == before);
 	}
 	/* Equality ignores order: a sorted copy is equal. */
-	__dtfl_antichain_init(&b, k);
 	__dtfl_antichain_copy(&b, &a);
 	__dtfl_antichain_sort(&b);
 	PBT_ASSERT(__dtfl_antichain_eq(&a, &b));
@@ -239,9 +285,8 @@ prop_antichain_insert_model(pbt_tc *tc)
 	for (i = 1; i < __dtfl_antichain_len(&b); i++)
 		PBT_ASSERT(__dtfl_words_cmp(__dtfl_antichain_at(&b, i - 1),
 		    __dtfl_antichain_at(&b, i), 2) < 0);
-	__dtfl_antichain_free(&b);
-	__dtfl_antichain_free(&a);
-	dtfl_time_class_free(k);
+#undef a
+#undef b
 }
 
 /*
@@ -259,14 +304,13 @@ lone_zero(const __dtfl_change_batch *cb)
 static void
 prop_change_batch_model(pbt_tc *tc)
 {
-	__dtfl_change_batch cb, other;
+	__dtfl_change_batch *cbp = new_cb(tc, 2), *otherp = new_cb(tc, 2);
 	model m = { .n = 0 };
 	uint64_t t[2];
 	size_t steps = (size_t)pbt_int(tc, 1, 150), i, n, j;
 	int64_t op;
-
-	__dtfl_cb_init(&cb, 2);
-	__dtfl_cb_init(&other, 2);
+#define cb (*cbp)
+#define other (*otherp)
 	while (steps-- > 0) {
 		op = pbt_int(tc, 0, 9);
 		draw_t(tc, t);
@@ -315,8 +359,8 @@ prop_change_batch_model(pbt_tc *tc)
 		}
 		PBT_ASSERT(j < m.n && m.count[j] == __dtfl_cb_delta(&cb, i));
 	}
-	__dtfl_cb_free(&other);
-	__dtfl_cb_free(&cb);
+#undef cb
+#undef other
 }
 
 static const pbt_prop props[] = {
