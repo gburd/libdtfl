@@ -1,0 +1,128 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_CAP_DELAYED 3
+.Os
+.Sh NAME
+.Nm dtfl_cap_time ,
+.Nm dtfl_cap_delayed ,
+.Nm dtfl_cap_try_delayed ,
+.Nm dtfl_cap_downgrade ,
+.Nm dtfl_cap_try_downgrade ,
+.Nm dtfl_cap_clone ,
+.Nm dtfl_cap_drop ,
+.Nm dtfl_cap_output
+.Nd capabilities to send timely dataflow output
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft "const uint64_t *"
+.Fn dtfl_cap_time "const dtfl_cap *c"
+.Ft dtfl_cap *
+.Fn dtfl_cap_delayed "const dtfl_cap *c" "const uint64_t *t"
+.Ft dtfl_cap *
+.Fn dtfl_cap_try_delayed "const dtfl_cap *c" "const uint64_t *t"
+.Ft void
+.Fn dtfl_cap_downgrade "dtfl_cap *c" "const uint64_t *t"
+.Ft int
+.Fn dtfl_cap_try_downgrade "dtfl_cap *c" "const uint64_t *t"
+.Ft dtfl_cap *
+.Fn dtfl_cap_clone "const dtfl_cap *c"
+.Ft void
+.Fn dtfl_cap_drop "dtfl_cap *c"
+.Ft size_t
+.Fn dtfl_cap_output "const dtfl_cap *c"
+.Sh DESCRIPTION
+A capability lets an operator send output at a timestamp and keeps
+timely's progress tracking from advancing past that time until the
+capability is released.
+Each capability holds one unit of its time in its output's internal
+count for its whole life; clone adds another, drop removes one, and
+downgrade moves it to a later time.
+.Pp
+.Fn dtfl_cap_time
+returns the capability's time, a vector of the scope's class.
+.Fn dtfl_cap_output
+returns the output port it is for.
+.Pp
+.Fn dtfl_cap_delayed
+returns a new capability at
+.Fa t ,
+which must be greater than or equal to the capability's time.
+.Fn dtfl_cap_try_delayed
+is the same but returns
+.Dv NULL
+rather than panicking when
+.Fa t
+is not beyond the current time.
+.Pp
+.Fn dtfl_cap_downgrade
+advances the capability in place to
+.Fa t ,
+which must be greater than or equal to its current time.
+.Fn dtfl_cap_try_downgrade
+is the same but returns
+.Dv DTFL_EINVAL
+rather than panicking.
+.Pp
+.Fn dtfl_cap_clone
+returns an independent capability at the same time, which must also be
+dropped.
+.Fn dtfl_cap_drop
+releases a capability.
+Failing to drop a capability stalls progress tracking.
+.Sh RETURN VALUES
+.Fn dtfl_cap_time
+returns the capability's time words, and
+.Fn dtfl_cap_output
+its output port.
+.Fn dtfl_cap_delayed ,
+.Fn dtfl_cap_try_delayed
+and
+.Fn dtfl_cap_clone
+return a new owned capability;
+.Fn dtfl_cap_try_delayed
+returns
+.Dv NULL
+when
+.Fa t
+is not beyond the current time.
+.Fn dtfl_cap_try_downgrade
+returns 0 on success or
+.Dv DTFL_EINVAL .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_cap *cap = dtfl_op_initial_cap(op, 0);
+uint64_t next = dtfl_cap_time(cap)[0] + 1;
+dtfl_cap *later = dtfl_cap_delayed(cap, &next);
+/* ... send output at `cap` and `later` ... */
+dtfl_cap_drop(later);
+dtfl_cap_drop(cap);
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_EINVAL
+.It Bq Er DTFL_EINVAL
+.Fn dtfl_cap_try_downgrade
+was given a time that is not greater than or equal to the capability's
+current time.
+.El
+.Pp
+.Fn dtfl_cap_delayed
+and
+.Fn dtfl_cap_downgrade
+treat the same condition as a contract violation and call the panic hook
+.Pq Xr dtfl_set_panic_hook 3 .
+.Sh SEE ALSO
+.Xr dtfl_op_builder_new 3 ,
+.Xr dtfl_op_input_next 3 ,
+.Xr dtfl_time_cmp 3
+.Sh HISTORY
+These are the C form of timely's
+.Vt Capability
+and
+.Vt InputCapability
+.Pq capability.rs .
+.Sh THREAD SAFETY
+A capability belongs to the worker thread that minted it and must not be
+shared across threads.
