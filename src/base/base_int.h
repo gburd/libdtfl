@@ -136,15 +136,17 @@ __dtfl_arc_retain(__dtfl_arc *a)
 	atomic_fetch_add_explicit(&a->count, 1, memory_order_relaxed);
 }
 
-/* Returns true when the caller dropped the last reference. */
+/*
+ * Returns true when the caller dropped the last reference.  The
+ * acq_rel decrement orders every earlier use of the object (release)
+ * before the final dropper's free (acquire).  The usual release
+ * decrement plus acquire fence is equivalent, but ThreadSanitizer does
+ * not model standalone fences and gcc rejects them under -fsanitize=thread.
+ */
 static inline bool
 __dtfl_arc_release(__dtfl_arc *a)
 {
-	if (atomic_fetch_sub_explicit(&a->count, 1, memory_order_release) == 1) {
-		atomic_thread_fence(memory_order_acquire);
-		return true;
-	}
-	return false;
+	return atomic_fetch_sub_explicit(&a->count, 1, memory_order_acq_rel) == 1;
 }
 
 static inline size_t
