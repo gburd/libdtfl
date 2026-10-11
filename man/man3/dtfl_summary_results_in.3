@@ -12,7 +12,8 @@
 .Nm dtfl_time_format
 .Nd path summaries, coordinate encoding and formatting
 .Sh LIBRARY
-.Lb libdtfl
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
 .Sh SYNOPSIS
 .In dtfl/time.h
 .Ft bool
@@ -134,11 +135,6 @@ may be the same array as an input.
 .Fn dtfl_time_format
 returns the length of the full text, as
 .Xr snprintf 3 .
-.Sh ERRORS
-None.
-.Sh THREAD SAFETY
-All of these are pure functions of their arguments, safe to call from
-any thread.
 .Sh EXAMPLES
 A loop that adds one to a
 .Vt u32
@@ -149,6 +145,8 @@ uint64_t s = 1, t = UINT32_MAX, out;
 if (!dtfl_summary_results_in(tc, &s, &t, &out))
 	/* the feedback edge discards it */;
 .Ed
+.Sh ERRORS
+None.
 .Sh SEE ALSO
 .Xr dtfl_time_class 3 ,
 .Xr dtfl_time_cmp 3
@@ -161,3 +159,6 @@ These are timely-dataflow's
 Upstream compares PointStamp summaries that differ only by trailing
 zero increments as different; here they are equal, because they act
 identically.
+.Sh THREAD SAFETY
+All of these are pure functions of their arguments, safe to call from
+any thread.

@@ -207,6 +207,24 @@ has_pointstamp(const dtfl_time_class *k)
 /* Lattice and order                                                   */
 /* ------------------------------------------------------------------ */
 
+/*
+ * x = t with one word taken from y.  Both are valid times of k and the
+ * word keeps its position, so x is valid too except for AltNeu, whose
+ * single word is copied whole, and PointStamp, which accepts any word.
+ */
+static void
+neighbor(pbt_tc *tc, const dtfl_time_class *k, const uint64_t *t,
+    const uint64_t *y, uint64_t *x)
+{
+	unsigned w;
+
+	__dtfl_time_copy(k, x, t);
+	if (k->depth > 0) {
+		w = (unsigned)pbt_int(tc, 0, k->depth - 1);
+		x[w] = y[w];
+	}
+}
+
 static void
 prop_lattice_laws(pbt_tc *tc)
 {
@@ -254,6 +272,17 @@ prop_lattice_laws(pbt_tc *tc)
 	/* Least upper bound against an upper bound built to exist. */
 	dtfl_time_join(k, j, c, x);
 	PBT_ASSERT(LE(k, j, x));
+	/*
+	 * The defining property of a least upper (greatest lower) bound,
+	 * at points next to the result: x is j (or m) with one word
+	 * replaced by a drawn value for that coordinate.  Random points
+	 * almost never test the bound; neighbors do.
+	 */
+	draw_time(tc, k, y);
+	neighbor(tc, k, j, y, x);
+	PBT_ASSERT((LE(k, a, x) && LE(k, b, x)) == LE(k, j, x));
+	neighbor(tc, k, m, y, x);
+	PBT_ASSERT((LE(k, x, a) && LE(k, x, b)) == LE(k, x, m));
 	/* The lattice order is the partial order. */
 	PBT_ASSERT(LE(k, a, b) == EQ(k, j, b));
 	PBT_ASSERT(LE(k, a, b) == EQ(k, m, a));

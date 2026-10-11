@@ -244,6 +244,18 @@ prop_antichain_insert_model(pbt_tc *tc)
 	dtfl_time_class_free(k);
 }
 
+/*
+ * Upstream's compact skips consolidation when there is one update, so a
+ * single zero update survives it (change_batch.rs compact, the
+ * `updates.len() > 1` guard; dev/upstream-notes.md).  The model allows
+ * exactly that.
+ */
+static bool
+lone_zero(const __dtfl_change_batch *cb)
+{
+	return cb->updates.len == 1 && __dtfl_cb_delta(cb, 0) == 0;
+}
+
 static void
 prop_change_batch_model(pbt_tc *tc)
 {
@@ -279,11 +291,14 @@ prop_change_batch_model(pbt_tc *tc)
 
 			for (i = 0; i < m.n; i++)
 				empty = empty && m.count[i] == 0;
-			PBT_ASSERT(__dtfl_cb_is_empty(&cb) == empty);
+			if (__dtfl_cb_is_empty(&cb) != empty)
+				PBT_ASSERT(empty && lone_zero(&cb));
 		}
 	}
 	n = __dtfl_cb_iter(&cb);
 	PBT_ASSERT(!__dtfl_cb_is_dirty(&cb));
+	if (lone_zero(&cb))
+		n = 0;
 	j = 0;
 	for (i = 0; i < m.n; i++)
 		j += m.count[i] != 0;

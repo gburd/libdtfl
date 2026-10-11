@@ -19,7 +19,8 @@
 .Nm dtfl_time_is_total
 .Nd timestamp classes
 .Sh LIBRARY
-.Lb libdtfl
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
 .Sh SYNOPSIS
 .In dtfl/time.h
 .Ft dtfl_time_class *
@@ -170,6 +171,21 @@ with an error detail for
 They do not return
 .Dv NULL
 for lack of memory; allocation failure calls the panic hook.
+.Sh EXAMPLES
+The time of an iterative scope inside a
+.Vt u64
+dataflow,
+.Vt Product<u64, u32> :
+.Bd -literal -offset indent
+dtfl_time_class *outer = dtfl_time_u64();
+dtfl_time_class *inner = dtfl_time_u32();
+dtfl_time_class *tc = dtfl_time_product(outer, inner);
+
+dtfl_time_class_free(outer);
+dtfl_time_class_free(inner);
+/* dtfl_time_depth(tc) == 2 */
+dtfl_time_class_free(tc);
+.Ed
 .Sh ERRORS
 A constructor returns
 .Dv NULL
@@ -199,25 +215,6 @@ outside 1 to
 .Dv DTFL_TIME_MAX
 - 1.
 .El
-.Sh THREAD SAFETY
-Classes are immutable after construction, and their reference count
-is atomic, so a class may be shared, retained and freed from any
-thread.
-.Sh EXAMPLES
-The time of an iterative scope inside a
-.Vt u64
-dataflow,
-.Vt Product<u64, u32> :
-.Bd -literal -offset indent
-dtfl_time_class *outer = dtfl_time_u64();
-dtfl_time_class *inner = dtfl_time_u32();
-dtfl_time_class *tc = dtfl_time_product(outer, inner);
-
-dtfl_time_class_free(outer);
-dtfl_time_class_free(inner);
-/* dtfl_time_depth(tc) == 2 */
-dtfl_time_class_free(tc);
-.Ed
 .Sh SEE ALSO
 .Xr dtfl_summary_results_in 3 ,
 .Xr dtfl_time_cmp 3 ,
@@ -228,3 +225,7 @@ Rust timely dataflow is generic over the
 trait (timely/src/progress/timestamp.rs at timely-v0.31.0).
 A C library cannot be, so a class carries at run time what the Rust
 type carries at compile time.
+.Sh THREAD SAFETY
+Classes are immutable after construction, and their reference count
+is atomic, so a class may be shared, retained and freed from any
+thread.

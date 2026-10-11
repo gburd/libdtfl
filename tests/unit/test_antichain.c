@@ -233,6 +233,16 @@ DTFL_TEST(change_batch_basics)
 	assert_int64(__dtfl_cb_delta(&cb, 0), ==, -1);
 	__dtfl_cb_clear(&cb);
 	assert_true(__dtfl_cb_is_empty(&cb));
+	/*
+	 * Upstream quirk, kept: compact does nothing to a single update, so
+	 * a lone zero update is not removed (dev/upstream-notes.md).  Two
+	 * updates are consolidated and the zeros go.
+	 */
+	__dtfl_cb_update(&cb, &(uint64_t){ 17 }, 0);
+	assert_false(__dtfl_cb_is_empty(&cb));
+	assert_size(__dtfl_cb_len(&cb), ==, 1);
+	__dtfl_cb_update(&cb, &(uint64_t){ 18 }, 0);
+	assert_true(__dtfl_cb_is_empty(&cb));
 	__dtfl_cb_free(&cb);
 	return MUNIT_OK;
 }

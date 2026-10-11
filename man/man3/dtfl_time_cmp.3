@@ -11,7 +11,8 @@
 .Nm dtfl_time_meet
 .Nd order and lattice operations on times
 .Sh LIBRARY
-.Lb libdtfl
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
 .Sh SYNOPSIS
 .In dtfl/time.h
 .Ft int
@@ -103,12 +104,6 @@ is less than, equal to, or greater than
 and
 .Fn dtfl_time_less_than
 return the comparison.
-.Sh ERRORS
-None.
-The arrays must hold a whole time of the class; nothing checks.
-.Sh THREAD SAFETY
-All of these are pure functions of their arguments, safe to call from
-any thread.
 .Sh EXAMPLES
 Product times (3, 7) and (4, 6) are incomparable:
 .Bd -literal -offset indent
@@ -119,6 +114,9 @@ dtfl_time_cmp(tc, a, b);	/* negative */
 dtfl_time_join(tc, a, b, j);	/* (4, 7) */
 dtfl_time_meet(tc, a, b, m);	/* (3, 6) */
 .Ed
+.Sh ERRORS
+None.
+The arrays must hold a whole time of the class; nothing checks.
 .Sh SEE ALSO
 .Xr dtfl_summary_results_in 3 ,
 .Xr dtfl_time_class 3
@@ -134,3 +132,6 @@ and
 .Vt PartialOrder
 apart for the same reason this API does: sorting needs a total order,
 and progress needs the partial one.
+.Sh THREAD SAFETY
+All of these are pure functions of their arguments, safe to call from
+any thread.
