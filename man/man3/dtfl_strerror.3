@@ -8,7 +8,8 @@
 .Nm dtfl_version
 .Nd libdtfl error reporting and version
 .Sh LIBRARY
-.Lb libdtfl
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
 .Sh SYNOPSIS
 .In dtfl/base.h
 .Ft const char *
@@ -31,6 +32,12 @@ The string remains valid until the calling thread's next libdtfl call.
 returns the library version string.
 .Sh RETURN VALUES
 All three return non-NULL strings that the caller must not free.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+int rc = dtfl_execute(&cfg, worker_main, NULL, &guards);
+if (rc != 0)
+	errx(1, "%s: %s", dtfl_strerror(rc), dtfl_last_error_detail());
+.Ed
 .Sh ERRORS
 .Bl -tag -width DTFL_EALGEBRA
 .It Dv DTFL_EINVAL
@@ -52,18 +59,12 @@ The feature is not supported in this build.
 .It Dv DTFL_EOF
 End of stream.
 .El
-.Sh THREAD SAFETY
-All three may be called from any thread.
-The detail buffer is per thread.
-.Sh EXAMPLES
-.Bd -literal -offset indent
-int rc = dtfl_execute(&cfg, worker_main, NULL, &guards);
-if (rc != 0)
-	errx(1, "%s: %s", dtfl_strerror(rc), dtfl_last_error_detail());
-.Ed
 .Sh SEE ALSO
 .Xr dtfl 7
 .Sh HISTORY
 These replace Rust's
 .Vt Result
 error values.
+.Sh THREAD SAFETY
+All three may be called from any thread.
+The detail buffer is per thread.
