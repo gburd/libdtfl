@@ -15,7 +15,17 @@ CC="${CC:-cc}"
 fail=0
 skipped=""
 
-decls=$(cat "$top"/include/dtfl/*.h | tr '\n' ' ' | sed 's/;/;\n/g' \
+# Only headers that are installed (listed in some local.mk) are checked:
+# an interface committed ahead of its implementation is not yet public.
+installed=""
+for h in "$top"/include/dtfl/*.h; do
+	n=$(basename "$h")
+	if grep -qs "include/dtfl/$n" "$top"/src/*/local.mk; then
+		installed="$installed $h"
+	fi
+done
+[ -n "$installed" ] || { echo "[docs] SKIP: no installed headers"; exit 77; }
+decls=$(cat $installed | tr '\n' ' ' | sed 's/;/;\n/g' \
 	| grep -oE '[[:space:]*]dtfl_[a-z0-9_]+[[:space:]]*\(' \
 	| sed -E 's/^[[:space:]*]+//; s/[[:space:]]*\($//' | sort -u)
 documented=$(cat "$top"/man/man3/*.3 2>/dev/null | awk '$1 == ".Nm" {print $2}' | sed 's/,$//' | sort -u)
