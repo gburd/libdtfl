@@ -22,7 +22,6 @@
 typedef struct exch_pusher {
 	__dtfl_push base;
 	const dtfl_time_class *tc;	/* retained */
-	const __dtfl_msg_class *mc;	/* owned (freed on destroy) */
 	const dtfl_type *type;		/* retained */
 	__dtfl_push **pushers;		/* owned; n entries */
 	size_t n;
@@ -51,7 +50,7 @@ flush_buffer(exch_pusher *e, size_t i)
 		return;
 	bundle = __dtfl_message_new(e->tc, e->current, e->buffers[i]);
 	e->buffers[i] = __dtfl_batch_new(0, 0);		/* fresh buffer */
-	__dtfl_push_send(e->pushers[i], e->mc, bundle);
+	__dtfl_push_send(e->pushers[i], __dtfl_message_class(), bundle);
 }
 
 static void
@@ -122,15 +121,14 @@ exch_destroy(__dtfl_push *p)
 	__dtfl_free(e->buffers);
 	dtfl_time_class_free(e->tc);
 	dtfl_type_free(e->type);
-	__dtfl_message_class_free((__dtfl_msg_class *)e->mc);
 	__dtfl_free(e);
 }
 
 static const __dtfl_push_ops exch_ops = { exch_push, exch_destroy };
 
 __dtfl_push *
-__dtfl_push_exchange_new(const dtfl_time_class *tc, const __dtfl_msg_class *mc,
-    const dtfl_type *type, __dtfl_push **pushers, size_t n,
+__dtfl_push_exchange_new(const dtfl_time_class *tc, const dtfl_type *type,
+    __dtfl_push **pushers, size_t n,
     uint64_t (*route)(const void *, size_t, void *), void *ctx)
 {
 	exch_pusher *e = __dtfl_alloc(sizeof *e);
@@ -138,7 +136,6 @@ __dtfl_push_exchange_new(const dtfl_time_class *tc, const __dtfl_msg_class *mc,
 
 	e->base.ops = &exch_ops;
 	e->tc = dtfl_time_class_retain(tc);
-	e->mc = mc;
 	e->type = dtfl_type_retain(type);
 	e->pushers = pushers;
 	e->n = n;

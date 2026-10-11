@@ -67,19 +67,21 @@ dtfl_message_record(const dtfl_message *m, size_t i, size_t *len)
 /* Message class (serialization for exchange)                          */
 /* ------------------------------------------------------------------ */
 
-typedef struct msg_class_ctx {
-	__dtfl_arc ref;
-	const dtfl_time_class *tc;
-} msg_class_ctx;
+/*
+ * One static class serves every data channel, as the progcaster's class
+ * does: the time depth is encoded in each message, so decode needs no
+ * context and every worker passes the same class pointer (the process
+ * allocator keys a channel by that pointer).
+ */
 
 static size_t
 msg_encoded_len(const __dtfl_msg_class *mc, const void *msg)
 {
-	const msg_class_ctx *c = mc->ctx;
 	const dtfl_message *m = msg;
 
-	/* from, seq, the time words, then the batch. */
-	return 16 + (size_t)c->tc->depth * 8 + __dtfl_batch_encoded_len(m->data);
+	(void)mc;
+	/* from, seq, depth, the time words, then the batch. */
+	return 24 + (size_t)m->depth * 8 + __dtfl_batch_encoded_len(m->data);
 }
 
 static void
@@ -105,37 +107,45 @@ get_u64_le(const unsigned char *p)
 static void
 msg_encode(const __dtfl_msg_class *mc, const void *msg, unsigned char *out)
 {
-	const msg_class_ctx *c = mc->ctx;
 	const dtfl_message *m = msg;
 	unsigned i;
 
+	(void)mc;
 	put_u64_le(out, (uint64_t)m->from);
 	put_u64_le(out + 8, (uint64_t)m->seq);
-	for (i = 0; i < c->tc->depth; i++)
-		put_u64_le(out + 16 + (size_t)i * 8, m->time[i]);
-	__dtfl_batch_encode(m->data, out + 16 + (size_t)c->tc->depth * 8);
+	put_u64_le(out + 16, (uint64_t)m->depth);
+	for (i = 0; i < m->depth; i++)
+		put_u64_le(out + 24 + (size_t)i * 8, m->time[i]);
+	__dtfl_batch_encode(m->data, out + 24 + (size_t)m->depth * 8);
 }
 
 static void *
 msg_decode(const __dtfl_msg_class *mc, const __dtfl_bytes *b)
 {
-	const msg_class_ctx *c = mc->ctx;
-	size_t header = 16 + (size_t)c->tc->depth * 8;
+	uint64_t depth;
+	size_t header;
 	dtfl_message *m;
 	__dtfl_batch *data;
 	unsigned i;
 
+	(void)mc;
+	if (b->len < 24)
+		return NULL;
+	depth = get_u64_le(b->ptr + 16);
+	if (depth > DTFL_TIME_MAX)
+		return NULL;
+	header = 24 + (size_t)depth * 8;
 	if (b->len < header)
 		return NULL;
 	data = __dtfl_batch_decode(b->ptr + header, b->len - header);
 	if (data == NULL)
 		return NULL;
 	m = __dtfl_alloc(sizeof *m);
-	m->depth = c->tc->depth;
+	m->depth = (unsigned)depth;
 	m->from = (size_t)get_u64_le(b->ptr);
 	m->seq = (size_t)get_u64_le(b->ptr + 8);
-	for (i = 0; i < c->tc->depth; i++)
-		m->time[i] = get_u64_le(b->ptr + 16 + (size_t)i * 8);
+	for (i = 0; i < m->depth; i++)
+		m->time[i] = get_u64_le(b->ptr + 24 + (size_t)i * 8);
 	m->data = data;
 	return m;
 }
@@ -143,11 +153,10 @@ msg_decode(const __dtfl_msg_class *mc, const __dtfl_bytes *b)
 static void *
 msg_clone(const __dtfl_msg_class *mc, const void *msg)
 {
-	const msg_class_ctx *c = mc->ctx;
 	const dtfl_message *m = msg;
 	dtfl_message *out = __dtfl_alloc(sizeof *out);
 
-	(void)c;
+	(void)mc;
 	*out = *m;
 	out->data = __dtfl_batch_retain(m->data);	/* share, don't copy (D2) */
 	return out;
@@ -160,44 +169,13 @@ msg_free(const __dtfl_msg_class *mc, void *msg)
 	__dtfl_message_free(msg);
 }
 
-__dtfl_msg_class *
-__dtfl_message_class_new(const dtfl_time_class *tc)
+static const __dtfl_msg_class message_class = {
+	"dtfl_message", msg_encoded_len, msg_encode, msg_decode, msg_clone,
+	msg_free, NULL
+};
+
+const __dtfl_msg_class *
+__dtfl_message_class(void)
 {
-	__dtfl_msg_class *mc = __dtfl_alloc(sizeof *mc);
-	msg_class_ctx *c = __dtfl_alloc(sizeof *c);
-
-	__dtfl_arc_init(&c->ref);
-	c->tc = dtfl_time_class_retain(tc);
-	mc->name = "dtfl_message";
-	mc->encoded_len = msg_encoded_len;
-	mc->encode = msg_encode;
-	mc->decode = msg_decode;
-	mc->clone = msg_clone;
-	mc->free = msg_free;
-	mc->ctx = c;
-	return mc;
-}
-
-__dtfl_msg_class *
-__dtfl_message_class_retain(__dtfl_msg_class *mc)
-{
-	msg_class_ctx *c = mc->ctx;
-
-	__dtfl_arc_retain(&c->ref);
-	return mc;
-}
-
-void
-__dtfl_message_class_free(__dtfl_msg_class *mc)
-{
-	msg_class_ctx *c;
-
-	if (mc == NULL)
-		return;
-	c = mc->ctx;
-	if (!__dtfl_arc_release(&c->ref))
-		return;
-	dtfl_time_class_free(c->tc);
-	__dtfl_free(c);
-	__dtfl_free(mc);
+	return &message_class;
 }

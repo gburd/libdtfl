@@ -57,13 +57,11 @@ dtfl_message *__dtfl_message_new(const dtfl_time_class *tc, const uint64_t *time
 void __dtfl_message_free(dtfl_message *m);
 
 /*
- * A message class for channels of records with times of `tc`.  Returned
- * by __dtfl_message_class_new (one per channel), released with
- * __dtfl_message_class_free.  Its ctx holds the retained time class.
+ * The static message class for data channels.  The time depth is encoded
+ * in each message, so one class serves every channel and every worker
+ * passes the same pointer (the process allocator keys a channel by it).
  */
-__dtfl_msg_class *__dtfl_message_class_new(const dtfl_time_class *tc);
-__dtfl_msg_class *__dtfl_message_class_retain(__dtfl_msg_class *mc);
-void __dtfl_message_class_free(__dtfl_msg_class *mc);
+const __dtfl_msg_class *__dtfl_message_class(void);
 
 /* ------------------------------------------------------------------ */
 /* Tee (pushers/tee.rs)                                                */
@@ -72,12 +70,12 @@ void __dtfl_message_class_free(__dtfl_msg_class *mc);
 /*
  * The shared pusher list behind a stream.  A Tee pusher pushes into it;
  * TeeHelper adds pushers to it.  Reference counted: the stream holds one
- * reference and the Tee pusher another.  Takes a message class reference
- * for cloning and freeing messages.
+ * reference and the Tee pusher another.  Clone and free go through the
+ * static message class.
  */
 typedef struct __dtfl_tee __dtfl_tee;
 
-__dtfl_tee *__dtfl_tee_new(const __dtfl_msg_class *mc);
+__dtfl_tee *__dtfl_tee_new(void);
 __dtfl_tee *__dtfl_tee_retain(__dtfl_tee *t);
 void __dtfl_tee_release(__dtfl_tee *t);
 /* Adds a pusher (takes ownership); the Tee frees it when released. */
@@ -97,6 +95,9 @@ __dtfl_push *__dtfl_tee_pusher(__dtfl_tee *t);
  */
 __dtfl_push *__dtfl_push_counter_new(__dtfl_push *inner,
     __dtfl_change_batch *produced);
+/* Repoints the produced batch after the builder relocates it. */
+void __dtfl_push_counter_set_produced(__dtfl_push *p,
+    __dtfl_change_batch *produced);
 
 /*
  * A pulling Counter: wraps a puller (takes ownership) and defers each
@@ -106,6 +107,9 @@ __dtfl_push *__dtfl_push_counter_new(__dtfl_push *inner,
 typedef struct __dtfl_pull_counter __dtfl_pull_counter;
 
 __dtfl_pull_counter *__dtfl_pull_counter_new(__dtfl_pull *inner,
+    __dtfl_change_batch *consumed);
+/* Repoints the consumed batch after the builder relocates it. */
+void __dtfl_pull_counter_set_consumed(__dtfl_pull_counter *c,
     __dtfl_change_batch *consumed);
 void __dtfl_pull_counter_free(__dtfl_pull_counter *c);
 /*
@@ -126,12 +130,12 @@ void __dtfl_pull_counter_finish(__dtfl_pull_counter *c);
  * hash) modulo the number of pushers, buffering per peer and flushing a
  * buffer when the time changes or on a final flush.  Takes ownership of
  * the `n` pushers array (allocated with __dtfl_alloc) and every pusher.
- * `tc` and `mc` are retained.  The record type supplies the default
+ * `tc` and `type` are retained.  The record type supplies the default
  * hash when `route` is NULL.
  */
 __dtfl_push *__dtfl_push_exchange_new(const dtfl_time_class *tc,
-    const __dtfl_msg_class *mc, const dtfl_type *type, __dtfl_push **pushers,
-    size_t n, uint64_t (*route)(const void *, size_t, void *), void *ctx);
+    const dtfl_type *type, __dtfl_push **pushers, size_t n,
+    uint64_t (*route)(const void *, size_t, void *), void *ctx);
 
 /* ------------------------------------------------------------------ */
 /* Progress output pusher (pushers/progress.rs)                        */

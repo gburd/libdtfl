@@ -15,25 +15,24 @@
  * always clones (shares the batch) for every pusher but the last and
  * moves the message into the last.  A flush (NULL) is forwarded to all.
  *
- * Ownership: the Tee owns its pushers and the message class.  It is
+ * Ownership: the Tee owns its pushers.  It is
  * reference counted so the stream and the Tee pusher may both hold it;
- * the pushers are destroyed when the last reference goes.
+ * the pushers are destroyed when the last reference goes.  Clone and
+ * free go through the static message class (message.c).
  */
 #include "timely/timely_int.h"
 
 struct __dtfl_tee {
 	__dtfl_arc ref;
-	const __dtfl_msg_class *mc;	/* not owned; the stream's channel owns it */
 	__dtfl_vec pushers;		/* __dtfl_push * */
 };
 
 __dtfl_tee *
-__dtfl_tee_new(const __dtfl_msg_class *mc)
+__dtfl_tee_new(void)
 {
 	__dtfl_tee *t = __dtfl_alloc(sizeof *t);
 
 	__dtfl_arc_init(&t->ref);
-	t->mc = mc;
 	__dtfl_vec_init(&t->pushers, sizeof(__dtfl_push *));
 	return t;
 }
@@ -78,22 +77,23 @@ tee_push(__dtfl_push *p, void **msg)
 {
 	tee_pusher *tp = (tee_pusher *)p;
 	__dtfl_tee *t = tp->tee;
+	const __dtfl_msg_class *mc = __dtfl_message_class();
 	size_t n = t->pushers.len, i;
 
 	if (*msg != NULL) {
 		/* Defensively clone for all but the last, who takes ownership. */
 		for (i = 0; i + 1 < n; i++) {
-			void *copy = t->mc->clone(t->mc, *msg);
+			void *copy = mc->clone(mc, *msg);
 
 			__dtfl_push_send(*DTFL_VEC_AT(&t->pushers, __dtfl_push *, i),
-			    t->mc, copy);
+			    mc, copy);
 		}
 		if (n > 0) {
 			__dtfl_push_send(*DTFL_VEC_AT(&t->pushers, __dtfl_push *, n - 1),
-			    t->mc, *msg);
+			    mc, *msg);
 			*msg = NULL;
 		} else {
-			t->mc->free(t->mc, *msg);
+			mc->free(mc, *msg);
 			*msg = NULL;
 		}
 	} else {

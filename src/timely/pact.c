@@ -26,7 +26,6 @@
 typedef struct log_pusher {
 	__dtfl_push base;
 	__dtfl_push *pusher;	/* owned */
-	__dtfl_msg_class *mc;	/* retained; keeps the channel class alive */
 	__dtfl_worker *w;
 	size_t channel;
 	size_t counter;
@@ -57,7 +56,6 @@ log_pusher_destroy(__dtfl_push *p)
 	log_pusher *lp = (log_pusher *)p;
 
 	__dtfl_push_destroy(lp->pusher);
-	__dtfl_message_class_free(lp->mc);
 	__dtfl_free(lp);
 }
 
@@ -66,14 +64,13 @@ static const __dtfl_push_ops log_pusher_ops = {
 };
 
 static __dtfl_push *
-log_pusher_new(__dtfl_push *inner, __dtfl_msg_class *mc, __dtfl_worker *w,
-    size_t source, size_t target, size_t channel)
+log_pusher_new(__dtfl_push *inner, __dtfl_worker *w, size_t source,
+    size_t target, size_t channel)
 {
 	log_pusher *lp = __dtfl_alloc(sizeof *lp);
 
 	lp->base.ops = &log_pusher_ops;
 	lp->pusher = inner;
-	lp->mc = __dtfl_message_class_retain(mc);
 	lp->w = w;
 	lp->channel = channel;
 	lp->counter = 0;
@@ -89,7 +86,6 @@ log_pusher_new(__dtfl_push *inner, __dtfl_msg_class *mc, __dtfl_worker *w,
 typedef struct log_puller {
 	__dtfl_pull base;
 	__dtfl_pull *puller;	/* owned */
-	__dtfl_msg_class *mc;	/* retained; keeps the channel class alive */
 	__dtfl_worker *w;
 	size_t channel;
 	size_t index;
@@ -113,7 +109,6 @@ log_puller_destroy(__dtfl_pull *p)
 	log_puller *lp = (log_puller *)p;
 
 	__dtfl_pull_destroy(lp->puller);
-	__dtfl_message_class_free(lp->mc);
 	__dtfl_free(lp);
 }
 
@@ -122,14 +117,12 @@ static const __dtfl_pull_ops log_puller_ops = {
 };
 
 static __dtfl_pull *
-log_puller_new(__dtfl_pull *inner, __dtfl_msg_class *mc, __dtfl_worker *w,
-    size_t index, size_t channel)
+log_puller_new(__dtfl_pull *inner, __dtfl_worker *w, size_t index, size_t channel)
 {
 	log_puller *lp = __dtfl_alloc(sizeof *lp);
 
 	lp->base.ops = &log_puller_ops;
 	lp->puller = inner;
-	lp->mc = __dtfl_message_class_retain(mc);
 	lp->w = w;
 	lp->channel = channel;
 	lp->index = index;
@@ -168,32 +161,26 @@ __dtfl_pact_connect(dtfl_scope *s, const dtfl_pact *pact, size_t identifier,
 	__dtfl_worker *w = s->worker;
 	size_t index = w->allocator->index;
 	size_t peers = w->allocator->peers;
-	__dtfl_msg_class *mc = __dtfl_message_class_new(tc);
+	const __dtfl_msg_class *mc = __dtfl_message_class();
 
 	if (pact->kind == DTFL_PACT_PIPELINE) {
 		__dtfl_push *inner;
 		__dtfl_pull *recv;
 
 		__dtfl_worker_pipeline(w, identifier, path, path_len, mc, &inner, &recv);
-		*pusher = log_pusher_new(inner, mc, w, index, index, identifier);
-		*puller = log_puller_new(recv, mc, w, index, identifier);
-		/* The log endpoints hold the channel class references now. */
-		__dtfl_message_class_free(mc);
+		*pusher = log_pusher_new(inner, w, index, index, identifier);
+		*puller = log_puller_new(recv, w, index, identifier);
 	} else {
 		__dtfl_push **senders = __dtfl_alloc(DTFL_MAX(peers, 1) *
 		    sizeof(__dtfl_push *));
 		__dtfl_pull *recv;
-		__dtfl_msg_class *exch_mc = __dtfl_message_class_new(tc);
 		size_t i;
 
 		__dtfl_worker_allocate(w, identifier, path, path_len, mc, senders, &recv);
 		for (i = 0; i < peers; i++)
-			senders[i] = log_pusher_new(senders[i], mc, w, index, i,
-			    identifier);
-		/* The exchange pusher owns exch_mc (used to clone/free messages). */
-		*pusher = __dtfl_push_exchange_new(tc, exch_mc, type, senders, peers,
+			senders[i] = log_pusher_new(senders[i], w, index, i, identifier);
+		*pusher = __dtfl_push_exchange_new(tc, type, senders, peers,
 		    pact->route, pact->ctx);
-		*puller = log_puller_new(recv, mc, w, index, identifier);
-		__dtfl_message_class_free(mc);
+		*puller = log_puller_new(recv, w, index, identifier);
 	}
 }

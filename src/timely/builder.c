@@ -246,15 +246,12 @@ builder_output(dtfl_op_builder *b, const dtfl_type *type,
 	size_t port = b->outputs;
 	output_slot slot;
 	__dtfl_location source = { b->slot.index, port, true };
-	__dtfl_msg_class *mc;
 	__dtfl_push *counter;
 	size_t i;
 	uint64_t def[DTFL_TIME_MAX + 1];
 
 	memset(&slot, 0, sizeof slot);
-	/* A message class for the tee's clone / free; freed with the tee's owner. */
-	mc = __dtfl_message_class_new(b->tc);
-	slot.tee = __dtfl_tee_new(mc);
+	slot.tee = __dtfl_tee_new();
 	slot.stream = __dtfl_stream_new(b->scope, source, slot.tee, type);
 	__dtfl_cb_init(&slot.internal, b->tc->depth);
 	__dtfl_cb_init(&slot.produced, b->tc->depth);
@@ -263,8 +260,6 @@ builder_output(dtfl_op_builder *b, const dtfl_type *type,
 	slot.out.port = port;
 	slot.out.tc = b->tc;
 	slot.out.type = type;
-	/* The tee holds the only reference the clone/free path needs. */
-	__dtfl_message_class_free(mc);
 
 	dtfl_summary_default(b->tc, def);
 	for (i = 0; i < b->inputs; i++) {
@@ -329,6 +324,8 @@ dtfl_op_builder_build(dtfl_op_builder *b, dtfl_logic_fn logic, void *ctx,
 		rt->pull[i] = in->pull;
 		rt->consumed[i] = in->consumed;
 		rt->frontier[i] = in->frontier;
+		/* The pull counter captured the stack address; repoint it. */
+		__dtfl_pull_counter_set_consumed(rt->pull[i], &rt->consumed[i]);
 		/* The summary serves both the parent (reachability) and the handle. */
 		__dtfl_port_conn_copy(&rt->summaries.ports[i], &in->summary);
 		__dtfl_port_conn_copy(&summary.ports[i], &in->summary);
@@ -343,6 +340,9 @@ dtfl_op_builder_build(dtfl_op_builder *b, dtfl_logic_fn logic, void *ctx,
 		rt->streams[o] = out->stream;
 		rt->tees[o] = out->tee;
 		rt->outputs_arr[o].internal = &rt->internal[o];
+		/* The push counter captured the stack address; repoint it. */
+		__dtfl_push_counter_set_produced(rt->outputs_arr[o].pushee,
+		    &rt->produced[o]);
 	}
 
 	/* mint_capabilities: one per output at the minimum, evidence cleared. */

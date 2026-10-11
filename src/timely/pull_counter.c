@@ -71,3 +71,10 @@ __dtfl_pull_counter_free(__dtfl_pull_counter *c)
 	__dtfl_pull_destroy(c->pullable);
 	__dtfl_free(c);
 }
+
+void
+__dtfl_pull_counter_set_consumed(__dtfl_pull_counter *c,
+    __dtfl_change_batch *consumed)
+{
+	c->consumed = consumed;
+}

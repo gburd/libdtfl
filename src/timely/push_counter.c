@@ -59,3 +59,9 @@ __dtfl_push_counter_new(__dtfl_push *inner, __dtfl_change_batch *produced)
 	c->produced = produced;
 	return &c->base;
 }
+
+void
+__dtfl_push_counter_set_produced(__dtfl_push *p, __dtfl_change_batch *produced)
+{
+	((push_counter *)p)->produced = produced;
+}
