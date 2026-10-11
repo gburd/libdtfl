@@ -183,5 +183,16 @@ void __dtfl_mantichain_update(__dtfl_mutable_antichain *m, const uint64_t *t,
 /* Sum of counts for times equal to t. */
 int64_t __dtfl_mantichain_count_for(const __dtfl_mutable_antichain *m,
     const uint64_t *t);
+/*
+ * MutableAntichain::updates: rebuilds, then returns the number of
+ * compacted (time, count) entries in m->updates for iteration.
+ */
+size_t __dtfl_mantichain_updates(__dtfl_mutable_antichain *m);
+
+/* lattice.rs antichain_join_into / antichain_meet over flat runs. */
+void __dtfl_antichain_join_into(const dtfl_time_class *tc, const uint64_t *one,
+    size_t na, const uint64_t *other, size_t nb, __dtfl_antichain *upper);
+void __dtfl_antichain_meet_into(const dtfl_time_class *tc, const uint64_t *one,
+    size_t na, const uint64_t *other, size_t nb, __dtfl_antichain *out);
 
 #endif /* DTFL_PROGRESS_INT_H */

@@ -90,6 +90,8 @@ __dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta)
 void
 __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
 {
+	/* Rust's &mut rules forbid aliasing; extending from itself would read freed memory. */
+	DTFL_ASSERT(cb != src);
 	DTFL_ASSERT(cb->kw == src->kw);
 	__dtfl_vec_push_n(&cb->updates, src->updates.data, src->updates.len);
 	maintain_bounds(cb);
@@ -219,6 +221,7 @@ __dtfl_cb_drain_into(__dtfl_change_batch *cb, __dtfl_change_batch *other)
 {
 	size_t clean;
 
+	DTFL_ASSERT(cb != other);
 	DTFL_ASSERT(cb->kw == other->kw);
 	if (other->updates.len == 0) {
 		__dtfl_vec_swap(&cb->updates, &other->updates);
