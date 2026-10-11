@@ -342,6 +342,15 @@ Notes on AltNeu:
 - `t >= 2^63` overflows the encoding and is rejected with
   `DTFL_ERANGE`.
 
+**Ord is word order.**  Every encoding above preserves Rust's derived
+`Ord`: Product and tuples derive field order, AltNeu derives
+`(time, neu)`, PointStamp's derived vector order equals the order of the
+padded vector, and the signed and Duration encodings are monotone.  So
+for every class the `cmp` that upstream gets from `Ord` is the
+lexicographic comparison of the u64 words, and the library implements it
+once, with no vtable call.  `ChangeBatch` and every sorted run of times
+use it.  A property test checks it against each encoding.
+
 **PointStamp padding.**  Upstream stores a `PointStamp` as a variable
 vector with trailing minimum coordinates trimmed, and compares it as if
 missing coordinates were the minimum.  A vector padded with the minimum
@@ -747,8 +756,11 @@ need extra tools.
      `src/base/os_alloc.c`; no `pthread_create` outside
      `src/base/os_thread.c`; no `getenv`, `signal` or `getopt` anywhere
      in `src/`; and examples and tools use only the public API.
-   - `test_symbols.sh`: the exported symbols match `src/libdtfl.map`
-     exactly.
+   - `test_symbols.sh`: every exported symbol starts with `dtfl_`,
+     and the exported set equals the union of the per-component
+     `src/*/exports.sym` lists.  Until 1.0, `src/libdtfl.map` exports
+     `dtfl_*` by pattern.  At 1.0 it is generated from the lists and
+     frozen (section 13).
    - `test_headers.sh`: each public header compiles on its own as C11
      and as C++17, with `-Wall -Wextra -Werror -pedantic`.
    - `test_no_globals.sh`, described in section 5.

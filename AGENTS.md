@@ -90,8 +90,8 @@ ADR in `dev/adr/`.  Do not route around it in code.
    reasons return a `DTFL_E*` code and clean up with goto-cleanup.
 4. Examples and tools use only the public `dtfl_*` API.  If one needs an
    internal, the public API is missing something: add it there.
-5. Every public symbol is listed in `src/libdtfl.map`, has a man page,
-   and is declared in exactly one public header.
+5. Every public symbol is listed in its component's `src/*/exports.sym`,
+   has a man page, and is declared in exactly one public header.
 
 Mark a deliberate single-line exception with `/* DTFL_RAW_OK: reason */`.
 
