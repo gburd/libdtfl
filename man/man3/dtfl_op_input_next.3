@@ -1,0 +1,184 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_OP_INPUT_NEXT 3
+.Os
+.Sh NAME
+.Nm dtfl_op_input_next ,
+.Nm dtfl_op_input_cap ,
+.Nm dtfl_op_input_cap_delayed ,
+.Nm dtfl_op_frontier ,
+.Nm dtfl_op_frontier_less_equal ,
+.Nm dtfl_op_frontier_less_than ,
+.Nm dtfl_op_session ,
+.Nm dtfl_op_initial_cap ,
+.Nm dtfl_op_scope ,
+.Nm dtfl_op_inputs ,
+.Nm dtfl_op_outputs ,
+.Nm dtfl_op_activator ,
+.Nm dtfl_op_sync_activator ,
+.Nm dtfl_session_give ,
+.Nm dtfl_session_give_message ,
+.Nm dtfl_session_close
+.Nd operate on an operator's inputs and outputs inside logic
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft dtfl_message *
+.Fn dtfl_op_input_next "dtfl_op *op" "size_t input"
+.Ft dtfl_cap *
+.Fn dtfl_op_input_cap "dtfl_op *op" "size_t input" "size_t output"
+.Ft dtfl_cap *
+.Fn dtfl_op_input_cap_delayed "dtfl_op *op" "size_t input" "size_t output" "const uint64_t *t"
+.Ft "const uint64_t *"
+.Fn dtfl_op_frontier "const dtfl_op *op" "size_t input" "size_t *n"
+.Ft bool
+.Fn dtfl_op_frontier_less_equal "const dtfl_op *op" "size_t input" "const uint64_t *t"
+.Ft bool
+.Fn dtfl_op_frontier_less_than "const dtfl_op *op" "size_t input" "const uint64_t *t"
+.Ft dtfl_session *
+.Fn dtfl_op_session "dtfl_op *op" "size_t output" "const dtfl_cap *cap"
+.Ft dtfl_cap *
+.Fn dtfl_op_initial_cap "dtfl_op *op" "size_t output"
+.Ft dtfl_scope *
+.Fn dtfl_op_scope "const dtfl_op *op"
+.Ft size_t
+.Fn dtfl_op_inputs "const dtfl_op *op"
+.Ft size_t
+.Fn dtfl_op_outputs "const dtfl_op *op"
+.Ft dtfl_activator *
+.Fn dtfl_op_activator "dtfl_op *op"
+.Ft dtfl_sync_activator *
+.Fn dtfl_op_sync_activator "dtfl_op *op"
+.Ft void
+.Fn dtfl_session_give "dtfl_session *s" "const void *rec" "size_t len"
+.Ft void
+.Fn dtfl_session_give_message "dtfl_session *s" "const dtfl_message *m"
+.Ft void
+.Fn dtfl_session_close "dtfl_session *s"
+.Sh DESCRIPTION
+A
+.Fn dtfl_logic_fn
+runs with an operator handle
+.Fa op
+valid only during the call
+.Pq Xr dtfl_op_builder_new 3 .
+These functions act through it.
+.Pp
+.Fn dtfl_op_input_next
+returns the next message on
+.Fa input ,
+or
+.Dv NULL
+when none remain.
+The message is valid until the next
+.Fn dtfl_op_input_next
+call on the same input or until the logic returns; its records are
+consumed, for progress tracking, when it is released.
+.Pp
+.Fn dtfl_op_input_cap
+returns a capability on
+.Fa output
+for the current message's time
+.Pq InputCapability retain ,
+and
+.Fn dtfl_op_input_cap_delayed
+one for a later
+.Fa t ,
+if the summary from
+.Fa input
+to
+.Fa output
+reaches it.
+Both return a capability the caller owns and must drop
+.Pq Xr dtfl_cap_delayed 3 .
+.Pp
+.Fn dtfl_op_frontier
+returns the input's frontier as an antichain of
+.Fa *n
+times.
+.Fn dtfl_op_frontier_less_equal
+and
+.Fn dtfl_op_frontier_less_than
+report whether some frontier element is at or before
+.Fa t .
+.Pp
+.Fn dtfl_op_session
+opens an output session on
+.Fa output
+at
+.Fa cap Ns 's
+time;
+.Fn dtfl_session_give
+appends one record,
+.Fn dtfl_session_give_message
+every record of a received message, and
+.Fn dtfl_session_close
+flushes and releases the session.
+Using a capability not minted for the session's output is a contract
+violation and panics
+.Pq Xr dtfl_set_panic_hook 3 .
+.Pp
+.Fn dtfl_op_initial_cap
+returns the output's initial capability, at the minimum time, on the
+first logic call only; the caller takes ownership and must drop it.
+It returns
+.Dv NULL
+on later calls or once taken.
+.Pp
+.Fn dtfl_op_scope ,
+.Fn dtfl_op_inputs
+and
+.Fn dtfl_op_outputs
+report the operator's scope and port counts.
+.Fn dtfl_op_activator
+and
+.Fn dtfl_op_sync_activator
+return activators for the operator
+.Pq Xr dtfl_activator_activate 3 .
+.Sh RETURN VALUES
+.Fn dtfl_op_input_next
+returns a borrowed message or
+.Dv NULL .
+.Fn dtfl_op_input_cap ,
+.Fn dtfl_op_input_cap_delayed
+and
+.Fn dtfl_op_initial_cap
+return owned capabilities, the last
+.Dv NULL
+when unavailable.
+.Fn dtfl_op_session
+returns a session the caller closes.
+.Fn dtfl_op_frontier
+returns the frontier times and stores their count in
+.Fa *n .
+.Sh EXAMPLES
+See
+.Xr dtfl_op_builder_new 3
+for a map operator that reads each input message and gives each record
+at the input capability's time.
+.Sh ERRORS
+These functions do not return error codes.
+An invalid capability, an output port out of range, or a delay to a time
+the summary cannot reach is a contract violation that reaches the panic
+hook.
+.Sh SEE ALSO
+.Xr dtfl_activator_activate 3 ,
+.Xr dtfl_cap_delayed 3 ,
+.Xr dtfl_op_builder_new 3 ,
+.Xr dtfl_stream_scope 3
+.Sh HISTORY
+These are the C forms of timely's
+.Vt InputHandle ,
+.Vt OutputHandle ,
+.Vt Session
+and
+.Vt OperatorInfo
+.Pq handles.rs , operator_info.rs .
+.Sh THREAD SAFETY
+The operator handle, the messages it yields and the sessions it opens
+belong to the worker thread running the logic and must not be shared or
+outlive the call.
+.Fn dtfl_op_sync_activator
+returns the one handle that may cross threads.
