@@ -65,8 +65,14 @@ by automake.
 - **Section 3:** one page per function family.  The page lists every
   `.Nm` it covers, and each covered name is installed as a link to the
   page.
-- **Required sections:** NAME, LIBRARY, SYNOPSIS, DESCRIPTION, RETURN
-  VALUES, ERRORS, THREAD SAFETY, EXAMPLES, SEE ALSO, HISTORY.
+- **Required sections, in this order** (mdoc's conventional order, which
+  `mandoc -Tlint` checks): NAME, LIBRARY, SYNOPSIS, DESCRIPTION, RETURN
+  VALUES, EXAMPLES, ERRORS, SEE ALSO, HISTORY, then THREAD SAFETY last
+  (a nonstandard section, which mdoc allows only after the standard
+  ones).
+- **LIBRARY:** mandoc rejects `.Lb` for libraries it does not know, so
+  write `Timely and differential dataflow library` then
+  `.Pq libdtfl , \-ldtfl` on the next line.
 - **HISTORY:** names the upstream Rust item the function ports.
 - **Lint:** every page must pass `mandoc -Tlint`.  `test_docs.sh`
   checks this when mandoc is installed, and reports SKIP otherwise.

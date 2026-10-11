@@ -38,10 +38,14 @@ if [ -n "$undoc" ]; then
 	fail=1
 fi
 
-if command -v mandoc >/dev/null 2>&1; then
+MANDOC="${MANDOC:-$(command -v mandoc 2>/dev/null)}"
+if [ -z "$MANDOC" ]; then
+	for m in /nix/store/*-mandoc-*/bin/mandoc; do [ -x "$m" ] && MANDOC="$m"; done
+fi
+if [ -n "$MANDOC" ]; then
 	for m in "$top"/man/man*/*.[137]; do
 		[ -f "$m" ] || continue
-		out=$(mandoc -Tlint -W warning "$m" 2>&1) || { echo "[docs] FAIL: mandoc -Tlint $m"; echo "$out" | sed 's/^/    /'; fail=1; }
+		out=$("$MANDOC" -Tlint -W warning "$m" 2>&1) || { echo "[docs] FAIL: mandoc -Tlint $m"; echo "$out" | sed 's/^/    /'; fail=1; }
 	done
 else
 	skipped="$skipped mandoc-lint"

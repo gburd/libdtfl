@@ -7,7 +7,8 @@
 .Nm dtfl_set_panic_hook
 .Nd install libdtfl allocation and panic hooks
 .Sh LIBRARY
-.Lb libdtfl
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
 .Sh SYNOPSIS
 .In dtfl/base.h
 .Ft int
@@ -51,18 +52,6 @@ restores the default.
 .Sh RETURN VALUES
 .Fn dtfl_set_alloc_hooks
 returns 0 on success, or one of the errors below.
-.Sh ERRORS
-.Bl -tag -width DTFL_ESTATE
-.It Bq Er DTFL_ESTATE
-The library has already allocated memory.
-.It Bq Er DTFL_EINVAL
-A hook member is
-.Dv NULL .
-.El
-.Sh THREAD SAFETY
-Both functions must be called before the first
-.Fn dtfl_execute .
-They are the only process-wide state in the library.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 static void *my_malloc(size_t n, void *ctx) { return malloc(n); }
@@ -73,9 +62,21 @@ dtfl_alloc_hooks h = { my_malloc, my_realloc, my_free, NULL };
 if (dtfl_set_alloc_hooks(&h) != 0)
 	errx(1, "%s", dtfl_last_error_detail());
 .Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ESTATE
+.It Bq Er DTFL_ESTATE
+The library has already allocated memory.
+.It Bq Er DTFL_EINVAL
+A hook member is
+.Dv NULL .
+.El
 .Sh SEE ALSO
 .Xr dtfl_strerror 3 ,
 .Xr dtfl 7
 .Sh HISTORY
 Rust programs choose a global allocator at link time and abort on
 allocation failure; these hooks are the C equivalent of both.
+.Sh THREAD SAFETY
+Both functions must be called before the first
+.Fn dtfl_execute .
+They are the only process-wide state in the library.
