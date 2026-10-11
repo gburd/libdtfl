@@ -226,6 +226,18 @@ prop_mutable_antichain_model(pbt_tc *tc)
 				PBT_ASSERT(j < n);
 			}
 		}
+		/* Every element that entered the frontier appears with +1. */
+		for (i = 0; i < __dtfl_mantichain_frontier_len(&ma); i++) {
+			const uint64_t *f = __dtfl_mantichain_frontier(&ma) + 2 * i;
+
+			if (in_frontier(old, old_n, f))
+				continue;
+			for (j = 0; j < n; j++) {
+				if (memcmp(__dtfl_cb_key(&ma.changes, j), f, 16) == 0)
+					break;
+			}
+			PBT_ASSERT(j < n && __dtfl_cb_delta(&ma.changes, j) == 1);
+		}
 		__dtfl_cb_clear(&ma.changes);
 		/* count_for and the frontier queries agree with the model. */
 		draw_t(tc, t);

@@ -424,3 +424,55 @@ __dtfl_mantichain_count_for(const __dtfl_mutable_antichain *m,
 	}
 	return (int64_t)sum;
 }
+
+/*
+ * MutableAntichain::updates: rebuilds the frontier, then exposes the
+ * compacted (time, count) updates for iteration.  Returns the count;
+ * entry i is __dtfl_cb_key(&m->updates, i) / __dtfl_cb_delta(...).
+ * The rebuild's frontier changes are left in m->changes, as upstream
+ * leaves them in its changes batch.
+ */
+size_t
+__dtfl_mantichain_updates(__dtfl_mutable_antichain *m)
+{
+	rebuild(m);
+	return __dtfl_cb_iter(&m->updates);
+}
+
+/*
+ * lattice.rs antichain_join_into: `upper` (cleared first) becomes the
+ * antichain of pairwise joins of `one` and `other` (flat runs of na and
+ * nb times).
+ */
+void
+__dtfl_antichain_join_into(const dtfl_time_class *tc, const uint64_t *one,
+    size_t na, const uint64_t *other, size_t nb, __dtfl_antichain *upper)
+{
+	uint64_t j[DTFL_TIME_MAX];
+	size_t i, k;
+
+	__dtfl_antichain_clear(upper);
+	for (i = 0; i < na; i++)
+		for (k = 0; k < nb; k++) {
+			dtfl_time_join(tc, one + i * tc->depth, other + k * tc->depth, j);
+			(void)__dtfl_antichain_insert(upper, j);
+		}
+}
+
+/*
+ * lattice.rs antichain_meet (and Lattice::meet for Antichain): the
+ * antichain of the union of both inputs, into `out` (cleared first).
+ */
+void
+__dtfl_antichain_meet_into(const dtfl_time_class *tc, const uint64_t *one,
+    size_t na, const uint64_t *other, size_t nb, __dtfl_antichain *out)
+{
+	size_t i;
+
+	(void)tc;
+	__dtfl_antichain_clear(out);
+	for (i = 0; i < na; i++)
+		(void)__dtfl_antichain_insert(out, one + i * tc->depth);
+	for (i = 0; i < nb; i++)
+		(void)__dtfl_antichain_insert(out, other + i * tc->depth);
+}

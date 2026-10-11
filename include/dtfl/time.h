@@ -130,7 +130,9 @@ DTFL_API void dtfl_time_meet(const dtfl_time_class *tc, const uint64_t *a,
  * Path summaries.  A summary is dtfl_summary_depth() words.
  * dtfl_summary_default is the identity summary (Rust Default).
  * results_in and followed_by return false where Rust returns None
- * (overflow at the coordinate's declared width).
+ * (overflow at the coordinate's declared width).  Duration coordinates
+ * hold nanoseconds in 64 bits, so they overflow after about 584 years,
+ * where Rust's Duration would not; such a time is dropped as overflow.
  */
 DTFL_API void dtfl_summary_default(const dtfl_time_class *tc, uint64_t *out);
 DTFL_API bool dtfl_summary_results_in(const dtfl_time_class *tc,

@@ -339,8 +339,14 @@ Notes on AltNeu:
 - For a partially ordered `T` it would not be, so the class rejects
   that combination at scope creation.
 - Every pinned use is `AltNeu<usize>`.
-- `t >= 2^63` overflows the encoding and is rejected with
-  `DTFL_ERANGE`.
+- `t >= 2^63` overflows the encoding.  Decoding such a time returns
+  `DTFL_ERANGE`; entering one into an AltNeu scope (`to_inner`) panics,
+  as a contract violation.
+- `dtfl_time_is_total` reports that the partial order is total, which
+  it is for AltNeu over a total base.  Upstream has no `TotalOrder` impl
+  for `AltNeu`, so the `_total` operators accept an AltNeu scope here
+  where Rust would not compile; that is an extension, not a divergence
+  in behavior.
 
 **Ord is word order.**  Every encoding above preserves Rust's derived
 `Ord`: Product and tuples derive field order, AltNeu derives
@@ -399,8 +405,19 @@ progress tracker, the traces and reduce call:
   coordinatewise product order.
 - AltNeu's summary is `()`.
 
-Fast paths: the `UNIT` class, and `TOTAL` with a 64-bit unsigned
-coordinate, are inlined.  Everything else goes through the vtable.
+Dispatch is a `switch` on the class shape in `src/progress/time.c`,
+not a function-pointer vtable.  The shapes form a closed set, so a
+switch keeps every operation in one place and lets the compiler inline
+the common leaves.  Adding a shape means adding a case to each
+operation, which is the same work as filling in a vtable.  Ord is
+word order for every shape, so the hot comparison
+(`__dtfl_words_cmp`) never dispatches at all.
+
+**Refines pairs supported:** identity; `PRODUCT(outer, X)` refining
+`outer`; `ALTNEU(outer)` refining `outer`; anything refining `UNIT`.
+Upstream's `Refines<TOuter> for (TOuter, TInner)` (lexicographic pairs,
+`order.rs:248-259`) is not supported, because no pinned program enters
+a lexicographic scope; asking for it panics.
 
 **Known limit.** There are no user-defined lattices beyond
 compositions of these classes.  The pinned code needs none.

@@ -65,6 +65,10 @@ Each coordinate adds its increment with an overflow check at the
 coordinate's declared width, so a
 .Vt u32
 time overflows at 2^32 - 1 even though it is stored in 64 bits.
+A Duration coordinate stores nanoseconds in 64 bits and overflows
+after about 584 years (2^64 nanoseconds), which is sooner than Rust's
+.Vt Duration ;
+a summary that would carry a Duration past that point reports overflow.
 A PointStamp summary first resets coordinates past
 .Em retain
 to the minimum.

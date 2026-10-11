@@ -64,6 +64,7 @@ EXTRA_DIST = bootstrap COPYING README AGENTS.md dev src/libdtfl.map \
 
 include src/base/local.mk
 include src/log/local.mk
+include src/comm/local.mk
 include src/progress/local.mk
 include src/dd/local.mk
 
