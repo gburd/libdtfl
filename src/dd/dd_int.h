@@ -55,7 +55,7 @@ typedef struct __dtfl_diff_class __dtfl_diff_class;
  *   negate			Abelian (NULL = not Abelian; implies zero)
  *   one			From<i8> as `R::from(1)` (NULL = absent)
  *
- * ponytail: fixed width only; variable-width classes (vec) need an
+ * Limit: fixed width only; variable-width classes (vec) need an
  * arena layout in the diff column and land with their first user.
  */
 struct __dtfl_diff_class {
@@ -119,7 +119,7 @@ const dtfl_type *__dtfl_diff_type(const __dtfl_diff_class *c);
  * __dtfl_diff_multiply writes `out` (width of the output class) and
  * *out_cls, or returns DTFL_EALGEBRA for an unsupported pair.
  *
- * ponytail: a tuple with a present component would need a new output
+ * Limit: a tuple with a present component would need a new output
  * class (present * T -> T per field); add it when a join needs one.
  */
 const __dtfl_diff_class *__dtfl_diff_multiply_class(const __dtfl_diff_class *a,
