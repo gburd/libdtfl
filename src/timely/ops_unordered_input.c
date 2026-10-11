@@ -38,6 +38,7 @@ typedef struct uinput_op {
 	size_t peers;
 	__dtfl_src_shared *shared;	/* retained; internal + produced */
 	__dtfl_shared_progress *sp;	/* owned until initialize */
+	dtfl_stream *stream;		/* the operator's output; owned */
 	bool started;
 } uinput_op;
 
@@ -83,6 +84,7 @@ static void
 uop_free(uinput_op *o)
 {
 	__dtfl_src_shared_release(o->shared);
+	__dtfl_stream_free(o->stream);
 	dtfl_time_class_free(o->tc);
 	__dtfl_free(o->sched.name);
 	__dtfl_free(o->sched.path);
@@ -173,6 +175,7 @@ dtfl_unordered_input_new(dtfl_scope *scope, const dtfl_type *type,
 	o->peers = dtfl_scope_peers(scope);
 	o->shared = __dtfl_src_shared_retain(shared);
 	o->sp = __dtfl_shared_progress_new(tc, 0, 1);
+	o->stream = stream;	/* the operator owns the stream (builder.c) */
 	__dtfl_scope_install(scope, &slot, &o->operate);
 
 	h = __dtfl_alloc(sizeof *h);
@@ -223,6 +226,12 @@ dtfl_unordered_input_free(dtfl_unordered_input *h)
 {
 	if (h == NULL)
 		return;
+	/*
+	 * Activate once more so a later step drains the capability changes
+	 * the caller made since the last send (dropping the final capability
+	 * retires its hold); upstream's ActivateCapability does this on drop.
+	 */
+	dtfl_activator_activate(h->activator);
 	__dtfl_push_destroy(h->pusher);
 	__dtfl_src_shared_release(h->shared);
 	dtfl_activator_free(h->activator);

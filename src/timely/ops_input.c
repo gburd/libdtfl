@@ -76,6 +76,7 @@ __dtfl_src_shared_release(__dtfl_src_shared *s)
  */
 typedef struct src_op_ctx {
 	__dtfl_src_shared *shared;	/* retained */
+	dtfl_stream *stream;		/* the operator's output; owned */
 } src_op_ctx;
 
 static bool
@@ -94,6 +95,7 @@ src_op_free(void *vctx)
 	src_op_ctx *c = vctx;
 
 	__dtfl_src_shared_release(c->shared);
+	__dtfl_stream_free(c->stream);
 	__dtfl_free(c);
 }
 
@@ -121,6 +123,7 @@ __dtfl_src_build(dtfl_scope *scope, const char *name, const dtfl_type *type,
 
 	ctx = __dtfl_alloc(sizeof *ctx);
 	ctx->shared = __dtfl_src_shared_retain(shared);
+	ctx->stream = stream;	/* the operator owns the stream (builder.c) */
 
 	/* No inputs, one output; the raw core adds `peers` caps at minimum. */
 	__dtfl_connectivity_init(&summary, tc, 0);

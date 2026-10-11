@@ -509,11 +509,74 @@ DTFL_TEST(input__multi_worker_multi_round_terminates)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Test: unordered input sends under caller-managed capabilities       */
+/* ------------------------------------------------------------------ */
+
+typedef struct uin_build_ctx {
+	dtfl_unordered_input *handle;
+	dtfl_cap *cap;
+	collected *out;
+} uin_build_ctx;
+
+static void
+build_unordered(dtfl_scope *scope, void *arg)
+{
+	uin_build_ctx *c = arg;
+	dtfl_stream *s = dtfl_unordered_input_new(scope, dtfl_type_u64(),
+	    &c->handle, &c->cap);
+
+	make_sink(s, c->out);
+}
+
+DTFL_TEST(unordered_input__sends_at_capability_times)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	uin_build_ctx c;
+	collected out;
+	uint64_t round;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	c.out = &out;
+	assert_int(dtfl_worker_dataflow(w, "u", tc, build_unordered, &c), ==, 0);
+
+	/* Feed values 0..9 at times 0..9, delaying the capability each round. */
+	for (round = 0; round < 10; round++) {
+		unsigned char buf[8];
+		uint64_t next = round + 1;
+		dtfl_cap *later;
+
+		dtfl_put_u64(buf, round);
+		dtfl_unordered_input_send(c.handle, c.cap, buf, sizeof buf);
+		later = dtfl_cap_delayed(c.cap, &next);
+		dtfl_cap_drop(c.cap);
+		c.cap = later;
+		dtfl_worker_step(w);
+	}
+	dtfl_cap_drop(c.cap);	/* dropping the last capability seals the input */
+	dtfl_unordered_input_free(c.handle);
+	while (dtfl_worker_step(w))
+		;
+
+	assert_size(out.n, ==, 10);
+	for (round = 0; round < out.n; round++) {
+		assert_uint64(out.vals[round], ==, out.times[round]);
+		assert_uint64(out.times[round], <, 10);
+	}
+
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(input__probe_tracks_and_terminates),
 	DTFL_T(feedback__bounded_loop_terminates),
 	DTFL_T(reclock__releases_at_clock_times),
 	DTFL_T(input__multi_worker_multi_round_terminates),
+	DTFL_T(unordered_input__sends_at_capability_times),
 	DTFL_T_END
 };
 
