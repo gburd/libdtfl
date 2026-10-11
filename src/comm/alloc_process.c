@@ -43,9 +43,9 @@ typedef struct process_shared {
 	size_t peers;
 	pthread_mutex_t mu;
 	/*
-	 * process_entry *, under mu.  ponytail: linear search; entries
-	 * live only between the first and last worker's allocate, so the
-	 * list is short.  Sort it if many channels are built at once.
+	 * process_entry *, under mu.  A linear search: entries live only
+	 * between the first and last worker's allocate, so the list is
+	 * short.
 	 */
 	__dtfl_vec channels;
 	__dtfl_mpsc **counters;		/* [peers], immutable */
