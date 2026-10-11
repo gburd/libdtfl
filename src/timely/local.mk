@@ -5,12 +5,25 @@
 timely_sources = \
 	src/timely/worker_int.h \
 	src/timely/scope_int.h \
+	src/timely/timely_int.h \
 	src/timely/log_codec_int.h \
 	src/timely/activate.c \
 	src/timely/worker.c \
 	src/timely/timely_log.c \
 	src/timely/scope.c \
-	src/timely/execute.c
+	src/timely/execute.c \
+	src/timely/message.c \
+	src/timely/push_tee.c \
+	src/timely/push_counter.c \
+	src/timely/pull_counter.c \
+	src/timely/push_exchange.c \
+	src/timely/push_progress.c \
+	src/timely/pact.c \
+	src/timely/stream.c \
+	src/timely/capability.c \
+	src/timely/handles.c \
+	src/timely/builder_raw.c \
+	src/timely/builder.c
 
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)

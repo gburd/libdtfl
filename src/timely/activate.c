@@ -400,3 +400,80 @@ __dtfl_activations_empty_for(const __dtfl_activations *a)
 	next = ((const timer_heap_entry *)a->timers.data)[0].deadline;
 	return next < now ? 0 : next - now;
 }
+
+/* ------------------------------------------------------------------ */
+/* Public activators (handles.rs / activate.rs)                        */
+/* ------------------------------------------------------------------ */
+
+struct dtfl_activator {
+	__dtfl_worker *w;
+	size_t *path;
+	size_t len;
+};
+
+struct dtfl_sync_activator {
+	__dtfl_sync_activations *sync;	/* retained */
+	size_t *path;
+	size_t len;
+};
+
+dtfl_activator *
+__dtfl_activator_new(__dtfl_worker *w, const size_t *path, size_t len)
+{
+	dtfl_activator *a = __dtfl_alloc(sizeof *a);
+
+	a->w = w;
+	a->path = __dtfl_memdup(path, len * sizeof(size_t));
+	a->len = len;
+	return a;
+}
+
+void
+dtfl_activator_activate(dtfl_activator *a)
+{
+	DTFL_WORKER_CHECK(a->w);
+	__dtfl_activations_activate(&a->w->activations, a->path, a->len);
+}
+
+void
+dtfl_activator_activate_after(dtfl_activator *a, uint64_t delay_ns)
+{
+	DTFL_WORKER_CHECK(a->w);
+	__dtfl_activations_activate_after(&a->w->activations, a->path, a->len, delay_ns);
+}
+
+void
+dtfl_activator_free(dtfl_activator *a)
+{
+	if (a == NULL)
+		return;
+	__dtfl_free(a->path);
+	__dtfl_free(a);
+}
+
+dtfl_sync_activator *
+__dtfl_sync_activator_new(__dtfl_worker *w, const size_t *path, size_t len)
+{
+	dtfl_sync_activator *a = __dtfl_alloc(sizeof *a);
+
+	a->sync = __dtfl_sync_activations_retain(w->activations.sync);
+	a->path = __dtfl_memdup(path, len * sizeof(size_t));
+	a->len = len;
+	return a;
+}
+
+int
+dtfl_sync_activator_activate(dtfl_sync_activator *a)
+{
+	return __dtfl_sync_activations_push(a->sync, a->path, a->len);
+}
+
+void
+dtfl_sync_activator_free(dtfl_sync_activator *a)
+{
+	if (a == NULL)
+		return;
+	__dtfl_sync_activations_release(a->sync);
+	__dtfl_free(a->path);
+	__dtfl_free(a);
+}

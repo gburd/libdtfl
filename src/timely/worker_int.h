@@ -24,6 +24,7 @@
 #include "base/log_int.h"
 #include "comm/comm_int.h"
 #include "dtfl/config.h"
+#include "dtfl/timely.h"
 #include "progress/operate_int.h"
 
 /* ------------------------------------------------------------------ */
@@ -186,5 +187,16 @@ void __dtfl_worker_drop_dataflow(__dtfl_worker *w, size_t index);
 #else
 #define DTFL_WORKER_CHECK(w) ((void)0)
 #endif
+
+/*
+ * Public activators (timely.h).  An Activator holds the worker and an
+ * owned copy of the operator's address; dtfl_activator_activate marks
+ * that path active.  A SyncActivator holds a reference to the worker's
+ * SyncActivations queue, so it may activate from another thread.
+ */
+dtfl_activator *__dtfl_activator_new(__dtfl_worker *w, const size_t *path,
+    size_t len);
+dtfl_sync_activator *__dtfl_sync_activator_new(__dtfl_worker *w,
+    const size_t *path, size_t len);
 
 #endif /* DTFL_WORKER_INT_H */
