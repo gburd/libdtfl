@@ -1,0 +1,47 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 10, 2026
+.Dt DTFL 7
+.Os
+.Sh NAME
+.Nm dtfl
+.Nd timely and differential dataflow for C
+.Sh DESCRIPTION
+libdtfl is a C11 library for data-parallel dataflow computation.
+It ports three Rust projects:
+timely dataflow, a runtime for cyclic dataflows with partially ordered
+timestamps and progress tracking;
+differential dataflow, incrementally maintained collections built on
+it; and the timely diagnostics tools.
+.Pp
+Include
+.In dtfl/dtfl.h
+and link with
+.Fl ldtfl ,
+or use
+.Ql pkg-config --cflags --libs dtfl .
+.Ss Conventions
+Fallible functions return 0 or a
+.Dv DTFL_E*
+code; see
+.Xr dtfl_strerror 3 .
+Contract violations call the panic hook; see
+.Xr dtfl_set_panic_hook 3 .
+Every handle has exactly one function that frees or drops it.
+.Ss Threads
+A worker and every handle derived from it belong to the thread that
+runs the worker.
+The objects documented as thread-safe in their own pages are the
+exceptions.
+The library keeps no hidden global state other than the allocation and
+panic hooks and a per-thread error-detail buffer, and it never reads the
+environment.
+.Sh SEE ALSO
+.Xr dtfl_set_alloc_hooks 3 ,
+.Xr dtfl_strerror 3
+.Pp
+The libdtfl manual, available as
+.Ql info libdtfl .
+.Sh HISTORY
+libdtfl ports timely-dataflow 0.31.0, differential-dataflow 0.25.1 and
+the timely diagnostics tools, all by Frank McSherry and contributors and
+distributed under the MIT license.

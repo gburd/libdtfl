@@ -1,0 +1,6 @@
+# Public symbols defined in src/base.  One per line.
+dtfl_last_error_detail
+dtfl_set_alloc_hooks
+dtfl_set_panic_hook
+dtfl_strerror
+dtfl_version

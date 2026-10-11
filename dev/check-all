@@ -1,0 +1,75 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# dev/check-all: build and test every configuration the plan requires
+# before a phase is declared finished (PLAN section 10).
+#
+#   dev/check-all [--quick]    --quick skips distcheck and TSan
+#
+# Each configuration builds in its own directory under
+# /scratch/$USER/dtfl-check/<name>.  Logs of failing tests are printed.
+# The hegel configuration runs when libhegel is found (HEGEL_PREFIX, or
+# pkg-config hegel); otherwise it reports SKIP.
+set -u
+src=$(cd "$(dirname "$0")/.." && pwd)
+root="/scratch/${USER}/dtfl-check"
+quick=0
+[ "${1:-}" = "--quick" ] && quick=1
+jobs=$(nproc 2>/dev/null || echo 4)
+mkdir -p "$root"
+status=0
+summary=""
+
+hegel=""
+if [ -n "${HEGEL_PREFIX:-}" ]; then
+	hegel="--with-hegel=$HEGEL_PREFIX"
+elif pkg-config --exists hegel 2>/dev/null; then
+	hegel="--with-hegel"
+else
+	for d in /nix/store/*-libhegel-0.36.5; do
+		[ -f "$d/include/hegel.h" ] && hegel="--with-hegel=$d"
+	done
+fi
+
+run() {
+	name="$1"; shift
+	b="$root/$name"
+	mkdir -p "$b"
+	( cd "$b" && "$src/configure" -q "$@" >config.out 2>&1 \
+	  && make -j"$jobs" >build.out 2>&1 \
+	  && make -j"$jobs" check >check.out 2>&1 )
+	rc=$?
+	if [ $rc -eq 0 ]; then
+		summary="$summary\n  PASS  $name"
+	else
+		summary="$summary\n  FAIL  $name ($b)"
+		status=1
+		tail -20 "$b/config.out" "$b/build.out" 2>/dev/null | grep -iE 'error|warning' | head -20
+		grep -E '^(FAIL|ERROR):' "$b/check.out" 2>/dev/null
+		for log in $(grep -lE '^(FAIL|ERROR)' $(find "$b/tests" -name '*.log' 2>/dev/null) 2>/dev/null); do
+			echo "--- $log"; tail -30 "$log"
+		done
+	fi
+}
+
+[ -x "$src/configure" ] || (cd "$src" && ./bootstrap) || exit 99
+run default --enable-debug
+run asan --enable-debug --enable-asan --enable-ubsan
+if [ -n "$hegel" ]; then
+	run hegel --enable-debug $hegel
+else
+	summary="$summary\n  SKIP  hegel (libhegel not found)"
+fi
+if [ $quick -eq 0 ]; then
+	run tsan --enable-tsan
+	b="$root/distcheck"; mkdir -p "$b"
+	if ( cd "$b" && "$src/configure" -q >/dev/null 2>&1 && make -j"$jobs" distcheck >distcheck.out 2>&1 ); then
+		summary="$summary\n  PASS  distcheck"
+	else
+		summary="$summary\n  FAIL  distcheck ($b/distcheck.out)"; status=1
+		tail -30 "$b/distcheck.out"
+	fi
+else
+	summary="$summary\n  SKIP  tsan, distcheck (--quick)"
+fi
+printf "check-all:$summary\n"
+exit $status

@@ -21,8 +21,6 @@ Makefile.in
 /configure
 /configure~
 /libtool
-/m4/libtool.m4
-/m4/lt*.m4
 /stamp-h1
 /dtfl.pc
 /INSTALL
@@ -63,3 +61,16 @@ result-*
 # memelord local memory store
 .memelord/
 __pycache__/
+
+# autotools outputs not caught above
+/Makefile.in
+/compile
+/missing
+/install-sh
+/depcomp
+/test-driver
+/ar-lib
+/ltmain.sh
+
+# The global gitignore ignores dist/; tests/dist holds the release gates.
+!tests/dist/

@@ -123,7 +123,8 @@ out and a comment naming what it synchronizes with.  A change to
 
 - Build output: `*.o`, `*.lo`, `*.la`, `.libs/`, `.deps/`, binaries,
   `autom4te.cache/`, `config.status`, `config.log`, generated
-  `Makefile`s, and any Rust `target/` from `dev/gen-fixtures`.
+  `Makefile`s, and any Rust `target/` from `dev/gen-fixtures`.  The m4
+  files in `m4/` are vendored inputs, not outputs, and are committed.
 - `configure` and the other autotools outputs.  `./bootstrap`
   generates them, and they ship only in the `make dist` tarball.
 - Core dumps, secrets, and private keys (generate test certificates at

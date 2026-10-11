@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        flags: ["", "--enable-asan --enable-ubsan", "--enable-tsan"]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
+      - run: ./bootstrap
+      - run: mkdir build && cd build && CC=${{ matrix.cc }} ../configure --enable-debug ${{ matrix.flags }}
+      - run: make -C build -j"$(nproc)"
+      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
+  distcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
+      - run: ./bootstrap && mkdir build && cd build && ../configure && make distcheck -j"$(nproc)"

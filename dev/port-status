@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Print a per-phase summary of dev/port-ledger.tsv and dev/test-ledger.tsv."""
+import os
+from collections import defaultdict
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def rows(name):
+    for line in open(os.path.join(HERE, name)):
+        if line.startswith("#") or line.startswith("repo\t"):
+            continue
+        yield line.rstrip("\n").split("\t")
+
+
+def main():
+    files = defaultdict(lambda: defaultdict(int))
+    lines = defaultdict(lambda: defaultdict(int))
+    for r in rows("port-ledger.tsv"):
+        files[r[4]][r[5]] += 1
+        lines[r[4]][r[5]] += int(r[2])
+    tests = defaultdict(lambda: defaultdict(int))
+    for r in rows("test-ledger.tsv"):
+        tests[r[6]][r[7]] += 1
+    key = lambda p: (p == "-", int(p[1:]) if p[1:].isdigit() else 0)
+    print("%-5s %20s %20s %16s" % ("phase", "files done/todo", "lines done/todo", "tests done/all"))
+    for ph in sorted(files, key=key):
+        f, l, t = files[ph], lines[ph], tests[ph]
+        print("%-5s %9d/%-10d %9d/%-10d %7d/%-8d" % (
+            ph, f["done"], f["todo"] + f["wip"] + f["done"],
+            l["done"], l["todo"] + l["wip"] + l["done"],
+            t["done"], sum(t.values())))
+
+
+if __name__ == "__main__":
+    main()

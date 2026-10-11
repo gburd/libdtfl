@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Regenerate the autotools build system.  The outputs are not committed
+# (AGENTS.md section 8); they ship in the `make dist` tarball.
+set -e
+cd "$(dirname "$0")"
+mkdir -p m4 build-aux
+# libtool and pkg-config m4 files may live outside aclocal's default
+# path (Nix, Homebrew); m4/ carries copies so the build does not depend
+# on where they are installed.
+autoreconf -fi -I m4

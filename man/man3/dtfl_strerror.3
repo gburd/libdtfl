@@ -1,0 +1,69 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 10, 2026
+.Dt DTFL_STRERROR 3
+.Os
+.Sh NAME
+.Nm dtfl_strerror ,
+.Nm dtfl_last_error_detail ,
+.Nm dtfl_version
+.Nd libdtfl error reporting and version
+.Sh LIBRARY
+.Lb libdtfl
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft const char *
+.Fn dtfl_strerror "int err"
+.Ft const char *
+.Fn dtfl_last_error_detail "void"
+.Ft const char *
+.Fn dtfl_version "void"
+.Sh DESCRIPTION
+Fallible libdtfl functions return 0 on success or a
+.Dv DTFL_E*
+code.
+.Fn dtfl_strerror
+returns a static description of a code.
+.Fn dtfl_last_error_detail
+returns a description of the most recent error on the calling thread,
+including the values involved, or the empty string.
+The string remains valid until the calling thread's next libdtfl call.
+.Fn dtfl_version
+returns the library version string.
+.Sh RETURN VALUES
+All three return non-NULL strings that the caller must not free.
+.Sh ERRORS
+.Bl -tag -width DTFL_EALGEBRA
+.It Dv DTFL_EINVAL
+Invalid argument.
+.It Dv DTFL_ENOMEM
+Allocation failed, from functions documented as reporting it.
+.It Dv DTFL_ERANGE
+A value is outside a representable range.
+.It Dv DTFL_ESTATE
+The operation is not valid in the current state.
+.It Dv DTFL_EALGEBRA
+A diff class lacks an operation that an operator needs.
+.It Dv DTFL_EIO
+An I/O or network operation failed.
+.It Dv DTFL_EPROTO
+Wire data is malformed.
+.It Dv DTFL_ENOTSUP
+The feature is not supported in this build.
+.It Dv DTFL_EOF
+End of stream.
+.El
+.Sh THREAD SAFETY
+All three may be called from any thread.
+The detail buffer is per thread.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+int rc = dtfl_execute(&cfg, worker_main, NULL, &guards);
+if (rc != 0)
+	errx(1, "%s: %s", dtfl_strerror(rc), dtfl_last_error_detail());
+.Ed
+.Sh SEE ALSO
+.Xr dtfl 7
+.Sh HISTORY
+These replace Rust's
+.Vt Result
+error values.
