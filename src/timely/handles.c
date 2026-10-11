@@ -198,6 +198,15 @@ dtfl_session_give(dtfl_session *s, const void *rec, size_t len)
 		session_flush(s);
 }
 
+void *
+__dtfl_session_reserve(dtfl_session *s, size_t len)
+{
+	/* Flush first so the returned record stays in a stable buffer. */
+	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
+		session_flush(s);
+	return __dtfl_batch_push_uninit(s->buffer, len, NULL, NULL);
+}
+
 void
 dtfl_session_give_message(dtfl_session *s, const dtfl_message *m)
 {

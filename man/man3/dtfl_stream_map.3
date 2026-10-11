@@ -1,0 +1,149 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_MAP 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_flat_map ,
+.Nm dtfl_stream_filter ,
+.Nm dtfl_stream_inspect ,
+.Nm dtfl_stream_inspect_batch ,
+.Nm dtfl_stream_inspect_core ,
+.Nm dtfl_emit_record ,
+.Nm dtfl_emit_reserve
+.Nd per-record stream operators
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_flat_map "dtfl_stream *st" "const dtfl_type *out_type" "dtfl_map_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_filter "dtfl_stream *st" "dtfl_pred_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_inspect "dtfl_stream *st" "dtfl_inspect_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_inspect_batch "dtfl_stream *st" "dtfl_inspect_batch_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_inspect_core "dtfl_stream *st" "dtfl_inspect_core_fn fn" "dtfl_ctx ctx"
+.Ft void
+.Fn dtfl_emit_record "dtfl_emit *e" "const void *rec" "size_t len"
+.Ft void *
+.Fn dtfl_emit_reserve "dtfl_emit *e" "size_t len"
+.Sh DESCRIPTION
+These operators transform or observe a stream record by record, each
+producing a new stream in the same scope.
+.Pp
+.Fn dtfl_stream_flat_map
+applies
+.Fa fn
+to every record of
+.Fa st ,
+at the record's time.
+The callback emits zero or more records of
+.Fa out_type
+through the
+.Vt dtfl_emit
+sink, so it serves both map
+.Pq one output per input
+and flat map
+.Pq any number .
+.Pp
+.Fn dtfl_stream_filter
+keeps the records of
+.Fa st
+for which
+.Fa fn
+returns true and drops the rest, preserving the record type.
+.Pp
+.Fn dtfl_stream_inspect
+calls
+.Fa fn
+once per record with its time, passing every record through unchanged.
+.Fn dtfl_stream_inspect_batch
+calls
+.Fa fn
+once per message with its time and records.
+.Fn dtfl_stream_inspect_core
+also reports each frontier change, with
+.Fa msg
+set to
+.Dv NULL
+and the new frontier given as
+.Fa frontier
+and
+.Fa nfrontier ;
+a frontier is reported only when it changes.
+All three pass records through unchanged.
+.Pp
+.Fn dtfl_emit_record
+appends a record of
+.Fa len
+bytes to the sink
+.Fa e
+passed to a producing callback.
+.Fn dtfl_emit_reserve
+instead reserves
+.Fa len
+bytes and returns where to write them, committing the record once
+written; the returned pointer is valid until the next emit on
+.Fa e .
+.Pp
+The context in
+.Fa ctx
+is passed to the callback as its first argument.
+When
+.Fa ctx
+carries a destructor
+.Pq Dv DTFL_CTX ,
+the operator owns the context and releases it when the operator is
+dropped.
+.Sh RETURN VALUES
+.Fn dtfl_stream_flat_map ,
+.Fn dtfl_stream_filter
+and the inspect functions return the new stream, owned by the scope.
+.Fn dtfl_emit_reserve
+returns a pointer to the reserved record bytes.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void add_one(void *ctx, const uint64_t *t, const void *rec,
+    size_t len, dtfl_emit *out) {
+	unsigned char buf[8];
+	dtfl_put_u64(buf, dtfl_get_u64(rec) + 1);
+	dtfl_emit_record(out, buf, sizeof buf);
+}
+
+static bool is_even(void *ctx, const void *rec, size_t len) {
+	return dtfl_get_u64(rec) % 2 == 0;
+}
+
+dtfl_stream *s = dtfl_stream_flat_map(in, dtfl_type_u64(), add_one,
+    DTFL_NOCTX);
+s = dtfl_stream_filter(s, is_even, DTFL_NOCTX);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+A record type mismatch or an invalid stream is a programming error and
+calls the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_stream_concat 3 ,
+.Xr dtfl_stream_count 3 ,
+.Xr dtfl_stream_exchange 3 ,
+.Xr dtfl_stream_partition 3 ,
+.Xr dtfl_to_stream 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn map ,
+.Fn flat_map ,
+.Fn filter ,
+.Fn inspect ,
+.Fn inspect_batch
+and
+.Fn inspect_core
+operators.
+.Sh THREAD SAFETY
+Each operator and its stream belong to the worker thread that built
+them.
+The callbacks run on that thread during the worker's steps and must not
+be called directly.

@@ -163,6 +163,14 @@ void __dtfl_output_give(dtfl_output *o, const uint64_t *time, __dtfl_batch *data
 /* Flushes the chain (ProgressSession drop). */
 void __dtfl_output_done(dtfl_output *o);
 
+/*
+ * Reserves `len` bytes for the next record of an open session and
+ * returns where to write them (session_give's uninitialized form).  The
+ * record is committed when the pointer is written; the returned pointer
+ * stays valid until the next give/reserve or the session closes.
+ */
+void *__dtfl_session_reserve(dtfl_session *s, size_t len);
+
 /* ------------------------------------------------------------------ */
 /* Pact (channels/pact.rs)                                             */
 /* ------------------------------------------------------------------ */
