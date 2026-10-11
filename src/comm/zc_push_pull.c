@@ -26,7 +26,7 @@
 
 /* An empty FIFO with one reference. */
 __dtfl_bytes_fifo *
-__dtfl_fifo_new(void)
+__dtfl_bytes_fifo_new(void)
 {
 	__dtfl_bytes_fifo *f = __dtfl_alloc(sizeof *f);
 
@@ -38,7 +38,7 @@ __dtfl_fifo_new(void)
 
 /* Rc::clone: one more worker-local reference. */
 __dtfl_bytes_fifo *
-__dtfl_fifo_retain(__dtfl_bytes_fifo *f)
+__dtfl_bytes_fifo_retain(__dtfl_bytes_fifo *f)
 {
 	f->rc++;
 	return f;
@@ -46,7 +46,7 @@ __dtfl_fifo_retain(__dtfl_bytes_fifo *f)
 
 /* Drops one reference; the last frees any undelivered views. */
 void
-__dtfl_fifo_release(__dtfl_bytes_fifo *f)
+__dtfl_bytes_fifo_release(__dtfl_bytes_fifo *f)
 {
 	size_t i;
 
@@ -60,7 +60,7 @@ __dtfl_fifo_release(__dtfl_bytes_fifo *f)
 
 /* push_back: moves *b in (b is zeroed). */
 void
-__dtfl_fifo_push(__dtfl_bytes_fifo *f, __dtfl_bytes *b)
+__dtfl_bytes_fifo_push(__dtfl_bytes_fifo *f, __dtfl_bytes *b)
 {
 	/* Reuse the consumed prefix once it is at least half the vector. */
 	if (f->head > 0 && f->head >= f->items.len / 2) {
@@ -75,7 +75,7 @@ __dtfl_fifo_push(__dtfl_bytes_fifo *f, __dtfl_bytes *b)
 
 /* pop_front: moves the oldest view to *out; false if empty. */
 bool
-__dtfl_fifo_pop(__dtfl_bytes_fifo *f, __dtfl_bytes *out)
+__dtfl_bytes_fifo_pop(__dtfl_bytes_fifo *f, __dtfl_bytes *out)
 {
 	if (f->head == f->items.len)
 		return false;
@@ -184,7 +184,7 @@ zc_puller_pull(__dtfl_pull *pp)
 	__dtfl_bytes b;
 	void *msg;
 
-	if (!__dtfl_fifo_pop(p->receiver, &b)) {
+	if (!__dtfl_bytes_fifo_pop(p->receiver, &b)) {
 		if (p->count != 0) {
 			__dtfl_events_push(p->events, p->index);
 			p->count = 0;
@@ -213,7 +213,7 @@ zc_puller_destroy(__dtfl_pull *pp)
 		__dtfl_vec_free(&c->dropped);
 		__dtfl_free(c);
 	}
-	__dtfl_fifo_release(p->receiver);
+	__dtfl_bytes_fifo_release(p->receiver);
 	__dtfl_free(p);
 }
 
@@ -229,7 +229,7 @@ __dtfl_zc_puller_new(__dtfl_bytes_fifo *receiver, const __dtfl_msg_class *mc,
 	zc_puller *p = __dtfl_alloc(sizeof *p);
 
 	p->base.ops = &zc_puller_ops;
-	p->receiver = __dtfl_fifo_retain(receiver);
+	p->receiver = __dtfl_bytes_fifo_retain(receiver);
 	p->mc = mc;
 	p->index = identifier;
 	p->count = 0;

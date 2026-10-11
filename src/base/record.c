@@ -484,10 +484,9 @@ option_fmt(const dtfl_type *t, FILE *f, const void *p, size_t len)
 /*
  * Element count of a vec value, or false if the count cannot fit in
  * avail.  A zero-width element type (unit) holds any count in 8 bytes.
- * ponytail: for element types whose values may be zero bytes but are
- * not zero-width (some user types), the count is capped at the payload
- * byte count to bound the parse loop; a dedicated min-size callback
- * would lift that.
+ * For element types whose values may be zero bytes but are not
+ * zero-width, the count is capped at the payload byte count to bound
+ * the parse loop; a dedicated min-size callback would lift that cap.
  */
 static bool
 vec_count(const dtfl_type *t, const unsigned char *p, size_t avail,
@@ -585,9 +584,9 @@ vec_fmt(const dtfl_type *t, FILE *f, const void *p, size_t len)
 			out += w;
 		}
 		/*
-		 * ponytail: a Vec of zero-width elements can claim 2^64 of
-		 * them in 8 bytes; print the first VEC_FMT_MAX and elide the
-		 * rest instead of looping for ever.
+		 * A vec of zero-width elements can claim 2^64 of them in 8
+		 * bytes; print the first VEC_FMT_MAX and elide the rest rather
+		 * than loop for ever.
 		 */
 		if (i == VEC_FMT_MAX) {
 			if ((w = fprintf(f, "...")) < 0)

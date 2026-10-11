@@ -26,15 +26,25 @@ typedef struct __dtfl_comms_guard __dtfl_comms_guard;
 
 /*
  * Builds `*nbuilders` allocator builders (one per local worker) for cfg.
- * On success returns 0, stores a newly allocated builders array and, for
- * clusters, a network guard (else NULL).  On failure returns DTFL_EIO or
- * DTFL_EINVAL with error detail.
+ * On success returns 0, stores a newly allocated builders array (free it
+ * with __dtfl_free after handing out or destroying every builder) and,
+ * for clusters, a network guard (else NULL).  On failure returns
+ * DTFL_EIO or DTFL_EINVAL with error detail, or DTFL_ENOTSUP for a mode
+ * this build cannot run yet (ProcessBinary and Cluster until the
+ * zero-copy allocators land).
  */
 int __dtfl_comm_initialize(const dtfl_config *cfg,
     __dtfl_allocator_builder ***builders, size_t *nbuilders,
     __dtfl_comms_guard **guard);
 
-/* Waits for network threads to exit, then frees the guard. */
+/* Waits for network threads to exit, then frees the guard.  NULL is a no-op. */
 void __dtfl_comms_guard_join(__dtfl_comms_guard *guard);
+
+/*
+ * Cluster { zerocopy }: -z was given with -n > 1, so intra-process
+ * peers use ProcessBinary under the TCP allocator.  Not public yet; the
+ * cluster allocator is its only reader.
+ */
+bool __dtfl_config_zerocopy(const dtfl_config *cfg);
 
 #endif /* DTFL_INIT_INT_H */

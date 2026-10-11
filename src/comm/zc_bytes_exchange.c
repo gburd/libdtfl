@@ -34,9 +34,9 @@
 /* ------------------------------------------------------------------ */
 
 /*
- * ponytail: a sliding array, not a ring.  pop_front advances head and
- * push_back compacts when the tail is full, so each entry moves O(1)
- * times amortized; insert/remove in the middle are O(n), which only the
+ * A sliding array, not a ring.  pop_front advances head and push_back
+ * compacts when the tail is full, so each entry moves O(1) times
+ * amortized; insert/remove in the middle are O(n), which only the
  * prefetch policy uses near the front.
  */
 void

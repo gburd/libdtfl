@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # src/comm (zero-copy layer): MessageHeader framing, byte slabs, merge
 # queues, spill policies, serializing push/pull and the ProcessBinary
-# allocator.  zc_shim.c is TEMPORARY: remove it when feat/p2-comm merges.
+# allocator.
 
 zc_sources = \
 	src/comm/zc_int.h \
@@ -10,8 +10,7 @@ zc_sources = \
 	src/comm/zc_bytes_exchange.c \
 	src/comm/spill.c \
 	src/comm/zc_push_pull.c \
-	src/comm/zc_allocator_process.c \
-	src/comm/zc_shim.c
+	src/comm/zc_allocator_process.c
 
 libdtfl_la_SOURCES += $(zc_sources)
 libdtfl_internal_la_SOURCES += $(zc_sources)

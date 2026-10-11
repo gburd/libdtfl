@@ -71,9 +71,9 @@ typedef struct to_local_entry {
 } to_local_entry;
 
 /*
- * ponytail: a vector sorted by channel with binary search.  Channels
- * are allocated in increasing order, so inserts append; a hash map is
- * the upgrade if many channels are live and arrive out of order.
+ * A vector sorted by channel with binary search.  Channels are
+ * allocated in increasing order, so inserts append; a hash map is the
+ * upgrade if many channels are live and arrive out of order.
  */
 static size_t
 to_local_find(const __dtfl_vec *m, size_t channel, bool *found)
@@ -96,7 +96,7 @@ to_local_find(const __dtfl_vec *m, size_t channel, bool *found)
 static __dtfl_bytes_fifo *
 to_local_insert(__dtfl_vec *m, size_t at, size_t channel)
 {
-	to_local_entry e = { channel, __dtfl_fifo_new() };
+	to_local_entry e = { channel, __dtfl_bytes_fifo_new() };
 	to_local_entry *base;
 
 	__dtfl_vec_push(m, &e);
@@ -200,7 +200,7 @@ zc_process_receive(__dtfl_allocator *a)
 		 * The FIFO may be non-empty if the dataflow was forcibly
 		 * dropped: every worker drops it too, without waiting on it.
 		 */
-		__dtfl_fifo_release(DTFL_VEC_AT(&p->to_local, to_local_entry,
+		__dtfl_bytes_fifo_release(DTFL_VEC_AT(&p->to_local, to_local_entry,
 		    at)->fifo);
 		__dtfl_vec_remove(&p->to_local, at);
 	}
@@ -233,12 +233,12 @@ zc_process_receive(__dtfl_allocator *a)
 			at = to_local_find(&p->to_local, header.channel,
 			    &found);
 			if (found) {
-				__dtfl_fifo_push(DTFL_VEC_AT(&p->to_local,
+				__dtfl_bytes_fifo_push(DTFL_VEC_AT(&p->to_local,
 				    to_local_entry, at)->fifo, &peel);
 			} else if (!p->has_bound ||
 			    p->channel_id_bound < header.channel) {
 				/* Data may arrive before allocation. */
-				__dtfl_fifo_push(to_local_insert(&p->to_local,
+				__dtfl_bytes_fifo_push(to_local_insert(&p->to_local,
 				    at, header.channel), &peel);
 			} else {
 				/* A channel already dropped here. */
@@ -287,7 +287,7 @@ zc_process_destroy(__dtfl_allocator *a)
 	__dtfl_free(p->sends);
 	__dtfl_free(p->recvs);
 	for (i = 0; i < p->to_local.len; i++)
-		__dtfl_fifo_release(DTFL_VEC_AT(&p->to_local, to_local_entry,
+		__dtfl_bytes_fifo_release(DTFL_VEC_AT(&p->to_local, to_local_entry,
 		    i)->fifo);
 	__dtfl_vec_free(&p->to_local);
 	for (i = 0; i < p->staged.len; i++)
@@ -303,11 +303,11 @@ zc_process_destroy(__dtfl_allocator *a)
 }
 
 static const __dtfl_allocator_ops zc_process_ops = {
-	zc_process_allocate,
-	zc_process_receive,
-	zc_process_release,
-	zc_process_await_events,
-	zc_process_destroy,
+	.allocate = zc_process_allocate,
+	.receive = zc_process_receive,
+	.release = zc_process_release,
+	.await_events = zc_process_await_events,
+	.destroy = zc_process_destroy,
 };
 
 /*

@@ -7,7 +7,12 @@ progress_sources = \
 	src/progress/progress_int.h \
 	src/progress/time.c \
 	src/progress/change_batch.c \
-	src/progress/antichain.c
+	src/progress/antichain.c \
+	src/progress/operate_int.h \
+	src/progress/operate.c \
+	src/progress/reachability.c \
+	src/progress/progcaster.c \
+	src/progress/subgraph.c
 
 libdtfl_la_SOURCES += $(progress_sources)
 libdtfl_internal_la_SOURCES += $(progress_sources)
@@ -33,3 +38,15 @@ tests_pbt_pbt_time_LDADD = $(INTERNAL_PBT_LIBS)
 tests_pbt_pbt_antichain_SOURCES = tests/pbt/pbt_antichain.c
 tests_pbt_pbt_antichain_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_antichain_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_reachability
+TESTS += tests/unit/test_reachability
+tests_unit_test_reachability_SOURCES = tests/unit/test_reachability.c
+tests_unit_test_reachability_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_reachability_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_reachability
+TESTS += tests/pbt/pbt_reachability
+tests_pbt_pbt_reachability_SOURCES = tests/pbt/pbt_reachability.c
+tests_pbt_pbt_reachability_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_reachability_LDADD = $(INTERNAL_PBT_LIBS)

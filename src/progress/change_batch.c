@@ -130,9 +130,8 @@ sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
 
 /*
  * Sorts entries by key only, as upstream's sort_unstable_by on .0.
- * ponytail: heapsort, in place and allocation-free because qsort has no
- * context argument for the key width; switch to a merge sort if
- * profiling shows compaction is hot.
+ * Heapsort, in place and allocation-free because qsort has no context
+ * argument for the key width.
  */
 static void
 sort_by_key(__dtfl_change_batch *cb)

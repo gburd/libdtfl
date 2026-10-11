@@ -257,13 +257,13 @@ typedef struct __dtfl_bytes_fifo {
 	size_t head;
 } __dtfl_bytes_fifo;
 
-__dtfl_bytes_fifo *__dtfl_fifo_new(void);
-__dtfl_bytes_fifo *__dtfl_fifo_retain(__dtfl_bytes_fifo *f);
-void __dtfl_fifo_release(__dtfl_bytes_fifo *f);
+__dtfl_bytes_fifo *__dtfl_bytes_fifo_new(void);
+__dtfl_bytes_fifo *__dtfl_bytes_fifo_retain(__dtfl_bytes_fifo *f);
+void __dtfl_bytes_fifo_release(__dtfl_bytes_fifo *f);
 /* Moves *b in (b is zeroed). */
-void __dtfl_fifo_push(__dtfl_bytes_fifo *f, __dtfl_bytes *b);
+void __dtfl_bytes_fifo_push(__dtfl_bytes_fifo *f, __dtfl_bytes *b);
 /* Moves the front view to *out; false if empty. */
-bool __dtfl_fifo_pop(__dtfl_bytes_fifo *f, __dtfl_bytes *out);
+bool __dtfl_bytes_fifo_pop(__dtfl_bytes_fifo *f, __dtfl_bytes *out);
 
 /*
  * canary.rs plus its Rc<RefCell<Vec<usize>>>: identifiers of channels
