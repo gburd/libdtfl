@@ -48,34 +48,57 @@ draw_coord(pbt_tc *tc, bool allow_signed)
 }
 
 /* A class of at most `levels` composite levels; never NULL. */
+static dtfl_time_class *draw_class(pbt_tc *tc, int levels);
+
+static void
+class_release(void *c)
+{
+	dtfl_time_class_free(c);
+}
+
+/*
+ * Draws a random class.  Every class returned (and every intermediate)
+ * is registered with pbt_defer, so it is released when the case ends
+ * even if a later draw or assertion unwinds; callers must not free it.
+ */
 static dtfl_time_class *
-draw_class(pbt_tc *tc, int levels)
+draw_class_raw(pbt_tc *tc, int levels)
 {
 	dtfl_time_class *a, *b, *r, *base;
 	int pick = pbt_int(tc, 0, levels > 0 ? 6 : 4);
+	dtfl_coord c;
 
 	switch (pick) {
 	case 0:
 		return dtfl_time_unit();
 	case 1:
 	case 2:
-		return dtfl_time_total(draw_coord(tc, true));
+		c = draw_coord(tc, true);
+		return dtfl_time_total(c);
 	case 3:
-		base = dtfl_time_total(draw_coord(tc, false));
+		c = draw_coord(tc, false);
+		base = dtfl_time_total(c);
+		pbt_defer(tc, class_release, base);
 		r = dtfl_time_altneu(base);
-		dtfl_time_class_free(base);
 		return r;
 	case 4:
-		return dtfl_time_pointstamp(draw_coord(tc, false),
-		    (unsigned)pbt_int(tc, 1, 3));
+		c = draw_coord(tc, false);
+		return dtfl_time_pointstamp(c, (unsigned)pbt_int(tc, 1, 3));
 	default:
 		a = draw_class(tc, levels - 1);
 		b = draw_class(tc, levels - 1);
 		r = pick == 5 ? dtfl_time_product(a, b) : dtfl_time_lex(a, b);
-		dtfl_time_class_free(a);
-		dtfl_time_class_free(b);
 		return r != NULL ? r : dtfl_time_u64();
 	}
+}
+
+static dtfl_time_class *
+draw_class(pbt_tc *tc, int levels)
+{
+	dtfl_time_class *r = draw_class_raw(tc, levels);
+
+	pbt_defer(tc, class_release, r);
+	return r;
 }
 
 /*
@@ -289,7 +312,6 @@ prop_lattice_laws(pbt_tc *tc)
 	/* minimum is below everything. */
 	dtfl_time_minimum(k, x);
 	PBT_ASSERT(LE(k, x, a));
-	dtfl_time_class_free(k);
 }
 
 static void
@@ -319,7 +341,6 @@ prop_partial_order(pbt_tc *tc)
 	dtfl_time_join(k, b, c, c);
 	PBT_ASSERT(LE(k, a, b) && LE(k, b, c) && LE(k, a, c));
 	PBT_ASSERT(dtfl_time_cmp(k, a, b) <= 0 && dtfl_time_cmp(k, b, c) <= 0);
-	dtfl_time_class_free(k);
 }
 
 /* ------------------------------------------------------------------ */
@@ -380,7 +401,6 @@ prop_advance_by(pbt_tc *tc)
 	__dtfl_time_copy(k, x, t1);
 	__dtfl_time_advance_by(k, x, f, 0);
 	PBT_ASSERT(EQ(k, x, t1));
-	dtfl_time_class_free(k);
 }
 
 /* ------------------------------------------------------------------ */
@@ -419,7 +439,6 @@ prop_results_in_monotone(pbt_tc *tc)
 	if (dtfl_summary_less_equal(k, s1, s2) &&
 	    dtfl_summary_less_equal(k, s2, s1))
 		PBT_ASSERT(__dtfl_words_cmp(s1, s2, k->sdepth) == 0);
-	dtfl_time_class_free(k);
 }
 
 static void
@@ -455,7 +474,6 @@ prop_followed_by(pbt_tc *tc)
 	dtfl_summary_default(k, r1);
 	PBT_ASSERT(dtfl_summary_followed_by(k, a, r1, r2));
 	PBT_ASSERT(__dtfl_words_cmp(r2, a, k->sdepth) == 0);
-	dtfl_time_class_free(k);
 }
 
 /* ------------------------------------------------------------------ */
@@ -487,7 +505,6 @@ prop_codec_roundtrip(pbt_tc *tc)
 	PBT_ASSERT(__dtfl_summary_decode(k, v.data, v.len, back, &used) == 0);
 	PBT_ASSERT(used == n && __dtfl_words_cmp(back, t, k->sdepth) == 0);
 	__dtfl_vec_free(&v);
-	dtfl_time_class_free(k);
 }
 
 /* Decoding random bytes never reads past `len` and never crashes. */
@@ -509,7 +526,6 @@ prop_decode_robust(pbt_tc *tc)
 		PBT_ASSERT(used <= len);
 	err = __dtfl_summary_decode(k, buf, len, t, &used);
 	PBT_ASSERT(err == 0 || err == DTFL_EPROTO || err == DTFL_ERANGE);
-	dtfl_time_class_free(k);
 }
 
 static uint64_t
@@ -635,7 +651,6 @@ prop_cmp_is_rust_ord(pbt_tc *tc)
 	PBT_ASSERT(CMP3(got, 0) == want);
 	__dtfl_vec_free(&va);
 	__dtfl_vec_free(&vb);
-	dtfl_time_class_free(k);
 }
 
 static const pbt_prop props[] = {

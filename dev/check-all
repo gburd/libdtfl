@@ -56,6 +56,7 @@ run default --enable-debug
 run asan --enable-debug --enable-asan --enable-ubsan
 if [ -n "$hegel" ]; then
 	run hegel --enable-debug $hegel
+	run hegel-asan --enable-debug --enable-asan --enable-ubsan $hegel
 else
 	summary="$summary\n  SKIP  hegel (libhegel not found)"
 fi
