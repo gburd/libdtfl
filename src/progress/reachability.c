@@ -340,11 +340,9 @@ sort_rev_internal(rev_internal *v, size_t n)
 
 /*
  * Finds the accumulated entry for (loc, output) by binary search in a
- * vector kept sorted by key.  ponytail: upstream keeps binary-sized runs
- * (BinaryRuns) so a round's batch is sorted only once; a single sorted
- * vector with insertion costs O(n) per novel key, which is fine for the
- * graph sizes the tests exercise (shape_scaling goes to 100000 nodes and
- * should be watched; switch to runs if it dominates).
+ * vector kept sorted by key.  Upstream keeps binary-sized runs so a
+ * round's batch is sorted only once; this single sorted vector costs
+ * O(n) per novel key, acceptable for the graph sizes the tests cover.
  */
 static size_t
 acc_find(const __dtfl_vec *acc, __dtfl_location loc, size_t output, bool *found)

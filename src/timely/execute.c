@@ -22,6 +22,8 @@
 #include "comm/init_int.h"
 #include "comm/sim_int.h"
 
+#include <stdio.h>
+
 struct dtfl_guards {
 	size_t n;
 	__dtfl_thread *threads;
@@ -100,7 +102,7 @@ dtfl_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx,
 		g->n = 0;
 	} else {
 		for (i = 0; i < n; i++) {
-			char name[32];
+			char name[48];
 
 			snprintf(name, sizeof name, "timely:work-%zu", i);
 			rc = __dtfl_thread_spawn(name, worker_thread, &g->starts[i],

@@ -1,0 +1,121 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_SCOPE_SCOPED 3
+.Os
+.Sh NAME
+.Nm dtfl_scope_scoped ,
+.Nm dtfl_scope_iterative ,
+.Nm dtfl_scope_region ,
+.Nm dtfl_scope_worker ,
+.Nm dtfl_scope_time_class ,
+.Nm dtfl_scope_index ,
+.Nm dtfl_scope_peers ,
+.Nm dtfl_scope_addr ,
+.Nm dtfl_scope_parent
+.Nd nested dataflow scopes
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft int
+.Fn dtfl_scope_scoped "dtfl_scope *s" "const char *name" "const dtfl_time_class *inner" "dtfl_build_fn build" "void *ctx"
+.Ft int
+.Fn dtfl_scope_iterative "dtfl_scope *s" "const char *name" "dtfl_build_fn build" "void *ctx"
+.Ft int
+.Fn dtfl_scope_region "dtfl_scope *s" "const char *name" "dtfl_build_fn build" "void *ctx"
+.Ft dtfl_worker *
+.Fn dtfl_scope_worker "const dtfl_scope *s"
+.Ft "const dtfl_time_class *"
+.Fn dtfl_scope_time_class "const dtfl_scope *s"
+.Ft size_t
+.Fn dtfl_scope_index "const dtfl_scope *s"
+.Ft size_t
+.Fn dtfl_scope_peers "const dtfl_scope *s"
+.Ft "const size_t *"
+.Fn dtfl_scope_addr "const dtfl_scope *s" "size_t *len"
+.Ft dtfl_scope *
+.Fn dtfl_scope_parent "const dtfl_scope *s"
+.Sh DESCRIPTION
+A scope is the context in which operators are built, passed to the
+.Vt dtfl_build_fn
+of
+.Xr dtfl_worker_dataflow 3 .
+Its timestamp class is
+.Fn dtfl_scope_time_class .
+.Pp
+.Fn dtfl_scope_scoped
+builds a child subgraph whose inner timestamp class is
+.Fa inner ,
+which must refine the enclosing scope's class.
+It reserves a slot, calls
+.Fa build
+with the child scope and
+.Fa ctx ,
+and installs the child.
+.Fn dtfl_scope_iterative
+is
+.Fn dtfl_scope_scoped
+with
+.Fa inner
+equal to
+.Fn Product "the outer class" "u64" ,
+the usual class for a loop that counts iterations.
+.Fn dtfl_scope_region
+is
+.Fn dtfl_scope_scoped
+with the same class as the enclosing scope, a grouping boundary that
+adds no timestamp coordinate.
+.Pp
+.Fn dtfl_scope_worker
+is the worker that owns the scope.
+.Fn dtfl_scope_index
+and
+.Fn dtfl_scope_peers
+forward the worker's index and peer count.
+.Fn dtfl_scope_addr
+returns the scope's address, an array of
+.Pf * Fa len
+indices from the root; the pointer is valid for the life of the scope.
+.Fn dtfl_scope_parent
+is the enclosing scope, or
+.Dv NULL
+at the root.
+.Sh RETURN VALUES
+.Fn dtfl_scope_scoped ,
+.Fn dtfl_scope_iterative
+and
+.Fn dtfl_scope_region
+return 0 on success or one of the errors below.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void inner(dtfl_scope *s, void *ctx) { /* build the loop body */ }
+
+static void outer(dtfl_scope *s, void *ctx) {
+	dtfl_scope_iterative(s, "loop", inner, ctx);
+}
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ERANGE
+.It Bq Er DTFL_EINVAL
+.Fa inner
+does not refine the enclosing scope's class.
+.It Bq Er DTFL_ERANGE
+The product class for
+.Fn dtfl_scope_iterative
+would exceed the maximum timestamp depth.
+.El
+.Sh SEE ALSO
+.Xr dtfl_time_product 3 ,
+.Xr dtfl_worker_dataflow 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn Scope::scoped ,
+.Fn iterative
+and
+.Fn region .
+.Sh THREAD SAFETY
+A scope exists only during the build callback that received it and
+belongs to that callback's worker thread.
+It must not be stored past the callback or used from another thread.

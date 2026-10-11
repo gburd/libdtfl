@@ -1,0 +1,116 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_EXECUTE 3
+.Os
+.Sh NAME
+.Nm dtfl_execute ,
+.Nm dtfl_execute_directly ,
+.Nm dtfl_guards_join
+.Nd run a timely dataflow computation
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft int
+.Fn dtfl_execute "const dtfl_config *cfg" "dtfl_worker_fn fn" "void *ctx" "dtfl_guards **guards"
+.Ft int
+.Fn dtfl_execute_directly "dtfl_worker_fn fn" "void *ctx"
+.Ft int
+.Fn dtfl_guards_join "dtfl_guards *guards"
+.Sh DESCRIPTION
+.Fn dtfl_execute
+starts the workers described by
+.Fa cfg
+and runs
+.Fa fn
+on each, passing it the worker handle and
+.Fa ctx .
+Each worker builds its dataflows in
+.Fa fn ,
+then steps until no dataflows remain.
+The same
+.Fa fn
+runs on every worker, so it must build the same dataflows in the same
+order on each.
+.Pp
+When
+.Fa guards
+is
+.Dv NULL ,
+.Fn dtfl_execute
+waits for every worker to finish before returning.
+When it is not
+.Dv NULL ,
+the call returns once the workers have started and stores a
+.Vt dtfl_guards
+handle through
+.Fa guards ;
+the caller must then call
+.Fn dtfl_guards_join
+to wait for completion and release the handle.
+.Pp
+.Fn dtfl_execute_directly
+runs
+.Fa fn
+on a single worker on the calling thread, the equivalent of
+.Fn dtfl_execute
+with a default
+.Vt dtfl_config .
+.Pp
+The communication mode in
+.Fa cfg
+selects the runtime: a single thread, several threads in one process,
+or the seeded simulator.
+See
+.Xr dtfl_config 3 .
+.Sh RETURN VALUES
+These functions return 0 on success, or one of the errors below.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void worker(dtfl_worker *w, void *ctx) {
+	dtfl_worker_dataflow(w, "example", ctx, build, NULL);
+}
+
+dtfl_config *cfg = dtfl_config_new();
+dtfl_config_set_threads(cfg, 4);
+dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS);
+if (dtfl_execute(cfg, worker, tc, NULL) != 0)
+	errx(1, "%s", dtfl_last_error_detail());
+dtfl_config_free(cfg);
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ENOTSUP
+.It Bq Er DTFL_EINVAL
+.Fa cfg
+or
+.Fa fn
+is
+.Dv NULL .
+.It Bq Er DTFL_ENOTSUP
+The configured communication mode is not available in this build.
+.It Bq Er DTFL_EIO
+A worker or network thread could not be started.
+.El
+.Sh SEE ALSO
+.Xr dtfl_config 3 ,
+.Xr dtfl_worker_dataflow 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn execute ,
+.Fn execute_directly
+and the
+.Vt WorkerGuards
+returned by
+.Fn execute .
+.Sh THREAD SAFETY
+.Fn dtfl_execute
+and
+.Fn dtfl_execute_directly
+are called once from a controlling thread.
+The worker handle each passes to
+.Fa fn
+belongs to that worker's thread and must not be shared.
+.Fn dtfl_guards_join
+is called from the thread that received the handle.

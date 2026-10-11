@@ -22,6 +22,7 @@
 #include "timely/worker_int.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 typedef struct path_entry {
 	size_t *path;	/* owned; NULL if unused */
@@ -175,11 +176,12 @@ __dtfl_worker_allocate(__dtfl_worker *w, size_t identifier, const size_t *path,
 
 void
 __dtfl_worker_pipeline(__dtfl_worker *w, size_t identifier, const size_t *path,
-    size_t len, __dtfl_push **pusher, __dtfl_pull **puller)
+    size_t len, const __dtfl_msg_class *mc, __dtfl_push **pusher,
+    __dtfl_pull **puller)
 {
 	DTFL_WORKER_CHECK(w);
 	record_path(w, identifier, path, len);
-	__dtfl_pipeline(w->allocator, identifier, pusher, puller);
+	__dtfl_pipeline(w->allocator, identifier, mc, pusher, puller);
 }
 
 void

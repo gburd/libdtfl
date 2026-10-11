@@ -10,7 +10,9 @@ progress_sources = \
 	src/progress/antichain.c \
 	src/progress/operate_int.h \
 	src/progress/operate.c \
-	src/progress/reachability.c
+	src/progress/reachability.c \
+	src/progress/progcaster.c \
+	src/progress/subgraph.c
 
 libdtfl_la_SOURCES += $(progress_sources)
 libdtfl_internal_la_SOURCES += $(progress_sources)

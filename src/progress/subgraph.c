@@ -23,6 +23,7 @@
 #include "timely/worker_int.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ------------------------------------------------------------------ */
 /* Per-child state (PerOperatorState)                                  */

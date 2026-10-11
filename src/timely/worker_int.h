@@ -133,7 +133,8 @@ void __dtfl_worker_allocate(__dtfl_worker *w, size_t identifier,
     const size_t *path, size_t len, const __dtfl_msg_class *mc,
     __dtfl_push **pushers, __dtfl_pull **puller);
 void __dtfl_worker_pipeline(__dtfl_worker *w, size_t identifier,
-    const size_t *path, size_t len, __dtfl_push **pusher, __dtfl_pull **puller);
+    const size_t *path, size_t len, const __dtfl_msg_class *mc,
+    __dtfl_push **pusher, __dtfl_pull **puller);
 void __dtfl_worker_broadcast(__dtfl_worker *w, size_t identifier,
     const size_t *path, size_t len, const __dtfl_msg_class *mc,
     __dtfl_push **pusher, __dtfl_pull **puller);
