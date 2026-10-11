@@ -1,0 +1,283 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_TYPE 3
+.Os
+.Sh NAME
+.Nm dtfl_type_unit ,
+.Nm dtfl_type_u8 ,
+.Nm dtfl_type_u16 ,
+.Nm dtfl_type_u32 ,
+.Nm dtfl_type_u64 ,
+.Nm dtfl_type_i8 ,
+.Nm dtfl_type_i16 ,
+.Nm dtfl_type_i32 ,
+.Nm dtfl_type_i64 ,
+.Nm dtfl_type_bytes ,
+.Nm dtfl_type_string ,
+.Nm dtfl_type_tuple ,
+.Nm dtfl_type_pair ,
+.Nm dtfl_type_option ,
+.Nm dtfl_type_vec ,
+.Nm dtfl_type_new ,
+.Nm dtfl_type_retain ,
+.Nm dtfl_type_free ,
+.Nm dtfl_type_cmp ,
+.Nm dtfl_type_hash ,
+.Nm dtfl_type_fmt ,
+.Nm dtfl_type_value_len ,
+.Nm dtfl_type_tuple_len ,
+.Nm dtfl_type_tuple_field ,
+.Nm dtfl_type_tuple_offset
+.Nd record type descriptors
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/record.h
+.Ft const dtfl_type *
+.Fn dtfl_type_unit void
+.Ft const dtfl_type *
+.Fn dtfl_type_u8 void
+.Ft const dtfl_type *
+.Fn dtfl_type_u16 void
+.Ft const dtfl_type *
+.Fn dtfl_type_u32 void
+.Ft const dtfl_type *
+.Fn dtfl_type_u64 void
+.Ft const dtfl_type *
+.Fn dtfl_type_i8 void
+.Ft const dtfl_type *
+.Fn dtfl_type_i16 void
+.Ft const dtfl_type *
+.Fn dtfl_type_i32 void
+.Ft const dtfl_type *
+.Fn dtfl_type_i64 void
+.Ft const dtfl_type *
+.Fn dtfl_type_bytes void
+.Ft const dtfl_type *
+.Fn dtfl_type_string void
+.Ft const dtfl_type *
+.Fn dtfl_type_tuple "const dtfl_type *const *fields" "size_t n"
+.Ft const dtfl_type *
+.Fn dtfl_type_pair "const dtfl_type *a" "const dtfl_type *b"
+.Ft const dtfl_type *
+.Fn dtfl_type_option "const dtfl_type *inner"
+.Ft const dtfl_type *
+.Fn dtfl_type_vec "const dtfl_type *elem"
+.Ft const dtfl_type *
+.Fn dtfl_type_new "const dtfl_type *def"
+.Ft const dtfl_type *
+.Fn dtfl_type_retain "const dtfl_type *t"
+.Ft void
+.Fn dtfl_type_free "const dtfl_type *t"
+.Ft int
+.Fn dtfl_type_cmp "const dtfl_type *t" "const void *a" "size_t alen" "const void *b" "size_t blen"
+.Ft uint64_t
+.Fn dtfl_type_hash "const dtfl_type *t" "const void *p" "size_t len"
+.Ft int
+.Fn dtfl_type_fmt "const dtfl_type *t" "FILE *f" "const void *p" "size_t len"
+.Ft size_t
+.Fn dtfl_type_value_len "const dtfl_type *t" "const void *p" "size_t avail"
+.Ft size_t
+.Fn dtfl_type_tuple_len "const dtfl_type *t"
+.Ft const dtfl_type *
+.Fn dtfl_type_tuple_field "const dtfl_type *t" "size_t i"
+.Ft size_t
+.Fn dtfl_type_tuple_offset "const dtfl_type *t" "const void *p" "size_t len" "size_t i" "size_t *flen"
+.Sh DESCRIPTION
+A libdtfl record is a byte string.
+A
+.Vt dtfl_type
+descriptor says how long a value is, how two values compare, how a
+value hashes for exchange, and how to print one.
+The library never interprets record bytes itself; it calls the
+descriptor.
+A descriptor's
+.Fa cmp
+must reproduce the derived
+.Vt Ord
+of the Rust type it models, because operators such as reduce hand
+values to user code in that order.
+.Pp
+The built-in descriptors are static.
+Their encodings are written and read with
+.Xr dtfl_put_u64 3
+and its siblings:
+.Bl -tag -width "dtfl_type_string()"
+.It Fn dtfl_type_unit
+.Vt () :
+zero bytes; every value is equal.
+.It Fn dtfl_type_u8 No to Fn dtfl_type_u64
+Unsigned integers, big-endian, 1 to 8 bytes.
+.It Fn dtfl_type_i8 No to Fn dtfl_type_i64
+Signed integers, big-endian with the sign bit flipped, so that
+.Xr memcmp 3
+order is numeric order.
+.It Fn dtfl_type_bytes , Fn dtfl_type_string
+.Vt Vec<u8>
+and
+.Vt String :
+a u64 big-endian length, then the payload.
+Values compare lexicographically over the payload, then by length, so
+.Qq ab
+<
+.Qq abc
+<
+.Qq b .
+This is not
+.Xr memcmp 3
+of the encoding, which would order by length first.
+.El
+.Pp
+Composite descriptors are reference counted.
+Each holds a reference to the descriptors it was built from, so the
+caller may free those right away.
+.Bl -tag -width "dtfl_type_option()"
+.It Fn dtfl_type_tuple
+The fields' encodings concatenated, compared field by field.
+Every field except the last must delimit itself (fixed size or a
+.Fa len
+callback).
+A tuple whose fields are all fixed size is fixed size.
+.Fn dtfl_type_pair
+is the two-field tuple; key and value collections use it.
+.It Fn dtfl_type_option
+A tag byte, 0 for
+.Dv None
+and 1 for
+.Dv Some ,
+then the value.
+.Dv None
+sorts before every
+.Dv Some .
+.It Fn dtfl_type_vec
+A u64 big-endian count, then the elements, compared element by element
+and then by count, as Rust's
+.Vt Vec
+.Vt Ord .
+.El
+.Pp
+.Fn dtfl_type_new
+copies a caller-defined descriptor into a reference-counted one.
+.Fa def->internal
+must be zero, and
+.Fa def->name
+must outlive the result.
+When the last reference goes away,
+.Fa def->ctx_free ,
+if set, is called with
+.Fa def->ctx .
+.Fn dtfl_type_retain
+adds a reference and returns its argument;
+.Fn dtfl_type_free
+drops one.
+Both are no-ops for the built-ins and for
+.Dv NULL .
+.Pp
+.Fn dtfl_type_cmp
+compares two values and returns -1, 0 or 1.
+A descriptor with no
+.Fa cmp
+compares with
+.Xr memcmp 3
+over the common prefix, then by length.
+On malformed values the result is still a deterministic total order,
+and no byte outside the given spans is read.
+.Fn dtfl_type_hash
+returns the descriptor's
+.Fa hash ,
+or 64-bit FNV-1a of the record bytes.
+.Fn dtfl_type_fmt
+prints a value the way Rust's
+.Vt Debug
+does: integers in decimal, strings quoted and escaped, tuples as
+.Ql (a, b) ,
+options as
+.Ql None
+or
+.Ql Some(x) ,
+and vectors as
+.Ql [a, b] .
+Bytes values and anything malformed print as hex.
+.Fn dtfl_type_value_len
+returns the length of the value that starts at
+.Fa p ,
+reading at most
+.Fa avail
+bytes.
+.Pp
+.Fn dtfl_type_tuple_len
+and
+.Fn dtfl_type_tuple_field
+return a tuple descriptor's arity and its
+.Fa i Ns 'th
+field.
+.Fn dtfl_type_tuple_offset
+locates field
+.Fa i
+in the tuple value
+.Fa p
+of
+.Fa len
+bytes and stores the field's length in
+.Fa *flen .
+.Sh RETURN VALUES
+The constructors return a descriptor that the caller releases with
+.Fn dtfl_type_free .
+.Fn dtfl_type_value_len
+and
+.Fn dtfl_type_tuple_offset
+return
+.Dv SIZE_MAX
+if the bytes are not a valid value; 0 is a valid length.
+.Fn dtfl_type_fmt
+returns the number of characters written, or a negative value on an
+output error.
+.Sh EXAMPLES
+A
+.Vt (String, i64)
+record:
+.Bd -literal -offset indent
+const dtfl_type *t = dtfl_type_pair(dtfl_type_string(),
+    dtfl_type_i64());
+unsigned char buf[64];
+size_t n = dtfl_put_bytes(buf, "apple", 5);
+size_t off, flen;
+
+n += dtfl_put_i64(buf + n, -3);
+off = dtfl_type_tuple_offset(t, buf, n, 1, &flen);
+printf("%lld\en", (long long)dtfl_get_i64(buf + off));
+dtfl_type_fmt(t, stdout, buf, n);	/* ("apple", -3) */
+dtfl_type_free(t);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+They call the panic hook
+.Pq Xr dtfl_set_panic_hook 3
+when
+.Fn dtfl_type_tuple
+is given a field other than the last that does not delimit itself,
+when
+.Fn dtfl_type_vec
+is given such an element type, when
+.Fn dtfl_type_new
+is given a descriptor with
+.Fa internal
+set, and when a tuple accessor is given a descriptor that is not a
+tuple or an index past its last field.
+.Sh SEE ALSO
+.Xr dtfl_put_u64 3 ,
+.Xr dtfl_set_panic_hook 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+Rust gets typed records from monomorphisation.
+These descriptors replace it.
+Hashes are FNV-1a over libdtfl's encodings, so exchange routing is not
+bit-compatible with Rust's
+.Vt Hashable ;
+a cluster is all-libdtfl.
+.Sh THREAD SAFETY
+Descriptors are immutable and may be shared between threads.
+Reference counts are atomic.
+.Fn dtfl_type_new
+and the composites may be called from any thread.

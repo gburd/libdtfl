@@ -35,11 +35,18 @@ typedef struct __dtfl_bytes_store {
 	void *ctx;
 } __dtfl_bytes_store;
 
-/* A view [ptr, ptr+len) into a store.  Holds one store reference. */
+/*
+ * A view [ptr, ptr+len) into a store.  Holds one store reference.
+ * `writable` is Rust's BytesMut: the holder is the only view of these
+ * bytes and may write them; it stays on one thread.  A frozen view
+ * (Rust's Bytes) is read-only and may be cloned and sent to other
+ * threads.  Invariant: a writable range overlaps no other live view.
+ */
 typedef struct __dtfl_bytes {
 	__dtfl_bytes_store *store;
 	unsigned char *ptr;
 	size_t len;
+	bool writable;
 } __dtfl_bytes;
 
 /* BytesMut::from: a writable view of a new store of `cap` bytes. */
@@ -47,16 +54,27 @@ void __dtfl_bytes_new(__dtfl_bytes *b, size_t cap);
 /* BytesMut::from over caller memory; `release` frees it at the end. */
 void __dtfl_bytes_wrap(__dtfl_bytes *b, unsigned char *data, size_t cap,
     void (*release)(unsigned char *, size_t, void *), void *ctx);
-/* extract_to: splits off the first `index` bytes into `out`. */
+/*
+ * extract_to: splits off the first `index` bytes into `out`, a frozen
+ * view (as both Rust extract_to methods return Bytes).  Panics if
+ * index > b->len.
+ */
 void __dtfl_bytes_extract_to(__dtfl_bytes *b, size_t index, __dtfl_bytes *out);
-/* try_merge: appends `other` if it is the adjacent view of the same store. */
+/*
+ * try_merge: appends `other` if it is the adjacent view of the same
+ * store, consuming it (other is zeroed).  The result is writable only
+ * if both views were.  On false neither view changes.
+ */
 bool __dtfl_bytes_try_merge(__dtfl_bytes *b, __dtfl_bytes *other);
 /*
- * try_regenerate: if this is the only view of its store, resets it to
- * the whole allocation and returns true.
+ * try_regenerate: if this writable view is the only view of its store,
+ * resets it to the whole allocation and returns true.  Otherwise the
+ * view is unchanged.  Panics on a frozen view.
  */
 bool __dtfl_bytes_try_regenerate(__dtfl_bytes *b);
-/* Clone: a second reference to the same range. */
+/* freeze: makes a writable view read-only (shareable).  Never undone. */
+void __dtfl_bytes_freeze(__dtfl_bytes *b);
+/* Clone: a second reference to the same range.  Panics if b is writable. */
 void __dtfl_bytes_clone(const __dtfl_bytes *b, __dtfl_bytes *out);
 void __dtfl_bytes_release(__dtfl_bytes *b);
 

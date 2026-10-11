@@ -8,5 +8,6 @@
 #define DTFL_DTFL_H
 
 #include "dtfl/base.h"
+#include "dtfl/record.h"
 
 #endif /* DTFL_DTFL_H */
