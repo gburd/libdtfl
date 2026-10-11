@@ -109,19 +109,19 @@ timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/tim
 timely-dataflow	timely/src/dataflow/operators/core/concat.rs	90	src/timely/ops_concat.c	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/core/exchange.rs	54	src/timely/ops_exchange.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_filter.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/input.rs	538	src/timely/ops_input.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/input.rs	538	src/timely/ops_input.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/inspect.rs	156	src/timely/ops_inspect.c	P4	todo	inspect_time, inspect_batch, inspect_container are public API at the pin; removed upstream later (#817)
 timely-dataflow	timely/src/dataflow/operators/core/map.rs	172	src/timely/ops_map.c	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/core/mod.rs	35	include/dtfl/timely.h	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/core/ok_err.rs	85	src/timely/ops_ok_err.c	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/core/partition.rs	87	src/timely/ops_partition.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/probe.rs	236	src/timely/ops_probe.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/probe.rs	236	src/timely/ops_probe.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/rc.rs	80	-	-	subsumed	D2: records are byte strings in refcounted batches; fan-out never copies
-timely-dataflow	timely/src/dataflow/operators/core/reclock.rs	83	src/timely/ops_reclock.c	P4	todo	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/core/reclock.rs	83	src/timely/ops_reclock.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/core/to_stream.rs	98	src/timely/ops_to_stream.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/unordered_input.rs	168	src/timely/ops_unordered_input.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/unordered_input.rs	168	src/timely/ops_unordered_input.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/builder_raw.rs	250	src/timely/builder_raw.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	359	src/timely/builder.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/builder_ref.rs	5	-	-	excluded	TODO stub upstream, not compiled
@@ -140,13 +140,13 @@ timely-dataflow	timely/src/dataflow/operators/vec/count.rs	70	src/timely/ops_cou
 timely-dataflow	timely/src/dataflow/operators/vec/delay.rs	150	src/timely/ops_delay.c	P4	todo	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/filter.rs	38	src/timely/ops_filter.c	P4	todo	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	todo	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	todo	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	todo	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	todo	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	todo	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	worker.rs and scope.rs import each other
 timely-dataflow	timely/src/dataflow/stream.rs	134	src/timely/stream.c	P4	done	
 timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	todo	
