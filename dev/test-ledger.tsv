@@ -9,6 +9,7 @@ timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	203	dataflow
 timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	269	dataflow_operators_core_enterleave_test__test_nested	pass	tests/unit/test_ops_enterleave.c	P4	todo
 timely-dataflow	timely/src/dataflow/operators/core/map.rs	157	dataflow_operators_core_map__test_builder	pass	tests/unit/test_ops_map.c	P4	todo
 timely-dataflow	timely/src/dataflow/operators/core/probe.rs	203	dataflow_operators_core_probe__probe	pass	tests/unit/test_ops_probe.c	P4	done
+timely-dataflow	timely/src/dataflow/operators/core/map.rs	157	dataflow_operators_core_map__test_builder	pass	tests/unit/test_ops_data.c	P4	done
 timely-dataflow	timely/src/dataflow/operators/core/rc.rs	51	dataflow_operators_core_rc_test__test_shared	pass	-	-	subsumed
 timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	289	dataflow_operators_generic_builder_rc__incorrect_capabilities	panic	tests/unit/test_builder.c	P4	done
 timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	321	dataflow_operators_generic_builder_rc__correct_capabilities	pass	tests/unit/test_builder.c	P4	done

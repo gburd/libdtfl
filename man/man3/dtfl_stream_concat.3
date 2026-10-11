@@ -1,0 +1,71 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_CONCAT 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_concat ,
+.Nm dtfl_stream_concatenate
+.Nd merge the contents of streams
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_concat "dtfl_stream *a" "dtfl_stream *b"
+.Ft dtfl_stream *
+.Fn dtfl_stream_concatenate "dtfl_scope *scope" "dtfl_stream *const *streams" "size_t n"
+.Sh DESCRIPTION
+.Fn dtfl_stream_concat
+produces a stream carrying every record of both
+.Fa a
+and
+.Fa b ,
+each at its original time.
+.Pp
+.Fn dtfl_stream_concatenate
+is the general form: it merges the
+.Fa n
+streams in
+.Fa streams ,
+all built in
+.Fa scope ,
+into a single output stream.
+.Fn dtfl_stream_concat
+is
+.Fn dtfl_stream_concatenate
+over the two given streams.
+.Pp
+Every source must carry the same record type, which becomes the output
+stream's type.
+The operator does not reorder or retime records; it only unites the
+streams.
+.Sh RETURN VALUES
+Both functions return the merged stream, owned by the scope.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_stream *merged = dtfl_stream_concat(left, right);
+
+dtfl_stream *parts[3] = { s0, s1, s2 };
+dtfl_stream *all = dtfl_stream_concatenate(scope, parts, 3);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+Mixing record types across the sources is a programming error and calls
+the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_stream_count 3 ,
+.Xr dtfl_stream_exchange 3 ,
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl_stream_partition 3 ,
+.Xr dtfl_to_stream 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn concat
+and
+.Fn concatenate
+operators.
+.Sh THREAD SAFETY
+The operator and its streams belong to the worker thread that built
+them and must not be shared.

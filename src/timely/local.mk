@@ -23,6 +23,16 @@ timely_sources = \
 	src/timely/stream.c \
 	src/timely/capability.c \
 	src/timely/handles.c \
+	src/timely/ops_int.h \
+	src/timely/ops_map.c \
+	src/timely/ops_filter.c \
+	src/timely/ops_inspect.c \
+	src/timely/ops_concat.c \
+	src/timely/ops_exchange.c \
+	src/timely/ops_ok_err.c \
+	src/timely/ops_partition.c \
+	src/timely/ops_to_stream.c \
+	src/timely/ops_count.c \
 	src/timely/builder_raw.c \
 	src/timely/builder.c \
 	src/timely/ops_input.c \
@@ -44,6 +54,13 @@ dist_man_MANS += man/man3/dtfl_cap_delayed.3
 dist_man_MANS += man/man3/dtfl_stream_scope.3
 dist_man_MANS += man/man3/dtfl_activator_activate.3
 dist_man_MANS += man/man3/dtfl_pact_pipeline.3
+dist_man_MANS += man/man3/dtfl_stream_map.3
+dist_man_MANS += man/man3/dtfl_stream_concat.3
+dist_man_MANS += man/man3/dtfl_stream_exchange.3
+dist_man_MANS += man/man3/dtfl_stream_ok_err.3
+dist_man_MANS += man/man3/dtfl_stream_partition.3
+dist_man_MANS += man/man3/dtfl_stream_count.3
+dist_man_MANS += man/man3/dtfl_to_stream.3
 dist_man_MANS += man/man3/dtfl_input_new.3
 dist_man_MANS += man/man3/dtfl_unordered_input_new.3
 dist_man_MANS += man/man3/dtfl_probe_new.3
@@ -68,6 +85,18 @@ TESTS += tests/pbt/pbt_exchange
 tests_pbt_pbt_exchange_SOURCES = tests/pbt/pbt_exchange.c
 tests_pbt_pbt_exchange_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_exchange_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_ops_data
+TESTS += tests/unit/test_ops_data
+tests_unit_test_ops_data_SOURCES = tests/unit/test_ops_data.c
+tests_unit_test_ops_data_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_data_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_ops_data
+TESTS += tests/pbt/pbt_ops_data
+tests_pbt_pbt_ops_data_SOURCES = tests/pbt/pbt_ops_data.c
+tests_pbt_pbt_ops_data_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_ops_data_LDADD = $(INTERNAL_PBT_LIBS)
 
 check_PROGRAMS += tests/unit/test_builder tests/unit/test_stream
 TESTS += tests/unit/test_builder tests/unit/test_stream

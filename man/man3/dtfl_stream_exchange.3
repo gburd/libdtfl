@@ -1,0 +1,67 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_EXCHANGE 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_exchange
+.Nd route a stream's records between workers
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fo dtfl_stream_exchange
+.Fa "dtfl_stream *st"
+.Fa "uint64_t (*route)(const void *rec, size_t len, void *ctx)"
+.Fa "void *ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_exchange
+produces a stream whose records are the records of
+.Fa st
+redistributed across the workers.
+Each record is sent to the worker that
+.Fa route
+returns for it, modulo the number of peers.
+When
+.Fa route
+is
+.Dv NULL ,
+the record type's hash is used.
+Records are forwarded unchanged, at their original time, so the output
+stream carries the input's record type.
+.Pp
+.Fa ctx
+is passed to
+.Fa route
+on every call; it is not owned by the operator.
+.Sh RETURN VALUES
+.Fn dtfl_stream_exchange
+returns the exchanged stream, owned by the scope.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static uint64_t by_key(const void *rec, size_t len, void *ctx) {
+	return dtfl_get_u64(rec);
+}
+
+dtfl_stream *shuffled = dtfl_stream_exchange(in, by_key, NULL);
+.Ed
+.Sh ERRORS
+.Fn dtfl_stream_exchange
+does not return an error code.
+.Sh SEE ALSO
+.Xr dtfl_stream_concat 3 ,
+.Xr dtfl_stream_count 3 ,
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl_stream_partition 3 ,
+.Xr dtfl_to_stream 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Fn exchange
+operator.
+.Sh THREAD SAFETY
+The operator and its stream belong to the worker thread that built them.
+The record movement across workers happens inside the worker's steps,
+through the communication layer, not through this call.
