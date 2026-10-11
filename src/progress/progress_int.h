@@ -12,7 +12,9 @@
  * Keys are fixed-width runs of uint64_t words compared
  * word-lexicographically, which is Rust's Ord for every key type upstream
  * uses: a time T, and (Location, T) where Location is encoded as two
- * words (node, port << 1 | is_source).  The key width is fixed per
+ * words (node, is_source << 63 | port).  That encoding keeps Rust's
+ * derived Ord on Location { node, port: Port }: node first, then every
+ * Port::Target before every Port::Source (variant order), then the index.  The key width is fixed per
  * batch at init.  A ChangeBatch never interprets its keys beyond
  * comparing them.
  *
