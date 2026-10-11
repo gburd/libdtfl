@@ -116,8 +116,9 @@ out and a comment naming what it synchronizes with.  A change to
 - Comments state invariants and ownership: who frees this, which
   worker owns it, what the frontier must satisfy.  Do not narrate the
   code.
-- `ponytail:` marks a deliberate shortcut, and names its limit and how
-  to remove it.
+- A deliberate shortcut gets a plain comment naming its limit (for
+  example, a linear scan or a fixed cap).  Do not tag comments with a
+  tool or persona name.
 
 ## 8. Never commit
 
