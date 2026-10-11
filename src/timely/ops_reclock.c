@@ -38,7 +38,6 @@ typedef struct reclock_ctx {
 	const dtfl_time_class *tc;
 	__dtfl_vec stash;	/* stash_rec */
 	__dtfl_vec pending;	/* pending_note: a noted clock time and its capability */
-	unsigned depth;
 } reclock_ctx;
 
 /* A requested notification: the clock time and a retained output capability. */
@@ -166,7 +165,6 @@ dtfl_stream_reclock(dtfl_stream *data, dtfl_stream *clock)
 
 	c = __dtfl_calloc(1, sizeof *c);
 	c->tc = tc;
-	c->depth = tc->depth;
 	__dtfl_vec_init(&c->stash, sizeof(stash_rec));
 	__dtfl_vec_init(&c->pending, sizeof(pending_note));
 	dtfl_op_builder_build(b, reclock_logic, c, reclock_ctx_free);

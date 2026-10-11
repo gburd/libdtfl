@@ -39,7 +39,6 @@ typedef struct uinput_op {
 	__dtfl_src_shared *shared;	/* retained; internal + produced */
 	__dtfl_shared_progress *sp;	/* owned until initialize */
 	dtfl_stream *stream;		/* the operator's output; owned */
-	bool started;
 } uinput_op;
 
 static bool
