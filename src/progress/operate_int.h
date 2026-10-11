@@ -156,8 +156,13 @@ struct __dtfl_schedule {
  * fills `*connectivity` (inputs entries over `outputs` ports), returns
  * the shared progress (which must already hold any initial internal
  * capabilities), and returns the schedulable.  The Operate object is
- * consumed (destroyed) by initialize.  notify_me points to `inputs`
- * interests and remains valid until initialize returns.
+ * consumed by initialize (it may become the schedulable itself).
+ * notify_me points to `inputs` interests and remains valid until
+ * initialize returns.
+ *
+ * Shared progress ownership (upstream Rc<RefCell<SharedProgress>>): the
+ * parent owns it after initialize and frees it after destroying the
+ * schedulable; the schedulable may use it for its whole life.
  */
 typedef struct __dtfl_operate __dtfl_operate;
 typedef struct __dtfl_operate_ops {
@@ -222,6 +227,21 @@ const __dtfl_mutable_antichain *__dtfl_tracker_target_implications(
     const __dtfl_tracker *t, size_t node, size_t port);
 const __dtfl_mutable_antichain *__dtfl_tracker_source_implications(
     const __dtfl_tracker *t, size_t node, size_t port);
+
+/* ------------------------------------------------------------------ */
+/* Progcaster (broadcast.rs)                                           */
+/* ------------------------------------------------------------------ */
+
+typedef struct __dtfl_progcaster __dtfl_progcaster;
+
+__dtfl_progcaster *__dtfl_progcaster_new(struct __dtfl_worker *w,
+    const size_t *path, size_t path_len, size_t identifier,
+    const dtfl_time_class *tc);
+void __dtfl_progcaster_free(__dtfl_progcaster *pc);
+/* Compacts, broadcasts if non-empty, and leaves `changes` empty. */
+void __dtfl_progcaster_send(__dtfl_progcaster *pc, __dtfl_change_batch *changes);
+/* Absorbs received updates into `changes` (keyed (Location, T)). */
+void __dtfl_progcaster_recv(__dtfl_progcaster *pc, __dtfl_change_batch *changes);
 
 /* ------------------------------------------------------------------ */
 /* Subgraph (subgraph.rs)                                              */

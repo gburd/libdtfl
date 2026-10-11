@@ -29,6 +29,19 @@ decls=$(cat $installed | tr '\n' ' ' | sed 's/;/;\n/g' \
 	| grep -oE '[[:space:]*]dtfl_[a-z0-9_]+[[:space:]]*\(' \
 	| sed -E 's/^[[:space:]*]+//; s/[[:space:]]*\($//' | sort -u)
 documented=$(cat "$top"/man/man3/*.3 2>/dev/null | awk '$1 == ".Nm" {print $2}' | sed 's/,$//' | sort -u)
+# A declared public function is only "shipped" once it is defined in the
+# built library.  Declarations for a later phase (forward declarations in
+# an installed header) carry no implementation yet, so they need no page
+# until the phase that defines them lands.  When the library is not built
+# yet, fall back to requiring every declaration.
+lib=$(ls "$build"/.libs/libdtfl.so* "$build"/.libs/libdtfl.a 2>/dev/null | head -1)
+if [ -n "$lib" ] && command -v nm >/dev/null 2>&1; then
+	defined=$(nm -g --defined-only "$lib" 2>/dev/null \
+		| awk '{print $NF}' | grep -oE 'dtfl_[a-z0-9_]+' | sort -u)
+	decls=$(comm -12 "$(printf '%s\n' "$decls" > docs.d1.tmp; echo docs.d1.tmp)" \
+		"$(printf '%s\n' "$defined" > docs.d2.tmp; echo docs.d2.tmp)")
+	rm -f docs.d1.tmp docs.d2.tmp
+fi
 undoc=$(comm -23 "$(printf '%s\n' "$decls" > docs.decl.tmp; echo docs.decl.tmp)" \
 	"$(printf '%s\n' "$documented" > docs.doc.tmp; echo docs.doc.tmp)" | grep -v '^$' || true)
 rm -f docs.decl.tmp docs.doc.tmp
