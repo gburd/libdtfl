@@ -1,0 +1,163 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_SUMMARY_RESULTS_IN 3
+.Os
+.Sh NAME
+.Nm dtfl_summary_results_in ,
+.Nm dtfl_summary_followed_by ,
+.Nm dtfl_summary_less_equal ,
+.Nm dtfl_summary_default ,
+.Nm dtfl_coord_from_i64 ,
+.Nm dtfl_coord_to_i64 ,
+.Nm dtfl_time_format
+.Nd path summaries, coordinate encoding and formatting
+.Sh LIBRARY
+.Lb libdtfl
+.Sh SYNOPSIS
+.In dtfl/time.h
+.Ft bool
+.Fn dtfl_summary_results_in "const dtfl_time_class *tc" "const uint64_t *summary" "const uint64_t *time" "uint64_t *out"
+.Ft bool
+.Fn dtfl_summary_followed_by "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b" "uint64_t *out"
+.Ft bool
+.Fn dtfl_summary_less_equal "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b"
+.Ft void
+.Fn dtfl_summary_default "const dtfl_time_class *tc" "uint64_t *out"
+.Ft uint64_t
+.Fn dtfl_coord_from_i64 "int64_t v"
+.Ft int64_t
+.Fn dtfl_coord_to_i64 "uint64_t w"
+.Ft int
+.Fn dtfl_time_format "const dtfl_time_class *tc" "const uint64_t *t" "char *buf" "size_t len"
+.Sh DESCRIPTION
+A path summary says how a time changes along a dataflow path, for
+example around a loop.
+It is an array of
+.Fn dtfl_summary_depth tc
+words:
+.Bl -tag -width POINTSTAMP
+.It unit, AltNeu
+no words; the summary does nothing.
+.It total
+one increment, encoded as the coordinate is.
+.It product, lex
+the first child's words, then the second's.
+.It PointStamp
+.Fa max_len
++ 1 words.
+Word 0 is
+.Em retain ,
+the number of leading coordinates kept, or
+.Dv UINT64_MAX
+to keep all.
+The rest are increments, one per coordinate, zero padded.
+.El
+.Pp
+.Fn dtfl_summary_results_in
+applies
+.Fa summary
+to
+.Fa time
+and stores the result in
+.Fa out .
+Each coordinate adds its increment with an overflow check at the
+coordinate's declared width, so a
+.Vt u32
+time overflows at 2^32 - 1 even though it is stored in 64 bits.
+A PointStamp summary first resets coordinates past
+.Em retain
+to the minimum.
+.Pp
+.Fn dtfl_summary_followed_by
+composes
+.Fa a
+then
+.Fa b
+into
+.Fa out .
+Applying the result is the same as applying
+.Fa a
+and then
+.Fa b ,
+whenever both ways produce a time.
+.Pp
+.Fn dtfl_summary_less_equal
+is the order on summaries that progress tracking keeps antichains
+under.
+For PointStamp summaries it requires equal
+.Em retain
+and then compares the increments.
+.Fn dtfl_summary_default
+stores the identity summary.
+.Pp
+Signed coordinates are stored with the sign bit flipped,
+.Li (uint64_t)v ^ (1 << 63) ,
+so that unsigned comparison of stored words is signed comparison.
+.Fn dtfl_coord_from_i64
+encodes a value and
+.Fn dtfl_coord_to_i64
+decodes one.
+A narrower signed coordinate stores its value sign-extended to 64
+bits first.
+.Pp
+.Fn dtfl_time_format
+writes a time into
+.Fa buf
+as Rust's
+.Li {:?}
+would, for example
+.Li (3, 7)
+or
+.Li PointStamp { vector: [1, 5] } ,
+except that a Duration prints as seconds with nine decimals and an
+.Li s .
+It truncates as
+.Xr snprintf 3
+does, and
+.Fa buf
+may be
+.Dv NULL
+when
+.Fa len
+is 0.
+.Sh RETURN VALUES
+.Fn dtfl_summary_results_in
+and
+.Fn dtfl_summary_followed_by
+return false where Rust returns
+.Dv None ,
+on overflow, and leave
+.Fa out
+unchanged then.
+.Fa out
+may be the same array as an input.
+.Fn dtfl_time_format
+returns the length of the full text, as
+.Xr snprintf 3 .
+.Sh ERRORS
+None.
+.Sh THREAD SAFETY
+All of these are pure functions of their arguments, safe to call from
+any thread.
+.Sh EXAMPLES
+A loop that adds one to a
+.Vt u32
+time drops the time once it would pass the maximum:
+.Bd -literal -offset indent
+uint64_t s = 1, t = UINT32_MAX, out;
+
+if (!dtfl_summary_results_in(tc, &s, &t, &out))
+	/* the feedback edge discards it */;
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_time_class 3 ,
+.Xr dtfl_time_cmp 3
+.Sh HISTORY
+These are timely-dataflow's
+.Vt PathSummary
+(timely/src/progress/timestamp.rs) and differential-dataflow's
+.Vt PointStampSummary
+(differential-dataflow/src/dynamic/pointstamp.rs), at the pins.
+Upstream compares PointStamp summaries that differ only by trailing
+zero increments as different; here they are equal, because they act
+identically.

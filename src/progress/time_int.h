@@ -47,9 +47,9 @@ struct dtfl_time_class {
  *   UNIT: 0 words.  TOTAL: 1 word (the increment, unsigned or biased
  *   signed as the coordinate).  PRODUCT and LEX: a's words then b's.
  *   ALTNEU: 0 words (Rust's `()`).
- *   POINTSTAMP(k): 1 + k words.  Word 0 is `retain`: UINT64_MAX means
- *   None, otherwise the count.  Words 1..k are the per-coordinate actions
- *   (increments), 0-padded.
+ *   POINTSTAMP(k): 1 + k words, so k < DTFL_TIME_MAX.  Word 0 is
+ *   `retain`: UINT64_MAX means None, otherwise the count.  Words 1..k
+ *   are the per-coordinate actions (increments), 0-padded.
  */
 
 /* Copy a time or summary. */
@@ -98,13 +98,19 @@ void __dtfl_time_advance_by(const dtfl_time_class *tc, uint64_t *t,
 void __dtfl_time_maximum(const dtfl_time_class *tc, uint64_t *out);
 
 /*
- * Refines: `inner` refines `outer`.  Supported pairs:
+ * Refines: `inner` refines `outer`.  Supported pairs, first match wins
+ * (classes match structurally, not by pointer):
  *   - identical classes (identity);
  *   - inner = PRODUCT(outer, X): to_inner appends X::minimum, to_outer
  *     drops the inner words, summarize keeps the outer words;
- *   - inner = ALTNEU(outer): to_inner 2t, to_outer t/2, summarize default;
- *   - outer = UNIT, any inner: to_inner minimum, to_outer nothing.
- * __dtfl_refines returns false if the pair is not supported.
+ *   - inner = ALTNEU(outer): to_inner 2t (panics if t >= 2^63), to_outer
+ *     t/2, summarize default;
+ *   - outer = UNIT, any inner: to_inner is Rust's Default for a TOTAL
+ *     inner (0, which is not the minimum of a signed class;
+ *     timestamp.rs implement_refines_empty) and the minimum otherwise;
+ *     to_outer and summarize produce nothing.
+ * __dtfl_refines returns false if the pair is not supported; the other
+ * three panic on an unsupported pair.
  */
 bool __dtfl_refines(const dtfl_time_class *inner, const dtfl_time_class *outer);
 void __dtfl_time_to_inner(const dtfl_time_class *inner,
@@ -121,21 +127,31 @@ void __dtfl_summary_to_outer(const dtfl_time_class *inner,
  *   complement; DURATION: u64 secs + u32 nanos (12 bytes); UNIT: 0;
  *   PRODUCT and LEX: a then b; ALTNEU: base then 1 byte bool;
  *   POINTSTAMP: u64 length then the trimmed coordinates.
- * __dtfl_time_encode appends to `out` (a vector of bytes) and returns the
- * number of bytes written.  __dtfl_time_decode reads from `p` (len bytes
- * available), stores the time and returns bytes consumed, or 0 on
- * malformed input.
+ * __dtfl_time_encode appends to `out` (a vector of bytes, elem 1) and
+ * returns the number of bytes written.  __dtfl_time_decode reads from
+ * `p` (len bytes available); on success it stores the time, sets *used
+ * to the bytes consumed (0 is valid, for UNIT) and returns 0.  It
+ * returns DTFL_EPROTO for truncated or malformed bytes and DTFL_ERANGE
+ * for a valid Rust value the class cannot hold (a Duration past 2^64
+ * ns, an AltNeu time >= 2^63, a PointStamp longer than max_len); *t is
+ * unchanged then.  A PointStamp with trailing minimum coordinates (not
+ * canonical, so never written by Rust's PointStamp::new) is accepted
+ * and canonicalized, including extra trailing minima past max_len.
  */
 size_t __dtfl_time_encoded_len(const dtfl_time_class *tc, const uint64_t *t);
 size_t __dtfl_time_encode(const dtfl_time_class *tc, const uint64_t *t,
     __dtfl_vec *out);
-size_t __dtfl_time_decode(const dtfl_time_class *tc, const unsigned char *p,
-    size_t len, uint64_t *t);
+int __dtfl_time_decode(const dtfl_time_class *tc, const unsigned char *p,
+    size_t len, uint64_t *t, size_t *used);
 
-/* The same for summaries (Rust's Summary types). */
+/*
+ * The same for summaries (Rust's Summary types).  A PointStamp summary
+ * is Option<usize> then Vec<action>; trailing identity actions are
+ * trimmed on encode, and Some(usize::MAX) decodes as DTFL_ERANGE.
+ */
 size_t __dtfl_summary_encode(const dtfl_time_class *tc, const uint64_t *s,
     __dtfl_vec *out);
-size_t __dtfl_summary_decode(const dtfl_time_class *tc, const unsigned char *p,
-    size_t len, uint64_t *s);
+int __dtfl_summary_decode(const dtfl_time_class *tc, const unsigned char *p,
+    size_t len, uint64_t *s, size_t *used);
 
 #endif /* DTFL_TIME_INT_H */

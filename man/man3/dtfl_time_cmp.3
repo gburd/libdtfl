@@ -1,0 +1,136 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_TIME_CMP 3
+.Os
+.Sh NAME
+.Nm dtfl_time_cmp ,
+.Nm dtfl_time_less_equal ,
+.Nm dtfl_time_less_than ,
+.Nm dtfl_time_minimum ,
+.Nm dtfl_time_join ,
+.Nm dtfl_time_meet
+.Nd order and lattice operations on times
+.Sh LIBRARY
+.Lb libdtfl
+.Sh SYNOPSIS
+.In dtfl/time.h
+.Ft int
+.Fn dtfl_time_cmp "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b"
+.Ft bool
+.Fn dtfl_time_less_equal "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b"
+.Ft bool
+.Fn dtfl_time_less_than "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b"
+.Ft void
+.Fn dtfl_time_minimum "const dtfl_time_class *tc" "uint64_t *out"
+.Ft void
+.Fn dtfl_time_join "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b" "uint64_t *out"
+.Ft void
+.Fn dtfl_time_meet "const dtfl_time_class *tc" "const uint64_t *a" "const uint64_t *b" "uint64_t *out"
+.Sh DESCRIPTION
+Each function takes times of class
+.Fa tc ,
+as arrays of
+.Fn dtfl_time_depth tc
+words.
+A time has two orders, as in Rust.
+.Pp
+.Fn dtfl_time_cmp
+is the total order Rust's derived
+.Vt Ord
+gives the timestamp type, and returns a negative, zero or positive
+value.
+For every class it is the lexicographic order of the words, so it is
+used to sort and deduplicate times.
+.Pp
+.Fn dtfl_time_less_equal
+is the partial order of timely's
+.Vt PartialOrder ,
+which decides progress.
+.Fn dtfl_time_less_than
+is
+.Fn dtfl_time_less_equal
+for distinct times.
+If
+.Fa a
+is less than or equal to
+.Fa b
+in the partial order, then
+.Fn dtfl_time_cmp
+of them is not positive.
+Per class:
+.Bl -tag -width POINTSTAMP
+.It unit
+always true.
+.It total, AltNeu
+numeric order of the value (for AltNeu, of (time, neu)).
+.It product
+both halves less or equal.
+.It lex
+the first halves are strictly less, or equal with the second halves
+less or equal.
+.It PointStamp
+every coordinate less or equal, with missing coordinates the minimum.
+.El
+.Pp
+.Fn dtfl_time_minimum
+stores the least time of the class.
+.Fn dtfl_time_join
+stores the least upper bound of
+.Fa a
+and
+.Fa b ,
+and
+.Fn dtfl_time_meet
+the greatest lower bound, as differential dataflow's
+.Vt Lattice .
+Totals take the maximum and minimum, products and PointStamps work
+coordinate by coordinate.
+For a lex class whose first halves are incomparable, the join is
+(first join, second minimum) and the meet is (first meet, second
+maximum).
+.Fa out
+may be the same array as
+.Fa a
+or
+.Fa b .
+.Sh RETURN VALUES
+.Fn dtfl_time_cmp
+returns a negative value, 0, or a positive value as
+.Fa a
+is less than, equal to, or greater than
+.Fa b .
+.Fn dtfl_time_less_equal
+and
+.Fn dtfl_time_less_than
+return the comparison.
+.Sh ERRORS
+None.
+The arrays must hold a whole time of the class; nothing checks.
+.Sh THREAD SAFETY
+All of these are pure functions of their arguments, safe to call from
+any thread.
+.Sh EXAMPLES
+Product times (3, 7) and (4, 6) are incomparable:
+.Bd -literal -offset indent
+uint64_t a[2] = { 3, 7 }, b[2] = { 4, 6 }, j[2], m[2];
+
+dtfl_time_less_equal(tc, a, b);	/* false */
+dtfl_time_cmp(tc, a, b);	/* negative */
+dtfl_time_join(tc, a, b, j);	/* (4, 7) */
+dtfl_time_meet(tc, a, b, m);	/* (3, 6) */
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_summary_results_in 3 ,
+.Xr dtfl_time_class 3
+.Sh HISTORY
+These are timely-dataflow's
+.Vt PartialOrder
+(timely/src/order.rs) and differential-dataflow's
+.Vt Lattice
+(differential-dataflow/src/lattice.rs), at the pins.
+Rust keeps
+.Vt Ord
+and
+.Vt PartialOrder
+apart for the same reason this API does: sorting needs a total order,
+and progress needs the partial one.

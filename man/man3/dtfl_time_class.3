@@ -1,0 +1,230 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_TIME_CLASS 3
+.Os
+.Sh NAME
+.Nm dtfl_time_unit ,
+.Nm dtfl_time_total ,
+.Nm dtfl_time_u64 ,
+.Nm dtfl_time_u32 ,
+.Nm dtfl_time_duration ,
+.Nm dtfl_time_product ,
+.Nm dtfl_time_lex ,
+.Nm dtfl_time_altneu ,
+.Nm dtfl_time_pointstamp ,
+.Nm dtfl_time_class_retain ,
+.Nm dtfl_time_class_free ,
+.Nm dtfl_time_depth ,
+.Nm dtfl_summary_depth ,
+.Nm dtfl_time_is_total
+.Nd timestamp classes
+.Sh LIBRARY
+.Lb libdtfl
+.Sh SYNOPSIS
+.In dtfl/time.h
+.Ft dtfl_time_class *
+.Fn dtfl_time_unit void
+.Ft dtfl_time_class *
+.Fn dtfl_time_total "dtfl_coord coord"
+.Ft dtfl_time_class *
+.Fn dtfl_time_u64 void
+.Ft dtfl_time_class *
+.Fn dtfl_time_u32 void
+.Ft dtfl_time_class *
+.Fn dtfl_time_duration void
+.Ft dtfl_time_class *
+.Fn dtfl_time_product "const dtfl_time_class *outer" "const dtfl_time_class *inner"
+.Ft dtfl_time_class *
+.Fn dtfl_time_lex "const dtfl_time_class *first" "const dtfl_time_class *second"
+.Ft dtfl_time_class *
+.Fn dtfl_time_altneu "const dtfl_time_class *base"
+.Ft dtfl_time_class *
+.Fn dtfl_time_pointstamp "dtfl_coord coord" "unsigned max_len"
+.Ft dtfl_time_class *
+.Fn dtfl_time_class_retain "const dtfl_time_class *tc"
+.Ft void
+.Fn dtfl_time_class_free "const dtfl_time_class *tc"
+.Ft unsigned
+.Fn dtfl_time_depth "const dtfl_time_class *tc"
+.Ft unsigned
+.Fn dtfl_summary_depth "const dtfl_time_class *tc"
+.Ft bool
+.Fn dtfl_time_is_total "const dtfl_time_class *tc"
+.Sh DESCRIPTION
+A timestamp in libdtfl is a vector of
+.Vt uint64_t
+words.
+A
+.Vt dtfl_time_class
+gives the vector its length, its
+.Em depth ,
+and its meaning.
+Each class models one Rust timestamp type of timely and differential
+dataflow, and its operations behave as that type's do; see
+.Xr dtfl_time_cmp 3
+and
+.Xr dtfl_summary_results_in 3 .
+No time or summary is longer than
+.Dv DTFL_TIME_MAX
+(16) words.
+.Pp
+A
+.Vt dtfl_coord
+describes one integer coordinate:
+.Bl -tag -width DTFL_COORD_UNSIGNED
+.It Dv DTFL_COORD_UNSIGNED
+an unsigned integer of
+.Fa bits
+8, 16, 32 or 64, stored as its value.
+.It Dv DTFL_COORD_SIGNED
+a signed integer of
+.Fa bits
+8, 16, 32 or 64, stored biased (see
+.Xr dtfl_coord_from_i64 3 ) .
+.It Dv DTFL_COORD_DURATION
+a Rust
+.Vt Duration
+in nanoseconds;
+.Fa bits
+is 64.
+Durations of 2^64 nanoseconds (about 584 years) or more are not
+representable.
+.El
+.Pp
+The constructors:
+.Bl -tag -width Ds
+.It Fn dtfl_time_unit
+models
+.Li () :
+depth 0, and every time is equal.
+.It Fn dtfl_time_total
+models an integer or
+.Vt Duration :
+depth 1, totally ordered.
+.Fn dtfl_time_u64 ,
+.Fn dtfl_time_u32
+and
+.Fn dtfl_time_duration
+are shorthands for the common coordinates.
+.It Fn dtfl_time_product
+models
+.Vt Product<outer, inner> ,
+ordered by the product order.
+The outer words come first.
+.It Fn dtfl_time_lex
+models the tuple
+.Vt (first, second) ,
+ordered lexicographically.
+.It Fn dtfl_time_altneu
+models dogsdogsdogs'
+.Vt AltNeu<T>
+over a one-coordinate unsigned or Duration
+.Fa base ,
+stored in one word as 2t + neu.
+Times t of 2^63 or more do not fit.
+.It Fn dtfl_time_pointstamp
+models
+.Vt PointStamp<T>
+over an unsigned or Duration coordinate, stored padded with zero
+(the minimum) to
+.Fa max_len
+words.
+.Fa max_len
+is between 1 and
+.Dv DTFL_TIME_MAX
+- 1, because a summary needs
+.Fa max_len
++ 1 words.
+.El
+.Pp
+Classes are reference counted.
+Each constructor returns a class with one reference, owned by the
+caller.
+.Fn dtfl_time_class_retain
+adds a reference and returns its argument.
+.Fn dtfl_time_class_free
+drops one, and frees the class with the last; it accepts
+.Dv NULL .
+A composite class holds a reference to each child, so the caller may
+free the children as soon as the composite exists.
+.Pp
+.Fn dtfl_time_depth
+returns the number of words in a time, and
+.Fn dtfl_summary_depth
+the number in a path summary.
+.Fn dtfl_time_is_total
+returns true when the partial order is total, as Rust's
+.Vt TotalOrder
+marker says: integers,
+.Vt Duration ,
+.Li () ,
+.Vt AltNeu ,
+tuples of total orders, and
+.Vt Product
+whose outer class has depth 0 and whose inner class is total.
+.Sh RETURN VALUES
+The constructors return a new class, or
+.Dv NULL
+with an error detail for
+.Xr dtfl_last_error_detail 3 .
+They do not return
+.Dv NULL
+for lack of memory; allocation failure calls the panic hook.
+.Sh ERRORS
+A constructor returns
+.Dv NULL
+when:
+.Bl -bullet
+.It
+a coordinate has an unsupported kind or width;
+.It
+a child of
+.Fn dtfl_time_product
+or
+.Fn dtfl_time_lex
+is
+.Dv NULL ,
+or the result would exceed
+.Dv DTFL_TIME_MAX
+words of time or of summary;
+.It
+the base of
+.Fn dtfl_time_altneu
+is not a one-coordinate unsigned or Duration class;
+.It
+.Fn dtfl_time_pointstamp
+gets a signed coordinate, or
+.Fa max_len
+outside 1 to
+.Dv DTFL_TIME_MAX
+- 1.
+.El
+.Sh THREAD SAFETY
+Classes are immutable after construction, and their reference count
+is atomic, so a class may be shared, retained and freed from any
+thread.
+.Sh EXAMPLES
+The time of an iterative scope inside a
+.Vt u64
+dataflow,
+.Vt Product<u64, u32> :
+.Bd -literal -offset indent
+dtfl_time_class *outer = dtfl_time_u64();
+dtfl_time_class *inner = dtfl_time_u32();
+dtfl_time_class *tc = dtfl_time_product(outer, inner);
+
+dtfl_time_class_free(outer);
+dtfl_time_class_free(inner);
+/* dtfl_time_depth(tc) == 2 */
+dtfl_time_class_free(tc);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_summary_results_in 3 ,
+.Xr dtfl_time_cmp 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+Rust timely dataflow is generic over the
+.Vt Timestamp
+trait (timely/src/progress/timestamp.rs at timely-v0.31.0).
+A C library cannot be, so a class carries at run time what the Rust
+type carries at compile time.
