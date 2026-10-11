@@ -34,6 +34,7 @@ timely_sources = \
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
 dtflinclude_HEADERS += include/dtfl/timely.h
+dtflinclude_HEADERS += include/dtfl/timely_ops.h
 dist_man_MANS += man/man3/dtfl_execute.3
 dist_man_MANS += man/man3/dtfl_worker_dataflow.3
 dist_man_MANS += man/man3/dtfl_scope_scoped.3
