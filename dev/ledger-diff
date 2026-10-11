@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Regenerate the libdtfl port and test ledgers from the pinned upstreams.
+
+Usage: dev/ledger-diff [--write]
+
+Lists every upstream file and #[test] at the pins in PIN, maps each new
+path to a target with RULES, and compares against dev/port-ledger.tsv
+and dev/test-ledger.tsv.  Rows that already exist keep their target,
+phase, status and note; only the line count is refreshed.  Without
+--write it prints added and removed rows and exits 1 if there are any.
+With --write it rewrites both ledgers.
+
+Upstream checkouts are expected under ~/src/.  Moving a pin means
+editing PIN here and PLAN.md section 2 in the same commit.
+"""
+import os
+import re
+import subprocess
+import sys
+
+PIN = {
+    "timely-dataflow": "timely-v0.31.0",
+    "differential-dataflow": "differential-dataflow-v0.25.1",
+    "dataflow-diag": "0fa322c98f6982ac6a1a782ad5ac6b5b6a6b8cb5",
+}
+HERE = os.path.dirname(os.path.abspath(__file__))
+PORT = os.path.join(HERE, "port-ledger.tsv")
+TEST = os.path.join(HERE, "test-ledger.tsv")
+
+TH = "include/dtfl/timely.h"
+DH = "include/dtfl/collection.h"
+D2 = "subsumed\tD2: records are byte strings in refcounted batches; "
+
+# (regex on upstream path, target, phase, "status\tnote").  First match wins.
+RULES = {
+    "timely-dataflow": [
+        (r"^bytes/src/lib.rs$", "src/base/bytes.c", "P1", "todo\tdivergence: adopts the post-pin aliasing hardening (#821), ADR D12"),
+        (r"^container/src/lib.rs$", "src/base/batch.c", "P1", "todo\tthe record batch is the only container (D2)"),
+        (r"^logging/src/lib.rs$", "src/base/log_registry.c", "P2", "todo\t"),
+        (r"^communication/src/lib.rs$", "src/comm/comm_int.h", "P2", "todo\tPush/Pull/Bytesable become internal vtables"),
+        (r"^communication/src/allocator/mod.rs$", "src/comm/allocator.c", "P2", "todo\t"),
+        (r"^communication/src/allocator/zero_copy/mod.rs$", "src/comm/comm_int.h", "P2", "todo\t"),
+        (r"^communication/src/allocator/zero_copy/spill.rs$", "src/comm/spill.c", "P2", "todo\tthe allocators take Option<SpillPolicyFn> (allocator/mod.rs:120-164)"),
+        (r"^communication/src/allocator/zero_copy/(\w+)\.rs$", r"src/comm/zc_\1.c", "P2", "todo\t"),
+        (r"^communication/src/allocator/(\w+)\.rs$", r"src/comm/alloc_\1.c", "P2", "todo\t"),
+        (r"^communication/src/logging.rs$", "src/comm/comm_log.c", "P2", "todo\t"),
+        (r"^communication/src/initialize.rs$", "src/comm/initialize.c", "P2", "todo\tflags parsed without getopt(3) global state (D7)"),
+        (r"^communication/src/(\w+)\.rs$", r"src/comm/\1.c", "P2", "todo\t"),
+        (r"^communication/examples/comm_hello.rs$", "examples/comm/comm_hello.c", "P2", "todo\t"),
+        (r"^communication/examples/lgalloc.rs$", "examples/comm/refill.c", "P2", "todo\tlgalloc is a Rust crate; demonstrate the refill hook with mmap(2)"),
+        (r"^communication/examples/spill_stress.rs$", "examples/comm/spill_stress.c", "P12", "todo\t"),
+        (r"^timely/src/(order|progress/timestamp).rs$", "src/progress/time.c", "P1", "todo\tcoordinate-vector times (D3)"),
+        (r"^timely/src/progress/frontier.rs$", "src/progress/antichain.c", "P1", "todo\t"),
+        (r"^timely/src/progress/change_batch.rs$", "src/progress/change_batch.c", "P1", "todo\t"),
+        (r"^timely/src/progress/mod.rs$", "src/progress/progress_int.h", "P3", "todo\tLocation, Source, Target"),
+        (r"^timely/src/progress/broadcast.rs$", "src/progress/progcaster.c", "P3", "todo\t"),
+        (r"^timely/src/progress/(\w+)\.rs$", r"src/progress/\1.c", "P3", "todo\t"),
+        (r"^timely/src/scheduling/mod.rs$", "src/timely/timely_int.h", "P3", "todo\t"),
+        (r"^timely/src/scheduling/activate.rs$", "src/timely/activate.c", "P3", "todo\t"),
+        (r"^timely/src/(worker|execute).rs$", r"src/timely/\1.c", "P3", "todo\t"),
+        (r"^timely/src/lib.rs$", TH, "P3", "todo\t"),
+        (r"^timely/src/logging.rs$", "src/timely/timely_log.c", "P3", "todo\tsubgraph.rs needs the logger types"),
+        (r"^timely/src/synchronization/mod.rs$", TH, "P4", "todo\t"),
+        (r"^timely/src/synchronization/(\w+)\.rs$", "src/timely/sync.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/mod.rs$", TH, "P4", "todo\t"),
+        (r"^timely/src/dataflow/scope.rs$", "src/timely/scope.c", "P3", "todo\tworker.rs and scope.rs import each other"),
+        (r"^timely/src/dataflow/stream.rs$", "src/timely/stream.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/channels/mod.rs$", "src/timely/message.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/channels/pact.rs$", "src/timely/pact.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/channels/pu(sh|ll)ers/mod.rs$", "src/timely/timely_int.h", "P4", "todo\t"),
+        (r"^timely/src/dataflow/channels/pushers/(\w+)\.rs$", r"src/timely/push_\1.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/channels/pullers/(\w+)\.rs$", r"src/timely/pull_\1.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/generic/builder_ref.rs$", "-", "-", "excluded\tTODO stub upstream, not compiled"),
+        (r"^timely/src/dataflow/operators/generic/notificator.rs$", "src/timely/notificator.c", "P4", "todo\tpublic API at the pin; removed upstream later (#819)"),
+        (r"^timely/src/dataflow/operators/generic/builder_rc.rs$", "src/timely/builder.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/generic/(mod|operator_info).rs$", TH, "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/generic/(\w+)\.rs$", r"src/timely/\1.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/(mod|core/mod|vec/mod|core/capture/mod).rs$", TH, "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/capability.rs$", "src/timely/capability.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/core/reclock.rs$", "src/timely/ops_reclock.c", "P4", "todo\tpublic API at the pin; removed upstream later (#818)"),
+        (r"^timely/src/dataflow/operators/core/rc.rs$", "-", "-", D2 + "fan-out never copies"),
+        (r"^timely/src/dataflow/operators/core/inspect.rs$", "src/timely/ops_inspect.c", "P4", "todo\tinspect_time, inspect_batch, inspect_container are public API at the pin; removed upstream later (#817)"),
+        (r"^timely/src/dataflow/operators/core/capture/event.rs$", "src/timely/event.c", "P3", "todo\tBatchLogger needs Event; bincode framing (D9)"),
+        (r"^timely/src/dataflow/operators/core/capture/(\w+)\.rs$", r"src/timely/\1.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/core/(\w+)\.rs$", r"src/timely/ops_\1.c", "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/vec/aggregation/mod.rs$", TH, "P4", "todo\t"),
+        (r"^timely/src/dataflow/operators/vec/(aggregation/)?(aggregate|state_machine|branch|count|delay|flow_controlled|result)\.rs$", r"src/timely/ops_\2.c", "P4", "todo\tpublic API at the pin; removed upstream later (#818)"),
+        (r"^timely/src/dataflow/operators/vec/(\w+)\.rs$", r"src/timely/ops_\1.c", "P4", "todo\tvec and core variants collapse into one (D2)"),
+        (r"^timely/examples/flow_controlled.rs$", "examples/timely/flow_controlled.c", "P4", "todo\t"),
+        (r"^timely/examples/(rc|columnar).rs$", "-", "-", D2 + "custom containers and Rc sharing have no C counterpart"),
+        (r"^timely/examples/spill_compare.rs$", "examples/timely/spill_compare.c", "P12", "todo\t"),
+        (r"^timely/examples/logging-recv.rs$", "examples/timely/logging-recv.c", "P4", "todo\treads the BatchLogger stream (PLAN D9); upstream expects a TimelySetup element nothing produces"),
+        (r"^timely/examples/(\S+)\.rs$", r"examples/timely/\1.c", "P4", "todo\t"),
+        (r"^timely/tests/skeptic.rs$", "-", "-", "excluded\tempty doctest runner; the doc snippet gate replaces it"),
+        (r"^timely/tests/(\w+)\.rs$", r"tests/upstream/timely/\1.c", "P4", "todo\t"),
+        (r"^mdbook/src/(chapter_\w+)/.*\.md$", r"doc/timely/\1.texi", "P4", "todo\tmanual chapter rewritten for C"),
+        (r"^mdbook/src/introduction.md$", "doc/timely/introduction.texi", "P4", "todo\t"),
+        (r"^mdbook/src/SUMMARY.md$", "doc/libdtfl.texi", "P0", "todo\tmanual skeleton and menu"),
+        (r"^mdbook/(build|src/lib).rs$", "-", "-", "excluded\tmdbook doctest harness; the doc snippet gate replaces it"),
+    ],
+    "differential-dataflow": [
+        (r"^differential-dataflow/src/lib.rs$", DH, "P5", "todo\t"),
+        (r"^differential-dataflow/src/collection.rs$", "src/dd/collection.c", "P8", "todo\tlinear methods land in P5, arrangement-backed ones in P7 and P8; the row is done in P8"),
+        (r"^differential-dataflow/src/difference.rs$", "src/dd/diff.c", "P5", "todo\tdiff classes (D4)"),
+        (r"^differential-dataflow/src/consolidation.rs$", "src/dd/consolidate.c", "P5", "todo\t"),
+        (r"^differential-dataflow/src/lattice.rs$", "src/dd/lattice.c", "P1", "todo\tthe time-class lattice operations need it (D3)"),
+        (r"^differential-dataflow/src/input.rs$", "src/dd/input.c", "P5", "todo\t"),
+        (r"^differential-dataflow/src/hashable.rs$", "src/base/hash.c", "P1", "todo\tFNV-1a over record bytes; not interoperable with Rust routing (D9)"),
+        (r"^differential-dataflow/src/logging.rs$", "src/dd/dd_log.c", "P6", "todo\tthe spine and batcher emit these events"),
+        (r"^differential-dataflow/src/capture.rs$", "src/dd/capture.c", "P10", "todo\t"),
+        (r"^differential-dataflow/src/dynamic/\w+\.rs$", "src/dd/dynamic.c", "P8", "todo\tPointStamp: trailing minimum coordinates trimmed (D3)"),
+        (r"^differential-dataflow/src/trace/mod.rs$", "src/dd/trace/trace.c", "P6", "todo\t"),
+        (r"^differential-dataflow/src/trace/cursor/mod.rs$", "src/dd/trace/cursor.c", "P6", "todo\t"),
+        (r"^differential-dataflow/src/trace/cursor/cursor_list.rs$", "src/dd/trace/cursor_list.c", "P6", "todo\t"),
+        (r"^differential-dataflow/src/trace/implementations/mod.rs$", "src/dd/trace/layout.c", "P6", "todo\tBatchContainer, OffsetList"),
+        (r"^differential-dataflow/src/trace/implementations/(\w+)\.rs$", r"src/dd/trace/\1.c", "P6", "todo\t"),
+        (r"^differential-dataflow/src/trace/description.rs$", "src/dd/trace/description.c", "P6", "todo\t"),
+        (r"^differential-dataflow/src/trace/chunk/mod.rs$", "src/dd/trace/chunk.c", "P12", "todo\tgraded chunks are the pageable unit for trace spill"),
+        (r"^differential-dataflow/src/trace/chunk/vec.rs$", "src/dd/trace/chunk_vec.c", "P12", "todo\t"),
+        (r"^differential-dataflow/src/trace/wrappers/mod.rs$", "src/dd/dd_int.h", "P7", "todo\t"),
+        (r"^differential-dataflow/src/trace/wrappers/(\w+)\.rs$", r"src/dd/trace/wrap_\1.c", "P7", "todo\t"),
+        (r"^differential-dataflow/src/operators/int_proxy/\w+\.rs$", "-", "-", "deferred\texperimental upstream; no non-disabled consumer at the pin"),
+        (r"^differential-dataflow/src/operators/arrange/mod.rs$", "src/dd/dd_int.h", "P7", "todo\t"),
+        (r"^differential-dataflow/src/operators/arrange/(\w+)\.rs$", r"src/dd/\1.c", "P7", "todo\t"),
+        (r"^differential-dataflow/src/operators/mod.rs$", "src/dd/history.c", "P6", "todo\tEditList, ValueHistory; Cursor::populate_key uses EditList"),
+        (r"^differential-dataflow/src/operators/(\w+)\.rs$", r"src/dd/\1.c", "P8", "todo\t"),
+        (r"^differential-dataflow/src/columnar/trace/spill.rs$", "src/dd/trace/spill.c", "P12", "todo\tports the BytesStore/BytesSource policy onto chunk.c; its ColChunk/Updates plumbing is subsumed (D2)"),
+        (r"^differential-dataflow/src/columnar/.*\.rs$", "-", "-", D2 + "flat byte-arena batches are what the columnar path buys Rust"),
+        (r"^differential-dataflow/src/algorithms/(graphs/)?mod.rs$", "include/dtfl/algo.h", "P9", "todo\t"),
+        (r"^differential-dataflow/src/algorithms/(graphs/)?(\w+)\.rs$", r"src/algo/\2.c", "P9", "todo\t"),
+        (r"^differential-dataflow/examples/(columnar/main|iterate_container).rs$", "-", "-", D2 + "Enter/Leave/Negate on batches are built in"),
+        (r"^differential-dataflow/examples/columnar_spill.rs$", "examples/dd/trace_spill.c", "P12", "todo\tsame flags and modes, over chunk.c spill; columnar types subsumed (D2)"),
+        (r"^differential-dataflow/examples/spines.rs$", "bench/spines.c", "P12", "todo\tneeds chunk spines; col mode subsumed (D2)"),
+        (r"^differential-dataflow/examples/accumulate.rs$", "examples/dd/accumulate.c", "P7", "todo\t"),
+        (r"^differential-dataflow/examples/(hello|compact|arrange|cursors|projekt)\.rs$", r"examples/dd/\1.c", "P8", "todo\t"),
+        (r"^differential-dataflow/examples/(\S+)\.rs$", r"examples/dd/\1.c", "P9", "todo\t"),
+        (r"^differential-dataflow/benches/chunk_bench.rs$", "bench/chunk_bench.c", "P12", "todo\tVecChunk arm only; the ColChunk arm is subsumed (D2)"),
+        (r"^differential-dataflow/benches/sort-bench.rs$", "-", "-", "excluded\tentirely commented out upstream"),
+        (r"^differential-dataflow/tests/trace.rs$", "tests/upstream/dd/trace.c", "P6", "todo\t"),
+        (r"^differential-dataflow/tests/import.rs$", "tests/upstream/dd/import.c", "P8", "todo\tcalls reduce_abelian (import.rs:63,142)"),
+        (r"^differential-dataflow/tests/(join|reduce|reduce_reference)\.rs$", r"tests/upstream/dd/\1.c", "P8", "todo\t"),
+        (r"^differential-dataflow/tests/(\w+)\.rs$", r"tests/upstream/dd/\1.c", "P9", "todo\t"),
+        (r"^dogsdogsdogs/src/lib.rs$", "src/dogs/extend.c", "P9", "todo\t"),
+        (r"^dogsdogsdogs/src/operators/mod.rs$", "include/dtfl/dogs.h", "P9", "todo\t"),
+        (r"^dogsdogsdogs/src/altneu.rs$", "src/dogs/altneu.c", "P9", "todo\tAltNeu<t> encodes as 2t+neu in one coordinate (D3)"),
+        (r"^dogsdogsdogs/src/(operators/)?(\w+)\.rs$", r"src/dogs/\2.c", "P9", "todo\t"),
+        (r"^dogsdogsdogs/examples/(\w+)\.rs$", r"examples/dogs/\1.c", "P9", "todo\t"),
+        (r"^dogsdogsdogs/tests/(\w+)\.rs$", r"tests/upstream/dogs/\1.c", "P9", "todo\t"),
+        (r"^interactive/src/backend/col.rs$", "-", "-", "excluded\tdisabled upstream"),
+        (r"^interactive/src/lib.rs$", "src/ddir/ddir.c", "P13", "todo\t"),
+        (r"^interactive/src/(parse|backend|explain)/mod.rs$", r"src/ddir/\1.c", "P13", "todo\t"),
+        (r"^interactive/src/(parse|backend|explain)/(\w+)\.rs$", r"src/ddir/\1_\2.c", "P13", "todo\t"),
+        (r"^interactive/src/(\w+)\.rs$", r"src/ddir/\1.c", "P13", "todo\t"),
+        (r"^interactive/examples/(\w+)\.rs$", r"tools/dtfl-ddir/\1.c", "P13", "todo\t"),
+        (r"^interactive/examples/(programs|server)/.*$", r"tools/dtfl-ddir/\1/", "P13", "todo\tcopied verbatim; DDIR source is language-neutral"),
+        (r"^interactive/tests/(\w+)\.rs$", r"tests/upstream/ddir/\1.c", "P13", "todo\t"),
+        (r"^server/src/bin/dd_server.rs$", "tools/dtfl-server/main.c", "P14", "todo\t"),
+        (r"^server/src/lib.rs$", "include/dtfl/server.h", "P14", "todo\t"),
+        (r"^server/dataflows/(\w+)/src/lib.rs$", r"examples/server/\1.c", "P14", "todo\tbuilt as dlopen(3) plugins"),
+        (r"^diagnostics/src/lib.rs$", "include/dtfl/diag.h", "P11", "todo\t"),
+        (r"^diagnostics/src/logging.rs$", "src/diag/diag_log.c", "P11", "todo\t"),
+        (r"^diagnostics/src/server.rs$", "src/diag/ws_server.c", "P11", "todo\tdivergence: binds 127.0.0.1 by default where upstream binds 0.0.0.0, ADR D12"),
+        (r"^diagnostics/examples/scc-bench.rs$", "examples/diag/scc-bench.c", "P11", "todo\tuses algorithms::graphs::scc (P9)"),
+        (r"^diagnostics/examples/(\S+)\.rs$", r"examples/diag/\1.c", "P11", "todo\t"),
+        (r"^diagnostics/index.html$", "data/diagnostics.html", "P11", "todo\tshipped verbatim; the C server speaks the same protocol"),
+        (r"^diagnostics/console/.*$", "-", "-", "excluded\tReact frontend; works unmodified against the protocol-compatible server"),
+        (r"^experiments/src/bin/(arrange|graphs|graphs-static)\.rs$", r"bench/experiments/\1.c", "P15", "todo\tperformance parity table (PLAN section 9)"),
+        (r"^experiments/src/bin/(\S+)\.rs$", "-", "-", "deferred\tnot needed for the performance table"),
+        (r"^experiments/.*$", "-", "-", "deferred\tbenchmark support code"),
+        (r"^mdbook/src/(chapter_\w+)/.*\.md$", r"doc/differential/\1.texi", "P8", "todo\tmanual chapter rewritten for C"),
+        (r"^mdbook/src/introduction.md$", "doc/differential/introduction.texi", "P5", "todo\t"),
+        (r"^mdbook/src/SUMMARY.md$", "doc/libdtfl.texi", "P0", "todo\tmanual skeleton and menu"),
+        (r"^mdbook/(build|src/lib).rs$", "-", "-", "excluded\tmdbook doctest harness; the doc snippet gate replaces it"),
+        (r"^(tpchlike|doop|advent_of_code_2017)/.*$", "-", "-", "excluded\tnot a workspace member upstream"),
+    ],
+    "dataflow-diag": [
+        (r"^connect/src/receive/replaywithshutdown.rs$", "src/diag/replay_shutdown.c", "P11", "todo\t"),
+        (r"^connect/src/.*\.rs$", "tools/dtfl-diag/connect.c", "P11", "todo\t"),
+        (r"^tdiag/src/commands/graph/dataflow-graph.html$", "data/dataflow-graph.html", "P11", "todo\tshipped verbatim; generated script must escape operator names"),
+        (r"^tdiag/src/commands/mod.rs$", "tools/dtfl-diag/main.c", "P11", "todo\t"),
+        (r"^tdiag/src/commands/(\w+)\.rs$", r"tools/dtfl-diag/\1.c", "P11", "todo\t"),
+        (r"^tdiag/src/(main|lib).rs$", "tools/dtfl-diag/main.c", "P11", "todo\treads the current bincode stream, not the 0.11 abomonation stream (D9)"),
+    ],
+}
+KEEP = re.compile(r"\.(rs|md|html|ddp|ddir)$|/examples/(programs|server)/")
+SKIP = re.compile(r"^(\.github/|timely/examples/wasm-bindgen/)|Cargo\.(toml|lock)$")
+PORT_HDR = [
+    "# libdtfl port ledger: one row per upstream file at the pins (dev/PLAN.md section 2) that the KEEP filter in dev/ledger-diff selects.",
+    "# status: todo | wip | done | excluded | deferred | subsumed.  A row is done only when its target",
+    "# exists, carries the provenance header, and every test-ledger row it owns passes.",
+    "repo\tupstream_path\tlines\ttarget\tphase\tstatus\tnote",
+]
+TEST_HDR = [
+    "# libdtfl test ledger: one row per upstream #[test] at the pins.  test is <module>__<upstream name> (PLAN D6).",
+    "# expect=panic marks #[should_panic]: the C test asserts the contract violation reaches the panic hook.",
+    "# status follows the owning port-ledger row.",
+    "repo\tupstream_path\tline\ttest\texpect\ttarget\tphase\tstatus",
+]
+
+
+def git(repo, *args):
+    path = os.path.expanduser("~/src/" + repo)
+    return subprocess.run(["git", "-C", path, *args], capture_output=True,
+                          text=True, check=True).stdout
+
+
+def read(path, ncols):
+    rows = {}
+    if not os.path.exists(path):
+        return rows
+    for line in open(path):
+        if line.startswith("#") or line.startswith("repo\t"):
+            continue
+        cols = line.rstrip("\n").split("\t")
+        cols += [""] * (ncols - len(cols))
+        rows[tuple(cols[:2]) if ncols == 7 else (cols[0], cols[1], cols[3])] = cols
+    return rows
+
+
+def map_path(repo, path):
+    for pat, tgt, phase, rest in RULES[repo]:
+        if re.search(pat, path):
+            status, note = rest.split("\t", 1)
+            return [re.sub(pat, tgt, path), phase, status, note]
+    sys.exit("ledger-diff: no rule maps %s:%s; add one to RULES" % (repo, path))
+
+
+def scan_ports(old):
+    rows = []
+    for repo, tag in PIN.items():
+        for path in git(repo, "ls-tree", "-r", "--name-only", tag).split():
+            if SKIP.search(path) or not KEEP.search(path):
+                continue
+            if path.endswith(".md") and not path.startswith("mdbook/src/"):
+                continue
+            lines = str(git(repo, "show", "%s:%s" % (tag, path)).count("\n"))
+            prev = old.get((repo, path))
+            rest = prev[3:7] if prev else map_path(repo, path)
+            rows.append([repo, path, lines] + rest)
+    return rows
+
+
+def scan_tests(ports):
+    owner = {(r[0], r[1]): r for r in ports}
+    rows = []
+    for repo in ("timely-dataflow", "differential-dataflow"):
+        tag = PIN[repo]
+        hits = git(repo, "grep", "-l", r"#\[test\]", tag, "--", "*.rs").split()
+        for hit in hits:
+            path = hit.split(":", 1)[1]
+            src = git(repo, "show", "%s:%s" % (tag, path)).splitlines()
+            for i, line in enumerate(src):
+                if not re.match(r"\s*#\[test\]", line):
+                    continue
+                panic, name = False, None
+                for j in range(i, min(i + 8, len(src))):
+                    panic |= "should_panic" in src[j]
+                    m = re.search(r"\bfn\s+(\w+)", src[j])
+                    if m:
+                        name = m.group(1)
+                        break
+                o = owner[(repo, path)]
+                tgt = o[3]
+                if tgt != "-" and not tgt.startswith("tests/"):
+                    base = re.sub(r"\.[ch]$", "", os.path.basename(tgt))
+                    tgt = "tests/unit/test_" + base + ".c"
+                rows.append([repo, path, str(i + 1), qualify(path, src, i, name),
+                             "panic" if panic else "pass", tgt, o[4], o[5]])
+    return rows
+
+
+def qualify(path, src, line, name):
+    # <module>__<name>: the Rust module path below src/ or tests/, plus the
+    # innermost top-level inline `mod` (other than `tests`) enclosing the test.
+    mod = re.sub(r"^.*?/(src|tests)/", "", path)
+    mod = re.sub(r"(/mod|/lib)?\.rs$", "", mod).replace("/", "_")
+    inner = None
+    for text in src[:line]:
+        m = re.match(r"(?:pub(?:\(crate\))? )?mod (\w+)\s*\{", text)
+        if m:
+            inner = m.group(1)
+    if inner and inner != "tests":
+        mod += "_" + inner
+    return "%s__%s" % (mod, name)
+
+
+def keep_test_status(rows, old):
+    # A test row's status can run ahead of its file's (tests land first).
+    for r in rows:
+        prev = old.get((r[0], r[1], r[3]))
+        if prev and prev[7] in ("wip", "done"):
+            r[7] = prev[7]
+    return rows
+
+
+def report(kind, old_keys, new_keys):
+    added = sorted(new_keys - old_keys)
+    removed = sorted(old_keys - new_keys)
+    for k in added:
+        print("%s + %s" % (kind, ":".join(k)))
+    for k in removed:
+        print("%s - %s" % (kind, ":".join(k)))
+    return len(added) + len(removed)
+
+
+def main():
+    old_ports, old_tests = read(PORT, 7), read(TEST, 8)
+    ports = scan_ports(old_ports)
+    tests = keep_test_status(scan_tests(ports), old_tests)
+    changes = report("port", set(old_ports), {(r[0], r[1]) for r in ports})
+    changes += report("test", set(old_tests), {(r[0], r[1], r[3]) for r in tests})
+    if "--write" in sys.argv[1:]:
+        with open(PORT, "w") as f:
+            f.write("\n".join(PORT_HDR + ["\t".join(r) for r in ports]) + "\n")
+        with open(TEST, "w") as f:
+            f.write("\n".join(TEST_HDR + ["\t".join(r) for r in tests]) + "\n")
+        print("ledger-diff: wrote %d files, %d tests" % (len(ports), len(tests)))
+        return 0
+    print("ledger-diff: %d change(s)" % changes)
+    return 1 if changes else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
