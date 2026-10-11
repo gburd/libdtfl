@@ -1,0 +1,322 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_CONFIG_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_config_new ,
+.Nm dtfl_config_free ,
+.Nm dtfl_config_set_mode ,
+.Nm dtfl_config_set_threads ,
+.Nm dtfl_config_set_cluster ,
+.Nm dtfl_config_set_report ,
+.Nm dtfl_config_set_progress_mode ,
+.Nm dtfl_config_set_seed ,
+.Nm dtfl_config_mode ,
+.Nm dtfl_config_threads ,
+.Nm dtfl_config_process ,
+.Nm dtfl_config_processes ,
+.Nm dtfl_config_address ,
+.Nm dtfl_config_report ,
+.Nm dtfl_config_progress_mode ,
+.Nm dtfl_config_seed ,
+.Nm dtfl_config_from_args ,
+.Nm dtfl_config_from_env ,
+.Nm dtfl_config_timely_log_addr ,
+.Nm dtfl_config_differential_log_addr
+.Nd execution configuration for libdtfl
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/config.h
+.Ft dtfl_config *
+.Fn dtfl_config_new "void"
+.Ft void
+.Fn dtfl_config_free "dtfl_config *cfg"
+.Ft int
+.Fn dtfl_config_set_mode "dtfl_config *cfg" "dtfl_comm_mode mode"
+.Ft int
+.Fn dtfl_config_set_threads "dtfl_config *cfg" "size_t threads"
+.Ft int
+.Fo dtfl_config_set_cluster
+.Fa "dtfl_config *cfg"
+.Fa "size_t process"
+.Fa "const char *const *addresses"
+.Fa "size_t naddresses"
+.Fc
+.Ft void
+.Fn dtfl_config_set_report "dtfl_config *cfg" "bool report"
+.Ft void
+.Fn dtfl_config_set_progress_mode "dtfl_config *cfg" "dtfl_progress_mode mode"
+.Ft void
+.Fn dtfl_config_set_seed "dtfl_config *cfg" "uint64_t seed"
+.Ft dtfl_comm_mode
+.Fn dtfl_config_mode "const dtfl_config *cfg"
+.Ft size_t
+.Fn dtfl_config_threads "const dtfl_config *cfg"
+.Ft size_t
+.Fn dtfl_config_process "const dtfl_config *cfg"
+.Ft size_t
+.Fn dtfl_config_processes "const dtfl_config *cfg"
+.Ft const char *
+.Fn dtfl_config_address "const dtfl_config *cfg" "size_t i"
+.Ft bool
+.Fn dtfl_config_report "const dtfl_config *cfg"
+.Ft dtfl_progress_mode
+.Fn dtfl_config_progress_mode "const dtfl_config *cfg"
+.Ft uint64_t
+.Fn dtfl_config_seed "const dtfl_config *cfg"
+.Ft int
+.Fo dtfl_config_from_args
+.Fa "dtfl_config *cfg"
+.Fa "int argc"
+.Fa "char *const *argv"
+.Fa "char **rest"
+.Fa "int *nrest"
+.Fc
+.Ft int
+.Fo dtfl_config_from_env
+.Fa "dtfl_config *cfg"
+.Fa "const char *(*lookup)(const char *name, void *ctx)"
+.Fa "void *ctx"
+.Fc
+.Ft const char *
+.Fn dtfl_config_timely_log_addr "const dtfl_config *cfg"
+.Ft const char *
+.Fn dtfl_config_differential_log_addr "const dtfl_config *cfg"
+.Sh DESCRIPTION
+A
+.Vt dtfl_config
+says how many workers a computation runs and how they communicate.
+It combines timely's communication configuration and its worker
+configuration.
+.Fn dtfl_config_new
+returns a configuration for one worker thread, demand-driven progress,
+no connection reports, seed 0 and no log addresses.
+.Fn dtfl_config_free
+releases it;
+.Dv NULL
+is ignored.
+.Pp
+The communication mode is one of:
+.Bl -tag -width DTFL_COMM_PROCESS_BINARY
+.It Dv DTFL_COMM_THREAD
+One worker.
+.It Dv DTFL_COMM_PROCESS
+.Fa threads
+workers in this process, which exchange messages through typed queues.
+.It Dv DTFL_COMM_PROCESS_BINARY
+.Fa threads
+workers in this process, which exchange serialized messages through
+zero-copy byte queues.
+.It Dv DTFL_COMM_CLUSTER
+.Fa threads
+workers in each of several processes, connected over TCP.
+.It Dv DTFL_COMM_SIM
+.Fa threads
+workers on one OS thread.
+A scheduler seeded with
+.Fa seed
+picks the order in which messages are delivered, so a run can be
+replayed exactly.
+.El
+.Pp
+.Fn dtfl_config_set_mode
+and
+.Fn dtfl_config_set_threads
+set the mode and the number of worker threads per process.
+.Fn dtfl_config_set_cluster
+sets this process's index and every process's listening address,
+written as
+.Dq host:port .
+An entry may list several whitespace-separated addresses to listen on.
+It copies the strings and does not change the mode.
+.Fn dtfl_config_set_report
+asks for connection progress to be printed while a cluster starts.
+.Fn dtfl_config_set_progress_mode
+chooses between
+.Dv DTFL_PROGRESS_DEMAND ,
+the default, which holds back progress updates until they could
+advance some frontier, and
+.Dv DTFL_PROGRESS_EAGER ,
+which sends them at once.
+.Fn dtfl_config_set_seed
+seeds the simulation scheduler.
+The functions without
+.Dq set
+in their names return the corresponding values.
+.Fn dtfl_config_processes
+is 1 unless cluster addresses are set.
+.Fn dtfl_config_address
+returns
+.Dv NULL
+when
+.Fa i
+is out of range.
+.Pp
+.Fn dtfl_config_from_args
+parses timely's command-line flags:
+.Bl -tag -width "--progress-mode MODE"
+.It Fl w , Fl \-threads Ar NUM
+Worker threads per process (default 1).
+.It Fl p , Fl \-process Ar IDX
+This process's index (default 0).
+.It Fl n , Fl \-processes Ar NUM
+The number of processes (default 1).
+.It Fl h , Fl \-hostfile Ar FILE
+A file whose first
+.Ar NUM
+lines are the process addresses.
+Without it, process
+.Ar i
+listens on
+.Dq localhost:2101+i .
+.It Fl r , Fl \-report
+Report connection progress.
+.It Fl z , Fl \-zerocopy
+Use zero-copy channels within a process.
+.It Fl \-progress-mode Ar MODE
+.Dq eager
+or
+.Dq demand .
+.El
+.Pp
+As with Rust's getopts, an argument can be attached
+.Pq Fl w4
+or separate
+.Pq Fl w Ar 4 ,
+long options accept
+.Fl \-threads Ns = Ns Ar 4 ,
+flags can be grouped
+.Pq Fl rz ,
+and giving an option twice is an error.
+The mode follows timely: more than one process gives
+.Dv DTFL_COMM_CLUSTER ;
+otherwise more than one thread gives
+.Dv DTFL_COMM_PROCESS ,
+or
+.Dv DTFL_COMM_PROCESS_BINARY
+with
+.Fl z ;
+otherwise the mode is
+.Dv DTFL_COMM_THREAD .
+Parsing replaces the whole communication configuration.
+The seed and the log addresses are not set on the command line, so
+they are kept.
+.Pp
+Every argument that is not a timely flag is copied, in order, to
+.Fa rest ,
+and their count is stored in
+.Fa *nrest .
+That includes
+.Fa argv[0] ,
+free arguments, options timely does not recognize, and everything
+after
+.Dq \-\-
+(which is itself dropped).
+.Fa rest
+must have room for
+.Fa argc
+pointers, and may be
+.Fa argv
+itself.
+.Pp
+.Fn dtfl_config_from_env
+applies the opt-in logging settings.
+It calls
+.Fa lookup
+with the names
+.Ev TIMELY_WORKER_LOG_ADDR
+and
+.Ev DIFFERENTIAL_LOG_ADDR ,
+and copies each value that is not
+.Dv NULL .
+Pass a wrapper around
+.Xr getenv 3
+to use the process environment.
+.Fn dtfl_config_timely_log_addr
+and
+.Fn dtfl_config_differential_log_addr
+return the copies, or
+.Dv NULL .
+.Sh RETURN VALUES
+.Fn dtfl_config_new
+never returns
+.Dv NULL ;
+allocation failure calls the panic hook.
+The functions returning
+.Vt int
+return 0 on success, or an error code described below.
+On error
+.Fn dtfl_config_from_args
+leaves
+.Fa cfg ,
+.Fa rest
+and
+.Fa *nrest
+unchanged.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static const char *
+env(const char *name, void *ctx)
+{
+	return getenv(name);
+}
+
+int
+main(int argc, char *argv[])
+{
+	dtfl_config *cfg = dtfl_config_new();
+	int nrest;
+
+	if (dtfl_config_from_args(cfg, argc, argv, argv, &nrest) != 0 ||
+	    dtfl_config_from_env(cfg, env, NULL) != 0)
+		errx(1, "%s", dtfl_last_error_detail());
+	/* argv[1 .. nrest) are the program's own arguments. */
+	...
+	dtfl_config_free(cfg);
+}
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_EINVAL
+.It Bq Er DTFL_EINVAL
+An argument is invalid: zero threads, an unknown mode, a process index
+outside the cluster, a malformed or repeated flag, an unknown progress
+mode, or a host file with fewer lines than
+.Fl n .
+.It Bq Er DTFL_EIO
+The host file cannot be read.
+.El
+.Pp
+.Fn dtfl_last_error_detail
+describes the problem.
+.Sh SEE ALSO
+.Xr dtfl_strerror 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These functions combine timely's
+.Vt Config
+types, and their command-line options, as of timely-dataflow 0.31.
+Upstream parses with the getopts crate and fails on options it does
+not recognize.
+.Fn dtfl_config_from_args
+uses no global state and keeps unrecognized options for the caller.
+Upstream accepts
+.Fl n
+or
+.Fl w
+of 0, and a
+.Fl p
+outside the cluster, and fails later.
+This parser rejects them.
+Timely 0.13 removed
+.Ev TIMELY_WORKER_LOG_ADDR ;
+libdtfl restores it, but reads it only through the caller's
+.Fa lookup .
+.Sh THREAD SAFETY
+A configuration may be read from several threads at once, but must not
+be modified while another thread uses it.
+.Fn dtfl_config_from_args
+and
+.Fn dtfl_config_from_env
+touch no global state.
