@@ -157,8 +157,8 @@ timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P
 timely-dataflow	timely/src/progress/change_batch.rs	321	src/progress/change_batch.c	P1	done	
 timely-dataflow	timely/src/progress/frontier.rs	869	src/progress/antichain.c	P1	done	
 timely-dataflow	timely/src/progress/mod.rs	106	src/progress/progress_int.h	P3	todo	Location, Source, Target
-timely-dataflow	timely/src/progress/operate.rs	206	src/progress/operate.c	P3	todo	
-timely-dataflow	timely/src/progress/reachability.rs	1116	src/progress/reachability.c	P3	todo	
+timely-dataflow	timely/src/progress/operate.rs	206	src/progress/operate.c	P3	done	
+timely-dataflow	timely/src/progress/reachability.rs	1116	src/progress/reachability.c	P3	done	
 timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	todo	
 timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	done	coordinate-vector times (D3)
 timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	todo	

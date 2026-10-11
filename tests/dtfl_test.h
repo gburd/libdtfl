@@ -27,7 +27,13 @@ static jmp_buf dtfl_test_panic_jmp;
 static int dtfl_test_panic_armed;
 static char dtfl_test_panic_msg[1024];
 
-static void
+#if defined(__GNUC__) || defined(__clang__)
+#define DTFL_TEST_UNUSED __attribute__((unused))
+#else
+#define DTFL_TEST_UNUSED
+#endif
+
+static DTFL_TEST_UNUSED void
 dtfl_test_panic_hook(const char *msg, void *ctx)
 {
 	(void)ctx;
