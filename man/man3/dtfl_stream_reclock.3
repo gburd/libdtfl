@@ -1,0 +1,61 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_RECLOCK 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_reclock
+.Nd release records at the times of a clock stream
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_reclock "dtfl_stream *data" "dtfl_stream *clock"
+.Sh DESCRIPTION
+.Fn dtfl_stream_reclock
+buffers the records of
+.Fa data
+until records arrive on
+.Fa clock ,
+then releases them at the clock's times.
+A record seen on
+.Fa clock
+at time
+.Va c
+requests that all stashed data with time less than or equal to
+.Va c
+be emitted at time
+.Va c ,
+once both inputs have advanced past
+.Va c .
+The two streams share the scope's time class; the clock's record
+payloads are ignored, only their times matter.
+.Pp
+This does not guarantee that every worker sees the same clock records.
+To reclock on a frontier common to all workers, broadcast the clock
+first.
+.Sh RETURN VALUES
+.Fn dtfl_stream_reclock
+returns the reclocked stream, carrying the same record type as
+.Fa data .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* data 0..9 at times 0..9, clock ticks at 3, 5 and 8. */
+dtfl_stream *out = dtfl_stream_reclock(data, clock);
+/* out carries 0,1,2,3 at time 3; 4,5 at time 5; 6,7,8 at time 8. */
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_input_new 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Reclock
+trait.
+It is public at the pinned release
+.Pq Li timely-v0.31.0
+and was removed upstream afterward (#818); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).

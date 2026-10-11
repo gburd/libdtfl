@@ -7,6 +7,7 @@ timely_sources = \
 	src/timely/scope_int.h \
 	src/timely/timely_int.h \
 	src/timely/log_codec_int.h \
+	src/timely/ops_src_int.h \
 	src/timely/activate.c \
 	src/timely/worker.c \
 	src/timely/timely_log.c \
@@ -23,7 +24,12 @@ timely_sources = \
 	src/timely/capability.c \
 	src/timely/handles.c \
 	src/timely/builder_raw.c \
-	src/timely/builder.c
+	src/timely/builder.c \
+	src/timely/ops_input.c \
+	src/timely/ops_unordered_input.c \
+	src/timely/ops_probe.c \
+	src/timely/ops_feedback.c \
+	src/timely/ops_reclock.c
 
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
@@ -37,6 +43,11 @@ dist_man_MANS += man/man3/dtfl_cap_delayed.3
 dist_man_MANS += man/man3/dtfl_stream_scope.3
 dist_man_MANS += man/man3/dtfl_activator_activate.3
 dist_man_MANS += man/man3/dtfl_pact_pipeline.3
+dist_man_MANS += man/man3/dtfl_input_new.3
+dist_man_MANS += man/man3/dtfl_unordered_input_new.3
+dist_man_MANS += man/man3/dtfl_probe_new.3
+dist_man_MANS += man/man3/dtfl_feedback_new.3
+dist_man_MANS += man/man3/dtfl_stream_reclock.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -65,3 +76,18 @@ tests_unit_test_builder_LDADD = $(INTERNAL_LIBS)
 tests_unit_test_stream_SOURCES = tests/unit/test_stream.c
 tests_unit_test_stream_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_stream_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_ops_probe tests/unit/test_input
+TESTS += tests/unit/test_ops_probe tests/unit/test_input
+tests_unit_test_ops_probe_SOURCES = tests/unit/test_ops_probe.c
+tests_unit_test_ops_probe_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_probe_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_input_SOURCES = tests/unit/test_input.c
+tests_unit_test_input_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_input_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_input
+TESTS += tests/pbt/pbt_input
+tests_pbt_pbt_input_SOURCES = tests/pbt/pbt_input.c
+tests_pbt_pbt_input_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_input_LDADD = $(INTERNAL_PBT_LIBS)

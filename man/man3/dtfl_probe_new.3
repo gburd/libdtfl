@@ -1,0 +1,117 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_PROBE_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_probe_new ,
+.Nm dtfl_probe_free ,
+.Nm dtfl_stream_probe_with ,
+.Nm dtfl_probe_less_than ,
+.Nm dtfl_probe_less_equal ,
+.Nm dtfl_probe_done ,
+.Nm dtfl_probe_frontier
+.Nd monitor progress at a stream
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_probe *
+.Fn dtfl_probe_new "void"
+.Ft void
+.Fn dtfl_probe_free "dtfl_probe *p"
+.Ft dtfl_stream *
+.Fn dtfl_stream_probe_with "dtfl_stream *st" "dtfl_probe *p"
+.Ft bool
+.Fn dtfl_probe_less_than "const dtfl_probe *p" "const uint64_t *t"
+.Ft bool
+.Fn dtfl_probe_less_equal "const dtfl_probe *p" "const uint64_t *t"
+.Ft bool
+.Fn dtfl_probe_done "const dtfl_probe *p"
+.Ft const uint64_t *
+.Fn dtfl_probe_frontier "const dtfl_probe *p" "size_t *n"
+.Sh DESCRIPTION
+A probe reports which timestamps have elapsed at a point in a dataflow.
+.Fn dtfl_probe_new
+allocates one.
+.Fn dtfl_stream_probe_with
+inserts a pass-through operator in
+.Fa st
+that mirrors the stream's frontier into
+.Fa p
+and returns the stream unchanged, so the probe can be attached without
+otherwise altering the computation.
+A probe observes one stream's class.
+.Pp
+.Fn dtfl_probe_less_than
+returns true while the frontier is strictly before
+.Fa t ,
+and
+.Fn dtfl_probe_less_equal
+while it is at or before
+.Fa t .
+.Fn dtfl_probe_done
+returns true once the frontier is empty, which happens after every
+input feeding the probed stream has closed and the stream has drained.
+A program drives a computation by stepping the worker while a probe is
+behind the time of interest, or until it is done.
+.Pp
+.Fn dtfl_probe_frontier
+returns the frontier as an antichain of
+.Fa *n
+times of the stream's class, valid until the next worker step.
+.Fn dtfl_probe_free
+releases the probe.
+A probe may be freed after the dataflow that uses it is dropped; the
+frontier it shares with the operator is reference counted so either may
+outlive the other.
+.Sh RETURN VALUES
+.Fn dtfl_probe_new
+returns a new probe.
+.Fn dtfl_stream_probe_with
+returns the probed stream.
+The predicate functions return a
+.Vt bool .
+.Fn dtfl_probe_frontier
+returns the frontier times and stores their count through
+.Fa n .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_probe *p = dtfl_probe_new();
+/* inside the build callback: */
+dtfl_stream_probe_with(stream, p);
+
+/* step the worker until the probe passes the current input time. */
+for (uint64_t round = 0; round < 10; round++) {
+	uint64_t next = round + 1;
+	dtfl_input_advance_to(in, &next);
+	while (dtfl_probe_less_than(p, &next))
+		dtfl_worker_step(w);
+}
+dtfl_input_close(in);
+while (!dtfl_probe_done(p))
+	dtfl_worker_step(w);
+dtfl_probe_free(p);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_input_new 3 ,
+.Xr dtfl_worker_dataflow 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Vt Probe
+trait and its
+.Vt Handle .
+.Sh THREAD SAFETY
+A
+.Vt dtfl_probe
+is worker-owned, like upstream's
+.Vt ProbeHandle ,
+which holds an
+.Vt Rc<RefCell<MutableAntichain>> :
+it belongs to the thread that runs the worker whose stream it probes and
+must not be queried from another thread (PLAN section 5).
+The operator updates the shared frontier on that thread and the queries
+read it on that thread.
+A read-only snapshot that another thread may watch is a planned
+addition and is not part of this interface.

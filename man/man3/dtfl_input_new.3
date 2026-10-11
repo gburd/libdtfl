@@ -1,0 +1,137 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_INPUT_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_input_new ,
+.Nm dtfl_input_to_stream ,
+.Nm dtfl_input_send ,
+.Nm dtfl_input_flush ,
+.Nm dtfl_input_advance_to ,
+.Nm dtfl_input_time ,
+.Nm dtfl_input_close
+.Nd supply records to a timely dataflow interactively
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_input *
+.Fn dtfl_input_new "const dtfl_type *type"
+.Ft dtfl_stream *
+.Fn dtfl_input_to_stream "dtfl_input *in" "dtfl_scope *scope"
+.Ft void
+.Fn dtfl_input_send "dtfl_input *in" "const void *rec" "size_t len"
+.Ft void
+.Fn dtfl_input_flush "dtfl_input *in"
+.Ft void
+.Fn dtfl_input_advance_to "dtfl_input *in" "const uint64_t *t"
+.Ft const uint64_t *
+.Fn dtfl_input_time "const dtfl_input *in"
+.Ft void
+.Fn dtfl_input_close "dtfl_input *in"
+.Sh DESCRIPTION
+A
+.Vt dtfl_input
+is a handle through which the caller feeds records into a running
+computation, the C form of timely's
+.Vt InputHandle .
+.Fn dtfl_input_new
+allocates one for records of
+.Fa type ,
+which it retains.
+.Pp
+.Fn dtfl_input_to_stream
+registers the handle with
+.Fa scope
+and returns the resulting input
+.Vt dtfl_stream .
+The scope's time class must be totally ordered.
+A handle may be attached to several scopes; each attachment is a
+separate input operator fed by the same handle, so a record sent after
+one attachment is not seen by an operator that attached earlier (the
+handle flushes buffered records when a new stream registers).
+.Pp
+.Fn dtfl_input_send
+buffers a record at the handle's current epoch.
+.Fn dtfl_input_flush
+pushes any buffered records to the attached streams at the current
+epoch; buffering also flushes automatically once it reaches an internal
+threshold.
+.Pp
+.Fn dtfl_input_advance_to
+closes the current epoch, flushing it, and opens a new one at
+.Fa t ,
+a time of the scope's class.
+Advancing lets timely issue progress notifications, because the input
+can no longer produce records at an earlier time.
+.Fn dtfl_input_time
+returns the current epoch, or
+.Dv NULL
+if no stream has been created yet.
+.Pp
+.Fn dtfl_input_close
+seals the input, closing its final epoch, and frees the handle.
+After it returns, the handle must not be used.
+Closing is what lets the dataflow drain and shut down; a program that
+never closes an input and never drops the capability it implies will
+step forever.
+.Sh RETURN VALUES
+.Fn dtfl_input_new
+returns a new handle.
+.Fn dtfl_input_to_stream
+returns the input stream.
+.Fn dtfl_input_time
+returns the current epoch, or
+.Dv NULL
+before the first
+.Fn dtfl_input_to_stream .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_input *in = dtfl_input_new(dtfl_type_u64());
+dtfl_probe *p = dtfl_probe_new();
+/* inside the build callback: */
+dtfl_stream *s = dtfl_input_to_stream(in, scope);
+dtfl_stream_probe_with(s, p);
+
+for (uint64_t round = 0; round < 10; round++) {
+	unsigned char buf[8];
+	uint64_t next = round + 1;
+	dtfl_put_u64(buf, round);
+	dtfl_input_send(in, buf, sizeof buf);
+	dtfl_input_advance_to(in, &next);
+	while (dtfl_probe_less_than(p, &next))
+		dtfl_worker_step(w);
+}
+dtfl_input_close(in);
+.Ed
+.Sh ERRORS
+.Fn dtfl_input_advance_to
+calls the panic hook if
+.Fa t
+does not advance the current epoch, and
+.Fn dtfl_input_to_stream
+calls it if the scope's time class is not totally ordered; both are
+contract violations.
+.Sh SEE ALSO
+.Xr dtfl_probe_new 3 ,
+.Xr dtfl_unordered_input_new 3 ,
+.Xr dtfl_worker_dataflow 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Vt InputHandle
+and the
+.Fn new_input ,
+.Fn input_from
+and
+.Fn to_stream
+methods of the
+.Vt Input
+trait.
+.Sh THREAD SAFETY
+A
+.Vt dtfl_input
+belongs to the thread that runs the worker it feeds and must not be
+used from another thread (PLAN section 5).
+Send, advance and close all run on that thread.

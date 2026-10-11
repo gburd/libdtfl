@@ -1,0 +1,90 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_FEEDBACK_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_feedback_new ,
+.Nm dtfl_feedback_connect
+.Nd create a cycle in a dataflow
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_feedback_new "dtfl_scope *scope" "const dtfl_type *type" \
+"const uint64_t *summary" "dtfl_feedback **handle"
+.Ft void
+.Fn dtfl_feedback_connect "dtfl_feedback *handle" "dtfl_stream *st"
+.Sh DESCRIPTION
+A feedback edge turns a dataflow into a cycle: a stream whose contents
+are supplied by a later part of the same computation.
+.Fn dtfl_feedback_new
+reserves a loop operator in
+.Fa scope
+with records of
+.Fa type
+and returns its output stream, before the source of that stream exists.
+It stores a handle through
+.Fa handle .
+.Fa summary
+is a path summary of the scope's class
+.Pq Fn dtfl_summary_depth words
+that is applied to every record's time as it re-enters the loop.
+.Pp
+.Fn dtfl_feedback_connect
+binds
+.Fa st
+as the loop operator's source and builds the operator, consuming the
+handle.
+Each record arriving on
+.Fa st
+is re-emitted on the loop stream with its time advanced by
+.Fa summary ;
+if the summary overflows the time's declared coordinate width, the
+record is dropped, which is how a bounded loop stops.
+A sound loop therefore uses a summary that strictly advances the loop
+coordinate, so reachability sees that re-circulated data lands at a
+later time and the frontier still advances.
+.Pp
+The loop stream is usually merged with a seed stream (for example with
+.Fn dtfl_stream_concat )
+before the merged stream is both consumed and fed back.
+.Sh RETURN VALUES
+.Fn dtfl_feedback_new
+returns the loop stream and stores the handle through
+.Fa handle .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+uint64_t summary[DTFL_TIME_MAX];
+dtfl_feedback *fb;
+
+dtfl_summary_default(dtfl_scope_time_class(scope), summary);
+summary[0] = 1;  /* advance the loop coordinate by one per lap */
+
+dtfl_stream *cycle = dtfl_feedback_new(scope, dtfl_type_u64(),
+    summary, &fb);
+dtfl_stream *merged = dtfl_stream_concat(seed, cycle);
+dtfl_stream *next = step_the_computation(merged);
+dtfl_feedback_connect(fb, next);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_scope_iterative 3 ,
+.Xr dtfl_summary_default 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Vt Feedback
+and
+.Vt ConnectLoop
+traits and the
+.Vt Handle
+they share.
+The
+.Vt LoopVariable
+trait is the same operator in an iterative scope, with the summary
+wrapped in the inner coordinate.
+.Sh THREAD SAFETY
+The handle and the streams belong to the thread that runs the worker and
+must not be used from another thread (PLAN section 5).
+Both calls run during the dataflow build, on that thread.

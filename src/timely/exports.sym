@@ -66,3 +66,26 @@ dtfl_activator_activate_after
 dtfl_activator_free
 dtfl_sync_activator_activate
 dtfl_sync_activator_free
+# P4b: sources, sinks, loops (ops_input, ops_unordered_input, ops_probe,
+# ops_feedback, ops_reclock).
+dtfl_input_new
+dtfl_input_to_stream
+dtfl_input_send
+dtfl_input_flush
+dtfl_input_advance_to
+dtfl_input_time
+dtfl_input_close
+dtfl_unordered_input_new
+dtfl_unordered_input_send
+dtfl_unordered_input_flush
+dtfl_unordered_input_free
+dtfl_probe_new
+dtfl_probe_free
+dtfl_stream_probe_with
+dtfl_probe_less_than
+dtfl_probe_less_equal
+dtfl_probe_done
+dtfl_probe_frontier
+dtfl_feedback_new
+dtfl_feedback_connect
+dtfl_stream_reclock
