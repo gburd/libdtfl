@@ -138,8 +138,27 @@ void __dtfl_worker_broadcast(__dtfl_worker *w, size_t identifier,
     const size_t *path, size_t len, const __dtfl_msg_class *mc,
     __dtfl_push **pusher, __dtfl_pull **puller);
 
-/* The "timely" logger, or NULL; a new reference. */
+/* The named logger, or NULL; a new reference. */
 __dtfl_logger *__dtfl_worker_logger(__dtfl_worker *w, const char *name);
+
+/*
+ * Timely event logging (timely_log.c).  Each is a no-op when no
+ * "timely" logger is registered.  Events are encoded as bincode
+ * TimelyEvent values (PLAN D9).
+ */
+void __dtfl_worker_log_operates(__dtfl_worker *w, size_t id, const size_t *addr,
+    size_t addr_len, const char *name);
+void __dtfl_worker_log_shutdown(__dtfl_worker *w, size_t id);
+void __dtfl_worker_log_schedule(__dtfl_worker *w, size_t id, bool start);
+void __dtfl_worker_log_push_progress(__dtfl_worker *w, size_t op_id);
+void __dtfl_worker_log_comm_channel(__dtfl_worker *w, size_t id, bool progress);
+void __dtfl_worker_log_channel(__dtfl_worker *w, size_t id, const size_t *scope,
+    size_t scope_len, size_t src_node, size_t src_port, size_t tgt_node,
+    size_t tgt_port, const char *typ);
+void __dtfl_worker_log_park(__dtfl_worker *w, bool park, uint64_t timeout_ns);
+void __dtfl_worker_log_messages(__dtfl_worker *w, bool is_send, size_t channel,
+    size_t source, size_t target, size_t seq, int64_t record_count);
+void __dtfl_worker_log_text(__dtfl_worker *w, const char *text);
 
 /*
  * Installs a built top-level operator as dataflow `index` (worker.rs
