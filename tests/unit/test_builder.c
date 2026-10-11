@@ -19,22 +19,24 @@
 
 /* ------------------------------------------------------------------ */
 
+static dtfl_cap *g_c0, *g_c1;
+
 static bool
 incorrect_logic(dtfl_op *op, void *ctx)
 {
-	dtfl_cap *c0, *c1;
 	dtfl_session *s;
 
 	(void)ctx;
-	c0 = dtfl_op_initial_cap(op, 0);
-	c1 = dtfl_op_initial_cap(op, 1);
-	if (c0 == NULL)
+	g_c0 = dtfl_op_initial_cap(op, 0);
+	g_c1 = dtfl_op_initial_cap(op, 1);
+	if (g_c0 == NULL)
 		return false;	/* only the first call acts */
 	/* Open output 1's session with output 0's capability: panics. */
-	s = dtfl_op_session(op, 1, c0);
+	s = dtfl_op_session(op, 1, g_c0);
 	dtfl_session_close(s);
-	dtfl_cap_drop(c0);
-	dtfl_cap_drop(c1);
+	dtfl_cap_drop(g_c0);
+	dtfl_cap_drop(g_c1);
+	g_c0 = g_c1 = NULL;
 	return false;
 }
 
@@ -66,7 +68,11 @@ DTFL_TEST(dataflow_operators_generic_builder_rc__incorrect_capabilities)
 	(void)params; (void)data;
 	g_worker = NULL;
 	g_tc = NULL;
+	g_c0 = g_c1 = NULL;
 	DTFL_EXPECT_PANIC(run(build_incorrect));
+	/* The panic skipped the drops; release what it left (no ASan leak). */
+	dtfl_cap_drop(g_c0);
+	dtfl_cap_drop(g_c1);
 	dtfl_worker_free(g_worker);
 	dtfl_time_class_free(g_tc);
 	return MUNIT_OK;
