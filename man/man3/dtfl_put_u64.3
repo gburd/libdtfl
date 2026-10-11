@@ -1,0 +1,142 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_PUT_U64 3
+.Os
+.Sh NAME
+.Nm dtfl_put_u8 ,
+.Nm dtfl_put_u16 ,
+.Nm dtfl_put_u32 ,
+.Nm dtfl_put_u64 ,
+.Nm dtfl_put_i8 ,
+.Nm dtfl_put_i16 ,
+.Nm dtfl_put_i32 ,
+.Nm dtfl_put_i64 ,
+.Nm dtfl_put_bytes ,
+.Nm dtfl_get_u8 ,
+.Nm dtfl_get_u16 ,
+.Nm dtfl_get_u32 ,
+.Nm dtfl_get_u64 ,
+.Nm dtfl_get_i8 ,
+.Nm dtfl_get_i16 ,
+.Nm dtfl_get_i32 ,
+.Nm dtfl_get_i64 ,
+.Nm dtfl_get_bytes
+.Nd encode and decode built-in record values
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/record.h
+.Ft size_t
+.Fn dtfl_put_u8 "void *buf" "uint8_t v"
+.Ft size_t
+.Fn dtfl_put_u16 "void *buf" "uint16_t v"
+.Ft size_t
+.Fn dtfl_put_u32 "void *buf" "uint32_t v"
+.Ft size_t
+.Fn dtfl_put_u64 "void *buf" "uint64_t v"
+.Ft size_t
+.Fn dtfl_put_i8 "void *buf" "int8_t v"
+.Ft size_t
+.Fn dtfl_put_i16 "void *buf" "int16_t v"
+.Ft size_t
+.Fn dtfl_put_i32 "void *buf" "int32_t v"
+.Ft size_t
+.Fn dtfl_put_i64 "void *buf" "int64_t v"
+.Ft size_t
+.Fn dtfl_put_bytes "void *buf" "const void *p" "size_t n"
+.Ft uint8_t
+.Fn dtfl_get_u8 "const void *buf"
+.Ft uint16_t
+.Fn dtfl_get_u16 "const void *buf"
+.Ft uint32_t
+.Fn dtfl_get_u32 "const void *buf"
+.Ft uint64_t
+.Fn dtfl_get_u64 "const void *buf"
+.Ft int8_t
+.Fn dtfl_get_i8 "const void *buf"
+.Ft int16_t
+.Fn dtfl_get_i16 "const void *buf"
+.Ft int32_t
+.Fn dtfl_get_i32 "const void *buf"
+.Ft int64_t
+.Fn dtfl_get_i64 "const void *buf"
+.Ft const void *
+.Fn dtfl_get_bytes "const void *buf" "size_t *n"
+.Sh DESCRIPTION
+These functions write and read the encodings of the built-in record
+types in
+.Xr dtfl_type 3 ,
+so callers handle native values.
+The encodings preserve order: comparing two encoded integers with
+.Xr memcmp 3
+gives the same answer as comparing the integers.
+.Pp
+The unsigned
+.Fn dtfl_put_u*
+functions write
+.Fa v
+big-endian in 1, 2, 4 or 8 bytes.
+The signed
+.Fn dtfl_put_i*
+functions write the two's complement value big-endian with its sign bit
+flipped, so that -1 encodes as
+.Li 7f ff ...
+and 0 as
+.Li 80 00 ... .
+Each
+.Fn dtfl_get_*
+reads a value of its type's width from
+.Fa buf
+and undoes the encoding.
+.Fa buf
+need not be aligned.
+.Pp
+.Fn dtfl_put_bytes
+writes a
+.Vt bytes
+or
+.Vt string
+value: a u64 big-endian length
+.Fa n ,
+then
+.Fa n
+bytes from
+.Fa p .
+.Fn dtfl_get_bytes
+reads one back, storing the payload length in
+.Fa *n .
+It does not validate; check untrusted input with
+.Xr dtfl_type_value_len 3
+first.
+.Sh RETURN VALUES
+The
+.Fn dtfl_put_*
+functions return the number of bytes written: the type's width, or
+.Fa n
++ 8 for
+.Fn dtfl_put_bytes .
+The caller must provide that much room.
+.Fn dtfl_get_bytes
+returns a pointer to the payload inside
+.Fa buf .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+unsigned char a[4], b[4];
+
+dtfl_put_i32(a, -5);
+dtfl_put_i32(b, 3);
+assert(memcmp(a, b, 4) < 0);
+assert(dtfl_get_i32(a) == -5);
+.Ed
+.Sh ERRORS
+None.
+.Sh SEE ALSO
+.Xr dtfl_type 3
+.Sh HISTORY
+Rust serializes records with bincode, which is little-endian and does
+not preserve order.
+libdtfl chooses order-preserving encodings so that the built-in
+comparisons are byte comparisons.
+.Sh THREAD SAFETY
+All of these functions are reentrant.

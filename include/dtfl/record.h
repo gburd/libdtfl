@@ -6,8 +6,9 @@
  *
  * A record is a byte string.  A dtfl_type says how long a value is, how
  * values compare (which must equal the Rust type's derived Ord), how
- * they hash for exchange, and how to print one.  Built-in descriptors
- * use order-preserving encodings so their cmp is memcmp then length.
+ * they hash for exchange, and how to print one.  The built-in integer
+ * descriptors use order-preserving encodings, so their cmp is memcmp;
+ * bytes and string compare their payloads, not their length prefixes.
  *
  * Descriptors are immutable and may be shared between threads.  The
  * built-ins are static and never freed; composite descriptors made with
@@ -32,10 +33,10 @@ struct dtfl_type {
 	size_t fixed_size;
 	/*
 	 * For variable-length types: the length of the value starting at p,
-	 * given `avail` readable bytes.  Returns 0 if the bytes are not a
-	 * valid value.  NULL when fixed_size != 0, or when the value is
-	 * always the whole remaining span (a type used only as the last
-	 * field, such as dtfl_type_bytes).
+	 * given `avail` readable bytes.  Returns SIZE_MAX if the bytes are
+	 * not a valid value (0 is a valid length: unit, empty tuples).
+	 * NULL when fixed_size != 0, or when the value is always the whole
+	 * remaining span (a user type used only as the last field).
 	 */
 	size_t (*len)(const dtfl_type *t, const void *p, size_t avail);
 	/* Three-way compare.  NULL means memcmp then length. */
@@ -101,7 +102,10 @@ DTFL_API int dtfl_type_cmp(const dtfl_type *t, const void *a, size_t alen,
 DTFL_API uint64_t dtfl_type_hash(const dtfl_type *t, const void *p, size_t len);
 DTFL_API int dtfl_type_fmt(const dtfl_type *t, FILE *f, const void *p,
     size_t len);
-/* Length of the value at p (fixed_size, len(), or avail). */
+/*
+ * Length of the value at p (fixed_size, len(), or avail), or SIZE_MAX if
+ * the bytes are not a valid value within avail.
+ */
 DTFL_API size_t dtfl_type_value_len(const dtfl_type *t, const void *p,
     size_t avail);
 
