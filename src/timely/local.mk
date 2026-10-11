@@ -8,6 +8,7 @@ timely_sources = \
 	src/timely/timely_int.h \
 	src/timely/log_codec_int.h \
 	src/timely/ops_src_int.h \
+	src/timely/capture_int.h \
 	src/timely/activate.c \
 	src/timely/worker.c \
 	src/timely/timely_log.c \
@@ -39,7 +40,11 @@ timely_sources = \
 	src/timely/ops_unordered_input.c \
 	src/timely/ops_probe.c \
 	src/timely/ops_feedback.c \
-	src/timely/ops_reclock.c
+	src/timely/ops_reclock.c \
+	src/timely/event.c \
+	src/timely/capture.c \
+	src/timely/extract.c \
+	src/timely/replay.c
 
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
@@ -66,6 +71,9 @@ dist_man_MANS += man/man3/dtfl_unordered_input_new.3
 dist_man_MANS += man/man3/dtfl_probe_new.3
 dist_man_MANS += man/man3/dtfl_feedback_new.3
 dist_man_MANS += man/man3/dtfl_stream_reclock.3
+dist_man_MANS += man/man3/dtfl_stream_capture.3
+dist_man_MANS += man/man3/dtfl_event_link_replay.3
+dist_man_MANS += man/man3/dtfl_event_link_extract.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -121,3 +129,15 @@ TESTS += tests/pbt/pbt_input
 tests_pbt_pbt_input_SOURCES = tests/pbt/pbt_input.c
 tests_pbt_pbt_input_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_input_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_capture
+TESTS += tests/unit/test_capture
+tests_unit_test_capture_SOURCES = tests/unit/test_capture.c
+tests_unit_test_capture_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_capture_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_event
+TESTS += tests/unit/test_event
+tests_unit_test_event_SOURCES = tests/unit/test_event.c
+tests_unit_test_event_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_event_LDADD = $(INTERNAL_LIBS)

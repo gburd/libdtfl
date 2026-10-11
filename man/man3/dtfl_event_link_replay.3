@@ -1,0 +1,64 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_EVENT_LINK_REPLAY 3
+.Os
+.Sh NAME
+.Nm dtfl_event_link_replay
+.Nd replay a captured event stream into a scope
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_event_link_replay "dtfl_event_link *l" "dtfl_scope *scope"
+.Sh DESCRIPTION
+.Fn dtfl_event_link_replay
+reconstructs, as a stream in
+.Fa scope ,
+the stream whose events were captured into
+.Fa l .
+A
+.Em Progress
+event advances the replay operator's capabilities; a
+.Em Messages
+event is re-emitted at its recorded time.
+The replayed stream carries the same records and the same frontier the
+captured stream had, so a downstream operator sees the computation as if
+it had been built in this scope.
+.Pp
+The scope's time class must be the class the link was created with.
+The operator re-activates itself after each schedule so that a link
+still being filled by a running capture keeps draining.
+.Pp
+The link is not consumed: it may be extracted after replay, and a
+thread-safe link
+.Pq Xr dtfl_event_link_new_sync 3
+may be replayed while it is still being pushed from another thread.
+.Sh RETURN VALUES
+Returns the replayed stream, owned by
+.Fa scope .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_stream *s = dtfl_event_link_replay(link, scope);
+dtfl_stream_inspect(s, print_record, DTFL_NOCTX);
+.Ed
+.Sh ERRORS
+This function does not return error codes.
+A scope whose time class differs from the link's is a programming error
+and calls the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_event_link_extract 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl_stream_capture 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Fn replay_into
+operator of
+.Pa capture/replay.rs .
+.Sh THREAD SAFETY
+The replayed stream and its operator belong to the worker thread that
+built them.
+The link may be shared across threads only when it was created with
+.Fn dtfl_event_link_new_sync .
