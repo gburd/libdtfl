@@ -104,7 +104,7 @@ RULES = {
         (r"^differential-dataflow/src/collection.rs$", "src/dd/collection.c", "P8", "todo\tlinear methods land in P5, arrangement-backed ones in P7 and P8; the row is done in P8"),
         (r"^differential-dataflow/src/difference.rs$", "src/dd/diff.c", "P5", "todo\tdiff classes (D4)"),
         (r"^differential-dataflow/src/consolidation.rs$", "src/dd/consolidate.c", "P5", "todo\t"),
-        (r"^differential-dataflow/src/lattice.rs$", "src/dd/lattice.c", "P1", "todo\tthe time-class lattice operations need it (D3)"),
+        (r"^differential-dataflow/src/lattice.rs$", "src/progress/time.c", "P1", "todo\tthe time-class lattice operations need it (D3)"),
         (r"^differential-dataflow/src/input.rs$", "src/dd/input.c", "P5", "todo\t"),
         (r"^differential-dataflow/src/hashable.rs$", "src/base/hash.c", "P1", "todo\tFNV-1a over record bytes; not interoperable with Rust routing (D9)"),
         (r"^differential-dataflow/src/logging.rs$", "src/dd/dd_log.c", "P6", "todo\tthe spine and batcher emit these events"),

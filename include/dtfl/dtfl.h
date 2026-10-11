@@ -9,5 +9,6 @@
 
 #include "dtfl/base.h"
 #include "dtfl/record.h"
+#include "dtfl/time.h"
 
 #endif /* DTFL_DTFL_H */

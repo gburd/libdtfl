@@ -13,7 +13,8 @@
  * depend on the class.
  *
  * Classes are immutable after creation and may be shared between
- * threads.  See dtfl_time_class(3).
+ * threads.  The manual pages are dtfl_time_class, dtfl_time_cmp and
+ * dtfl_summary_results_in in section 3.
  */
 #ifndef DTFL_TIME_H
 #define DTFL_TIME_H
@@ -50,7 +51,10 @@ typedef struct dtfl_time_class dtfl_time_class;
 /* (): no coordinates.  Every time compares equal. */
 DTFL_API dtfl_time_class *dtfl_time_unit(void);
 
-/* A totally ordered integer or Duration timestamp: one coordinate. */
+/*
+ * A totally ordered integer or Duration timestamp: one coordinate.
+ * Returns NULL (and sets the error detail) for an invalid coordinate.
+ */
 DTFL_API dtfl_time_class *dtfl_time_total(dtfl_coord coord);
 
 /* Shorthands for dtfl_time_total of the common coordinates. */
@@ -60,7 +64,9 @@ DTFL_API dtfl_time_class *dtfl_time_duration(void);
 
 /*
  * Product<outer, inner>: product partial order.  Depth is the sum of the
- * children's depths; outer coordinates come first.
+ * children's depths; outer coordinates come first.  Returns NULL (and
+ * sets the error detail) if the time or summary would exceed
+ * DTFL_TIME_MAX words.  dtfl_time_lex has the same limit.
  */
 DTFL_API dtfl_time_class *dtfl_time_product(const dtfl_time_class *outer,
     const dtfl_time_class *inner);
@@ -74,15 +80,18 @@ DTFL_API dtfl_time_class *dtfl_time_lex(const dtfl_time_class *first,
     const dtfl_time_class *second);
 
 /*
- * AltNeu<t> over a totally ordered one-coordinate class, encoded as
- * 2t + neu.  Returns NULL (and sets the error detail) if `base` is not a
- * one-coordinate total order or is wider than 63 bits of range.
+ * AltNeu<t> over a one-coordinate unsigned or Duration class, encoded
+ * as 2t + neu.  Returns NULL (and sets the error detail) for any other
+ * base.  With a 64-bit base, times t >= 2^63 do not fit the encoding
+ * and are refused where they enter (PLAN D3).
  */
 DTFL_API dtfl_time_class *dtfl_time_altneu(const dtfl_time_class *base);
 
 /*
  * PointStamp<coord> padded to `max_len` coordinates (PLAN D3).  Missing
- * coordinates are the minimum.  1 <= max_len <= DTFL_TIME_MAX.
+ * coordinates are the minimum.  `coord` is unsigned or Duration, and
+ * 1 <= max_len < DTFL_TIME_MAX, since a summary takes max_len + 1 words.
+ * Returns NULL (and sets the error detail) otherwise.
  */
 DTFL_API dtfl_time_class *dtfl_time_pointstamp(dtfl_coord coord,
     unsigned max_len);
