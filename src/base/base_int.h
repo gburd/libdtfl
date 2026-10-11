@@ -139,7 +139,7 @@ __dtfl_arc_retain(__dtfl_arc *a)
 /*
  * Returns true when the caller dropped the last reference.  The
  * acq_rel decrement orders every earlier use of the object (release)
- * before the final dropper's free (acquire).  The usual release
+ * before the final dropper reclaims it (acquire).  The usual release
  * decrement plus acquire fence is equivalent, but ThreadSanitizer does
  * not model standalone fences and gcc rejects them under -fsanitize=thread.
  */

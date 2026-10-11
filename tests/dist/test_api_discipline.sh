@@ -14,7 +14,9 @@ fail=0
 
 check() {
 	desc="$1"; pattern="$2"; shift 2
-	hits=$(grep -nE "$pattern" "$@" 2>/dev/null | grep -v 'DTFL_RAW_OK' || true)
+	# Lines that are comment text (start with *, / * or //) are not code.
+	hits=$(grep -nE "$pattern" "$@" 2>/dev/null | grep -v 'DTFL_RAW_OK' \
+	    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|/\*|//)' || true)
 	if [ -n "$hits" ]; then
 		echo "[api] FAIL: $desc"
 		echo "$hits" | sed 's/^/    /'
