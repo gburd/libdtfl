@@ -84,8 +84,10 @@ ADR in `dev/adr/`.  Do not route around it in code.
    `src/base/os_thread.c`.  Configuration arrives through
    `dtfl_config`, and environment lookup happens only through a
    callback the caller supplies (PLAN D9).
-3. Never cast away an allocation's return code.  Check it, and
-   propagate the error with goto-cleanup.
+3. `__dtfl_alloc()`, `__dtfl_calloc()` and `__dtfl_realloc()` never
+   return NULL.  On failure they call the panic hook, the way Rust aborts
+   on allocation failure.  Public constructors that can fail for other
+   reasons return a `DTFL_E*` code and clean up with goto-cleanup.
 4. Examples and tools use only the public `dtfl_*` API.  If one needs an
    internal, the public API is missing something: add it there.
 5. Every public symbol is listed in `src/libdtfl.map`, has a man page,
@@ -159,6 +161,24 @@ Benchmarks run on EC2 through the `aws-benchmark` skill, never on this
 host.  Terminate what you launch.
 
 ## 11. Sub-agent work
+
+Integration happens on the local `build` branch.  `main` holds only
+reviewed integration points.  Each worker gets its own worktree,
+created by the lead:
+
+```sh
+git worktree add .local/worktrees/agent-<task> -b feat/<task> build
+```
+
+A worker commits only on its own `feat/<task>` branch, inside its own
+worktree, and never touches another worktree or `build`.  The lead
+merges into `build` after review.
+
+Each component directory owns a `local.mk` fragment that lists its
+sources, headers and unit tests.  The top-level `Makefile.am` only
+includes fragments.  A worker edits only the fragments of the
+components it owns, which keeps parallel branches merge-clean.
+
 
 A phase in PLAN section 10 is large enough for a worker, reviewer and
 re-reviewer team (the `subagent-teams` skill).  Split a phase by module,

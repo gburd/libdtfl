@@ -291,9 +291,13 @@ Timestamps in the pinned, non-excluded code:
   `lattice.rs:204`, used by no pinned program).
 
 A C runtime cannot be generic over these the way Rust is.  libdtfl
-represents every time as a short vector of `uint64_t` coordinates,
-`dtfl_time`, with inline storage for four coordinates.  A scope carries
-a `dtfl_time_class` that gives the vector its meaning.
+represents every time as a vector of `uint64_t` coordinates whose
+length, the class _depth_, is fixed per scope.  A scope carries a
+`dtfl_time_class` that gives the vector its meaning.  Internally a time
+is `const uint64_t *` plus the class, and arrays of times are flat runs
+of `depth` words, so traces and progress tracking never chase
+pointers or handle variable lengths.  Depth is at most `DTFL_TIME_MAX`
+(16) coordinates.
 
 **Coordinate kinds.** Each coordinate has a declared kind:
 
@@ -324,7 +328,7 @@ a `dtfl_time_class` that gives the vector its meaning.
 | `Pair<S, T>` and similar user product types | `PRODUCT` | product |
 | `(A, B)` tuple | `LEX` of two child classes | lexicographic, with `maximum` for meet (`lattice.rs:204-230`) |
 | `AltNeu<T>` with `T` totally ordered | `TOTAL`, one coordinate, encoded `2t + neu` | total |
-| `PointStamp<T>` | `POINTSTAMP` of one child kind | product over a variable-length vector, trailing minimum coordinates trimmed (`pointstamp.rs:65-69`) |
+| `PointStamp<T>` | `POINTSTAMP(k)` of one child kind, padded to a declared maximum of `k` coordinates | product order; see below |
 | `Product<A, PointStamp<B>>` | `PRODUCT(A, POINTSTAMP(B))` | product; the PointStamp tail is variable length |
 
 Notes on AltNeu:
@@ -337,6 +341,21 @@ Notes on AltNeu:
 - Every pinned use is `AltNeu<usize>`.
 - `t >= 2^63` overflows the encoding and is rejected with
   `DTFL_ERANGE`.
+
+**PointStamp padding.**  Upstream stores a `PointStamp` as a variable
+vector with trailing minimum coordinates trimmed, and compares it as if
+missing coordinates were the minimum.  A vector padded with the minimum
+to a fixed `k` is the same value: product order, join (pointwise max),
+meet (pointwise min) and lexicographic `Ord` all agree, because the
+minimum sorts below every other coordinate and a canonical trimmed
+vector has no trailing minimum.  `k` is declared when the dynamic scope
+is created; `enter_dynamic` and `feedback_summary` at a level above `k`
+fail with `DTFL_ERANGE`.  A PointStamp summary is `{ retain, actions }`
+with `actions` padded the same way.  Two summaries that differ only by
+trailing zero actions behave identically and compare equal here, where
+upstream's order (`pointstamp.rs:199-213`) keeps them distinct; treating
+behaviorally equal summaries as equal is sound for the reachability
+antichains that consume the order.
 
 **The class vtable.** Each class supplies the operations that the
 progress tracker, the traces and reduce call:
