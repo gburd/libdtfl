@@ -51,3 +51,8 @@ tests_pbt_pbt_record_LDADD = $(INTERNAL_PBT_LIBS)
 tests_pbt_pbt_batch_SOURCES = tests/pbt/pbt_batch.c
 tests_pbt_pbt_batch_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_batch_LDADD = $(INTERNAL_PBT_LIBS)
+
+# Thread creation (the one pthread_create; AGENTS.md section 5).
+os_thread_sources = src/base/os_thread.h src/base/os_thread.c
+libdtfl_la_SOURCES += $(os_thread_sources)
+libdtfl_internal_la_SOURCES += $(os_thread_sources)

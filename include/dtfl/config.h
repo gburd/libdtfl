@@ -16,7 +16,7 @@
  *   DTFL_COMM_SIM             `threads` workers on one OS thread with a
  *                             seeded scheduler (PLAN D8)
  *
- * See dtfl_config(3).
+ * The manual page is dtfl_config_new(3).
  */
 #ifndef DTFL_CONFIG_H
 #define DTFL_CONFIG_H
@@ -51,7 +51,8 @@ DTFL_API int dtfl_config_set_mode(dtfl_config *cfg, dtfl_comm_mode mode);
 DTFL_API int dtfl_config_set_threads(dtfl_config *cfg, size_t threads);
 /*
  * Cluster membership: this process's index and every process's
- * "host:port" listening address.  Copies the strings.
+ * "host:port" listening address.  Copies the strings.  Does not change
+ * the mode.
  */
 DTFL_API int dtfl_config_set_cluster(dtfl_config *cfg, size_t process,
     const char *const *addresses, size_t naddresses);
@@ -86,9 +87,12 @@ DTFL_API uint64_t dtfl_config_seed(const dtfl_config *cfg);
  * else threads > 1 gives Process (ProcessBinary with -z), else Thread.
  *
  * Arguments that are not timely flags are kept, in order, in
- * rest[0..*nrest).  `rest` must have room for argc entries (it may be
- * argv itself; argv[0] is passed through as rest[0]).  getopt(3) is not
- * used and no global state is touched.
+ * rest[0..*nrest): free arguments, options timely does not know (where
+ * getopts would fail), and everything after "--" (which is dropped).
+ * `rest` must have room for argc entries (it may be argv itself;
+ * argv[0] is passed through as rest[0]).  On error cfg, rest and
+ * *nrest are unchanged.  getopt(3) is not used and no global state is
+ * touched.
  */
 DTFL_API int dtfl_config_from_args(dtfl_config *cfg, int argc,
     char *const *argv, char **rest, int *nrest);

@@ -8,6 +8,7 @@
 #define DTFL_DTFL_H
 
 #include "dtfl/base.h"
+#include "dtfl/config.h"
 #include "dtfl/record.h"
 #include "dtfl/time.h"
 
