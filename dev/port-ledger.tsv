@@ -28,7 +28,7 @@ timely-dataflow	communication/src/lib.rs	190	src/comm/comm_int.h	P2	todo	Push/Pu
 timely-dataflow	communication/src/logging.rs	59	src/comm/comm_log.c	P2	todo	
 timely-dataflow	communication/src/networking.rs	172	src/comm/networking.c	P2	todo	
 timely-dataflow	container/src/lib.rs	294	src/base/batch.c	P1	todo	the record batch is the only container (D2)
-timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	todo	
+timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	done	
 timely-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	todo	manual skeleton and menu
 timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
