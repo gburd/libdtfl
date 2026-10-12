@@ -49,7 +49,7 @@ timely_sources = \
 	src/timely/ops_state_machine.c \
 	src/timely/ops_branch.c \
 	src/timely/ops_broadcast.c \
-	src/timely/ops_flow_controlled.c
+	src/timely/ops_flow_controlled.c \
 	src/timely/ops_enterleave.c \
 	src/timely/ops_result.c \
 	src/timely/sync.c \
