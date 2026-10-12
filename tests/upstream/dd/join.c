@@ -590,6 +590,72 @@ DTFL_TEST(join__join_scale_10000) { (void)params; (void)data; return join_scalin
 DTFL_TEST(join__join_scale_100000) { (void)params; (void)data; return join_scaling(100000); }
 DTFL_TEST(join__join_scale_1000000) { (void)params; (void)data; return join_scaling(1000000); }
 
+/* ------------------------------------------------------------------ */
+/* unit_key: a 0-byte (unit) join key must still match (regression).   */
+/* A valid cursor at a unit key returns a NULL data pointer with length */
+/* 0; the join loop must not read that as an exhausted cursor.          */
+/* ------------------------------------------------------------------ */
+
+static dtfl_collection *
+do_join_unit(dtfl_collection *c1, dtfl_collection *c2)
+{
+	const dtfl_type *out_type = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	/* key is unit (0 bytes); each record is just the u64 value. */
+	dtfl_collection *j = dtfl_collection_join(c1, c2, dtfl_type_unit(),
+	    dtfl_type_u64(), dtfl_type_u64(), out_type);
+
+	dtfl_type_free(out_type);
+	return j;
+}
+
+DTFL_TEST(join__unit_key)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *t1 = dtfl_type_pair(dtfl_type_unit(), dtfl_type_u64());
+	const dtfl_type *t2 = dtfl_type_pair(dtfl_type_unit(), dtfl_type_u64());
+	build_ctx c;
+	collected out;
+	unsigned char rec[32];
+	size_t off;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	/* record type is (unit, u64); the unit key occupies 0 bytes. */
+	c.in1 = dtfl_input_session_new(t1, r);
+	c.in2 = dtfl_input_session_new(t2, r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.join = do_join_unit;
+	assert_int(dtfl_worker_dataflow(w, "ujoin", tc, build_join, &c), ==, 0);
+
+	/* col1 = {()->2}; col2 = {()->3}.  Join yields ()->(2,3). */
+	off = 0; put_u64(rec, &off, 2);
+	dtfl_input_session_insert(c.in1, rec, off);
+	off = 0; put_u64(rec, &off, 3);
+	dtfl_input_session_insert(c.in2, rec, off);
+	run_epoch(w, &c, 1);
+	dtfl_input_session_close(c.in1);
+	dtfl_input_session_close(c.in2);
+	while (dtfl_worker_step(w))
+		;
+
+	/* Expect ()->(2,3) with diff +1 at time 0 (the unit key is empty). */
+	off = 0; put_u64(rec, &off, 2); put_u64(rec, &off, 3);
+	assert_int64(out_diff(&out, rec, off, 0), ==, 1);
+	assert_size(out.n, ==, 1);
+
+	dtfl_probe_free(c.probe);
+	dtfl_type_free(t1);
+	dtfl_type_free(t2);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(join__join),
 	DTFL_T(join__join_map),
@@ -602,6 +668,7 @@ static MunitTest tests[] = {
 	DTFL_T(join__join_scale_10000),
 	DTFL_T(join__join_scale_100000),
 	DTFL_T(join__join_scale_1000000),
+	DTFL_T(join__unit_key),
 	DTFL_T_END
 };
 

@@ -265,7 +265,7 @@ differential-dataflow	differential-dataflow/src/operators/int_proxy/join.rs	218	
 differential-dataflow	differential-dataflow/src/operators/int_proxy/mod.rs	67	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
 differential-dataflow	differential-dataflow/src/operators/int_proxy/reduce.rs	376	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
 differential-dataflow	differential-dataflow/src/operators/iterate.rs	271	src/dd/iterate.c	P8	done	iterate plus the Variable feedback (new, new_from, set, set_concat)
-differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	wip	join_core, join, join_map, semijoin, antijoin done; join_scale tests wired on count; a unit (0-byte) join key does not match in the arrange/join path, tracked separately
+differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	done	
 differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	P6-trace: EditList/ValueHistory are consumer-side (populate_key default is in cursor.c); land with P7 arrange/reduce
 differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	done	
 differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	done	

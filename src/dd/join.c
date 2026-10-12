@@ -162,16 +162,22 @@ deferred_step(join_ctx *jc, deferred *d)
 	while (!d->done) {
 		const void *k1 = NULL, *k2 = NULL;
 		size_t k1len = 0, k2len = 0;
+		bool v1, v2;
 		int cmp;
 
-		if (__dtfl_cursor_list_key_valid(&d->cursor1))
-			k1 = __dtfl_cursor_list_key(&d->cursor1, &k1len);
-		if (__dtfl_cursor_list_key_valid(&d->cursor2))
-			k2 = __dtfl_cursor_list_key(&d->cursor2, &k2len);
-		if (k1 == NULL || k2 == NULL) {
+		v1 = __dtfl_cursor_list_key_valid(&d->cursor1);
+		v2 = __dtfl_cursor_list_key_valid(&d->cursor2);
+		if (!v1 || !v2) {
 			d->done = true;
 			break;
 		}
+		/*
+		 * A valid cursor at a unit (0-length) key returns a NULL data
+		 * pointer with length 0, so exhaustion is decided by the
+		 * validity flags above, not by the key pointer.
+		 */
+		k1 = __dtfl_cursor_list_key(&d->cursor1, &k1len);
+		k2 = __dtfl_cursor_list_key(&d->cursor2, &k2len);
 		cmp = dtfl_type_cmp(jc->kt, k1, k1len, k2, k2len);
 		if (cmp < 0) {
 			__dtfl_cursor_list_seek_key(&d->cursor1, k2, k2len);
@@ -575,19 +581,46 @@ dtfl_collection_join_map(dtfl_collection *c1, dtfl_collection *c2,
 	return out;
 }
 
+/*
+ * memcpy that tolerates a NULL/zero source: a unit (0-byte) key or value
+ * is represented by a NULL pointer with length 0, and memcpy(dst, NULL,
+ * 0) is undefined behavior (flagged by UBSan).
+ */
+static inline void
+copy_n(void *dst, const void *src, size_t n)
+{
+	if (n != 0)
+		memcpy(dst, src, n);
+}
+
 /* The default join result: concatenate key || val1 || val2. */
+/*
+ * gcc -O2 cannot see that copy_n fills buf[0..total) on the total > 0
+ * path (the copies are length-guarded), so it warns maybe-uninitialized
+ * on the emit.  The code is correct; silence the known-imprecise warning
+ * for these two small result builders.
+ */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 static void
 join_concat_result(void *ctx, const void *key, size_t klen, const void *v1,
     size_t v1len, const void *v2, size_t v2len, dtfl_join_emit *out)
 {
 	unsigned char buf[4096];
 	size_t total = klen + v1len + v2len;
-	unsigned char *p = total <= sizeof buf ? buf : __dtfl_alloc(total);
+	unsigned char *p;
 
 	(void)ctx;
-	memcpy(p, key, klen);
-	memcpy(p + klen, v1, v1len);
-	memcpy(p + klen + v1len, v2, v2len);
+	if (total == 0) {
+		dtfl_join_emit_record(out, NULL, 0);
+		return;
+	}
+	p = total <= sizeof buf ? buf : __dtfl_alloc(total);
+	copy_n(p, key, klen);
+	copy_n(p + klen, v1, v1len);
+	copy_n(p + klen + v1len, v2, v2len);
 	dtfl_join_emit_record(out, p, total);
 	if (p != buf)
 		__dtfl_free(p);
@@ -614,15 +647,24 @@ semijoin_result(void *ctx, const void *key, size_t klen, const void *v1,
 {
 	unsigned char buf[4096];
 	size_t total = klen + v1len;
-	unsigned char *p = total <= sizeof buf ? buf : __dtfl_alloc(total);
+	unsigned char *p;
 
 	(void)ctx; (void)v2; (void)v2len;
-	memcpy(p, key, klen);
-	memcpy(p + klen, v1, v1len);
+	if (total == 0) {
+		/* unit key and unit value: an empty output record. */
+		dtfl_join_emit_record(out, NULL, 0);
+		return;
+	}
+	p = total <= sizeof buf ? buf : __dtfl_alloc(total);
+	copy_n(p, key, klen);
+	copy_n(p + klen, v1, v1len);
 	dtfl_join_emit_record(out, p, total);
 	if (p != buf)
 		__dtfl_free(p);
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 /*
  * semijoin: match (key, val) in `c` against `keys` by key, keeping the
