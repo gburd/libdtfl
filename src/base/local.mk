@@ -60,3 +60,8 @@ libdtfl_internal_la_SOURCES += $(os_thread_sources)
 # Embedding host hooks: logging sink and thread spawn (dtfl_embedding(7)).
 dist_man_MANS += man/man3/dtfl_set_log_hook.3 man/man3/dtfl_set_thread_hooks.3 \
 	man/man7/dtfl_embedding.7
+check_PROGRAMS += tests/unit/test_hooks
+TESTS += tests/unit/test_hooks
+tests_unit_test_hooks_SOURCES = tests/unit/test_hooks.c
+tests_unit_test_hooks_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_hooks_LDADD = $(INTERNAL_LIBS)
