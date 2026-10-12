@@ -20,6 +20,10 @@ path = "log_stream.rs"
 name = "operator_oracle"
 path = "operator_oracle.rs"
 
+[[bin]]
+name = "fuzz_oracle"
+path = "fuzz_oracle.rs"
+
 [profile.release]
 opt-level = 1
 

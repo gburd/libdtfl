@@ -32,15 +32,34 @@ tests_interop_test_operator_oracle_SOURCES = tests/interop/test_operator_oracle.
 tests_interop_test_operator_oracle_CFLAGS = $(TEST_CFLAGS)
 tests_interop_test_operator_oracle_LDADD = $(INTERNAL_LIBS)
 
+# Fuzz oracle anchor: count/distinct on a fixed seed set against real
+# differential (the Rust side of tests/pbt/pbt_oracle.c).
+check_PROGRAMS += tests/interop/test_fuzz_oracle
+TESTS += tests/interop/test_fuzz_oracle
+tests_interop_test_fuzz_oracle_SOURCES = tests/interop/test_fuzz_oracle.c
+tests_interop_test_fuzz_oracle_CFLAGS = $(TEST_CFLAGS)
+tests_interop_test_fuzz_oracle_LDADD = $(INTERNAL_LIBS)
+
+# Differential fuzz oracle (hegel): count and distinct against a from-scratch
+# C model, broad random search.  Uses PBT_CFLAGS and INTERNAL_PBT_LIBS; it
+# reports SKIP without --with-hegel (AGENTS.md section 4).
+check_PROGRAMS += tests/pbt/pbt_oracle
+TESTS += tests/pbt/pbt_oracle
+tests_pbt_pbt_oracle_SOURCES = tests/pbt/pbt_oracle.c
+tests_pbt_pbt_oracle_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_oracle_LDADD = $(INTERNAL_PBT_LIBS)
+
 # Ship the fixtures and the generators in the distribution tarball.
 EXTRA_DIST += \
 	tests/interop/fixtures/ord_order.bin \
 	tests/interop/fixtures/capture_wire.bin \
 	tests/interop/fixtures/log_stream.bin \
 	tests/interop/fixtures/operator_oracle.bin \
+	tests/interop/fixtures/fuzz_oracle.bin \
 	dev/gen-fixtures.d/Cargo.toml \
 	dev/gen-fixtures.d/Cargo.lock \
 	dev/gen-fixtures.d/ord_order.rs \
 	dev/gen-fixtures.d/capture_wire.rs \
 	dev/gen-fixtures.d/log_stream.rs \
-	dev/gen-fixtures.d/operator_oracle.rs
+	dev/gen-fixtures.d/operator_oracle.rs \
+	dev/gen-fixtures.d/fuzz_oracle.rs
