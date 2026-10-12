@@ -44,12 +44,15 @@ inspect_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
     const void *diff)
 {
 	collected *c = ctx;
+	uint64_t t;
 
 	if (c->n >= MAX_OUT || len > sizeof c->u[0].rec)
 		return;
 	memcpy(c->u[c->n].rec, rec, len);
 	c->u[c->n].rlen = len;
-	c->u[c->n].time = time[0];
+	/* The embedded time may be unaligned after a variable-length record. */
+	memcpy(&t, time, sizeof t);
+	c->u[c->n].time = t;
 	memcpy(&c->u[c->n].diff, diff, sizeof(int64_t));
 	c->n++;
 }
