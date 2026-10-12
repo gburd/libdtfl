@@ -105,8 +105,10 @@ reach_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
 	    dtfl_type_u64(), emit_dst, DTFL_NOCTX);
 	dtfl_collection *rts = dtfl_collection_enter(rc->roots, inner);
 	dtfl_collection *all = dtfl_collection_concat(stepped, rts);
-	dtfl_collection *dist = dtfl_collection_distinct(all, dtfl_diff_i64());
+	dtfl_diff *i64 = dtfl_diff_i64();
+	dtfl_collection *dist = dtfl_collection_distinct(all, i64);
 
+	dtfl_diff_free(i64);
 	dtfl_collection_free(all);
 	dtfl_collection_free(rts);
 	dtfl_collection_free(stepped);

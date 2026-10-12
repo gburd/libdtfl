@@ -217,8 +217,10 @@ reach_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
 	    dtfl_type_u64(), emit_dst, DTFL_NOCTX);
 	dtfl_collection *rts = dtfl_collection_enter(rc->roots, inner);
 	dtfl_collection *all = dtfl_collection_concat(stepped, rts);
-	dtfl_collection *dist = dtfl_collection_distinct(all, dtfl_diff_i64());
+	dtfl_diff *i64 = dtfl_diff_i64();
+	dtfl_collection *dist = dtfl_collection_distinct(all, i64);
 
+	dtfl_diff_free(i64);
 	dtfl_collection_free(all);
 	dtfl_collection_free(rts);
 	dtfl_collection_free(stepped);
@@ -281,14 +283,14 @@ DTFL_TEST(iterate__transitive_closure)
 	dtfl_worker *w = dtfl_worker_new_standalone();
 	dtfl_time_class *tc = dtfl_time_u64();
 	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
 	reach_build c;
 	collected out;
 
 	(void)params; (void)data;
 	memset(&out, 0, sizeof out);
 	c.roots = dtfl_input_session_new(dtfl_type_u64(), r);
-	c.graph = dtfl_input_session_new(
-	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), r);
+	c.graph = dtfl_input_session_new(pair, r);
 	c.probe = dtfl_probe_new();
 	c.out = &out;
 	assert_int(dtfl_worker_dataflow(w, "reach", tc, build_reach, &c), ==, 0);
@@ -304,6 +306,7 @@ DTFL_TEST(iterate__transitive_closure)
 	assert_int64(net(&out, 5), ==, 0);
 
 	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
 	dtfl_time_class_free(tc);
 	dtfl_diff_free(r);
 	dtfl_worker_free(w);
@@ -326,17 +329,18 @@ mw_worker(dtfl_worker *w, void *arg)
 	size_t idx = dtfl_worker_index(w);
 	size_t peers = dtfl_worker_peers(w);
 	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
 	reach_build c;
 
 	memset(&e->out[idx], 0, sizeof e->out[idx]);
 	c.roots = dtfl_input_session_new(dtfl_type_u64(), r);
-	c.graph = dtfl_input_session_new(
-	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), r);
+	c.graph = dtfl_input_session_new(pair, r);
 	c.probe = dtfl_probe_new();
 	c.out = &e->out[idx];
 	dtfl_worker_dataflow(w, "mwreach", e->tc, build_reach, &c);
 	feed_reach(w, &c, idx, peers);
 	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
 	dtfl_diff_free(r);
 }
 

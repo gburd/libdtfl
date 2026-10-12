@@ -514,9 +514,9 @@ build_join_scale(dtfl_scope *scope, void *arg)
 	scale_build *c = arg;
 	const dtfl_type *i64t = dtfl_type_i64();
 	const dtfl_type *out_type = dtfl_type_pair(i64t, i64t);
+	dtfl_diff *i64 = dtfl_diff_i64();
 	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
-	dtfl_collection *counts = dtfl_collection_count_total(base,
-	    dtfl_diff_i64());
+	dtfl_collection *counts = dtfl_collection_count_total(base, i64);
 	dtfl_collection *odds = dtfl_collection_filter(counts, count_parity,
 	    DTFL_CTX(&parity_odd, NULL));
 	dtfl_collection *evens = dtfl_collection_filter(counts, count_parity,
@@ -529,6 +529,7 @@ build_join_scale(dtfl_scope *scope, void *arg)
 	    DTFL_CTX(c->out, NULL));
 	dtfl_collection *probed = dtfl_collection_probe_with(ins, c->probe);
 
+	dtfl_diff_free(i64);
 	dtfl_type_free(out_type);
 	dtfl_collection_free(probed);
 	dtfl_collection_free(ins);
