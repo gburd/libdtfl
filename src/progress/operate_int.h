@@ -262,8 +262,12 @@ void __dtfl_subgraph_builder_free(__dtfl_subgraph_builder *b);
 /*
  * new_input: registers a counter of messages entering the scope through
  * a new input; returns the input port.  The batch (keyed by inner times)
- * is written by the enter operator and must outlive the subgraph; the
- * subgraph does not own it.
+ * is written by the enter operator and read by the subgraph.  Ownership
+ * passes to the subgraph, which frees it when the subgraph is destroyed:
+ * the enter operator that writes it lives in the parent scope and may be
+ * freed before the subgraph stops reading it in harvest_inputs, so the
+ * writer cannot own it.  This mirrors upstream's Rc shared between the
+ * ingress counter and the subgraph's input_messages (enterleave.rs).
  */
 size_t __dtfl_subgraph_builder_new_input(__dtfl_subgraph_builder *b,
     __dtfl_change_batch *shared_counts);
