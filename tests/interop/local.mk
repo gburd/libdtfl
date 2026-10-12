@@ -11,8 +11,27 @@ tests_interop_test_ord_order_SOURCES = tests/interop/test_ord_order.c
 tests_interop_test_ord_order_CFLAGS = $(TEST_CFLAGS)
 tests_interop_test_ord_order_LDADD = $(INTERNAL_LIBS)
 
-# Ship the fixtures and the generator in the distribution tarball.
+# Capture wire format: libdtfl's EventWriter framing against real timely.
+check_PROGRAMS += tests/interop/test_capture_wire
+TESTS += tests/interop/test_capture_wire
+tests_interop_test_capture_wire_SOURCES = tests/interop/test_capture_wire.c
+tests_interop_test_capture_wire_CFLAGS = $(TEST_CFLAGS)
+tests_interop_test_capture_wire_LDADD = $(INTERNAL_LIBS)
+
+# Timely log records: libdtfl's TimelyEvent bincode against real timely.
+check_PROGRAMS += tests/interop/test_log_stream
+TESTS += tests/interop/test_log_stream
+tests_interop_test_log_stream_SOURCES = tests/interop/test_log_stream.c
+tests_interop_test_log_stream_CFLAGS = $(TEST_CFLAGS)
+tests_interop_test_log_stream_LDADD = $(INTERNAL_LIBS)
+
+# Ship the fixtures and the generators in the distribution tarball.
 EXTRA_DIST += \
 	tests/interop/fixtures/ord_order.bin \
+	tests/interop/fixtures/capture_wire.bin \
+	tests/interop/fixtures/log_stream.bin \
 	dev/gen-fixtures.d/Cargo.toml \
-	dev/gen-fixtures.d/ord_order.rs
+	dev/gen-fixtures.d/Cargo.lock \
+	dev/gen-fixtures.d/ord_order.rs \
+	dev/gen-fixtures.d/capture_wire.rs \
+	dev/gen-fixtures.d/log_stream.rs
