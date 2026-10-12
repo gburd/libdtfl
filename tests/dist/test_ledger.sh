@@ -46,5 +46,35 @@ if [ -n "$test_rows" ]; then
 	ntest=$(printf '%s\n' "$test_rows" | grep -c .)
 fi
 
+# A done port row whose upstream file has #[test]s in the test ledger
+# must have at least one of those tests ported (not all left todo).
+# This makes "done" mean "ported and its upstream tests are landing,"
+# and fails early and loudly when a file is marked done but its tests
+# are skipped.  A port row opts out by listing its tests as subsumed,
+# deferred or excluded in the test ledger (those are not todo).
+untested=$(awk -F'\t' '
+	!/^#/ && $1 != "repo" && FNR == NR {
+		# test ledger: upstream path is column 2, status is the last.
+		st[$2] = st[$2] " " $NF; next
+	}
+	!/^#/ && $1 != "repo" && $6 == "done" {
+		p = $2
+		if (!(p in st)) next          # no upstream tests for this file
+		n = split(st[p], a, " ")
+		for (i = 1; i <= n; i++)
+			if (a[i] == "done") next   # at least one ported: ok
+		# every test for this done file is todo (or absent): fail.
+		has = 0
+		for (i = 1; i <= n; i++) if (a[i] == "todo") has = 1
+		if (has) print $2
+	}
+' dev/test-ledger.tsv dev/port-ledger.tsv)
+if [ -n "$untested" ]; then
+	echo "[ledger] FAIL: port rows marked done whose upstream tests are all todo:"
+	printf '%s\n' "$untested" | sed 's/^/    /'
+	echo "    (port a test, or mark the test rows subsumed/deferred/excluded)"
+	fail=1
+fi
+
 [ $fail -eq 0 ] && echo "[ledger] OK ($ndone file rows wip/done, $ntest tests done)"
 exit $fail
