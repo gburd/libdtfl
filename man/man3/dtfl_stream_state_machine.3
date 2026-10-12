@@ -1,0 +1,80 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_STATE_MACHINE 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_state_machine
+.Nd thread per-key state across records
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fo dtfl_stream_state_machine
+.Fa "dtfl_stream *st"
+.Fa "size_t state_size"
+.Fa "dtfl_state_fn step"
+.Fa "const dtfl_type *out_type"
+.Fa "dtfl_ctx ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_state_machine
+keeps a state of
+.Fa state_size
+bytes for each key and applies
+.Fn step
+to each
+.Pq key , value
+record in time order.
+The records of
+.Fa st
+are pairs whose first field is the key; the input is exchanged by the
+key's hash, so all records with the same key reach the same worker.
+.Pp
+.Fn step
+receives the key and value bytes, the key's state, and a
+.Vt dtfl_emit
+handle through which it writes output records of
+.Fa out_type .
+It returns
+.Dv true
+to deregister the key's state once it is no longer helpful.
+A record whose time the input frontier has not yet reached is stashed
+and applied once the frontier passes it; a record at an already
+complete time is applied immediately.
+Within one timestamp the system may reorder records, so
+.Fn step
+must not depend on intra-timestamp order.
+The context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+.Fn dtfl_stream_state_machine
+returns the stream of emitted records, carrying
+.Fa out_type .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Running sum per key, emitting (key, sum) on each record. */
+static bool run(void *c, const void *k, size_t kl,
+    const void *v, size_t vl, void *st, dtfl_emit *o) {
+	*(uint64_t *)st += dtfl_get_u64(v);
+	/* emit (k, *st) */ return false;
+}
+dtfl_stream *out = dtfl_stream_state_machine(s, sizeof(uint64_t),
+    run, pair_type, DTFL_NOCTX);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_stream_aggregate 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt StateMachine
+trait.
+It is public at the pinned release
+.Pq Li timely-v0.31.0
+and was removed upstream afterward (#818); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).

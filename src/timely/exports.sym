@@ -114,3 +114,9 @@ dtfl_stream_binary_notify
 dtfl_stream_delay
 dtfl_stream_delay_total
 dtfl_stream_delay_batch
+dtfl_stream_aggregate
+dtfl_stream_state_machine
+dtfl_stream_branch
+dtfl_stream_branch_when
+dtfl_stream_broadcast
+dtfl_iterator_source

@@ -43,7 +43,12 @@ timely_sources = \
 	src/timely/ops_notify_int.h \
 	src/timely/notificator.c \
 	src/timely/operator.c \
-	src/timely/ops_delay.c
+	src/timely/ops_delay.c \
+	src/timely/ops_aggregate.c \
+	src/timely/ops_state_machine.c \
+	src/timely/ops_branch.c \
+	src/timely/ops_broadcast.c \
+	src/timely/ops_flow_controlled.c
 
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
@@ -73,6 +78,11 @@ dist_man_MANS += man/man3/dtfl_stream_reclock.3
 dist_man_MANS += man/man3/dtfl_notificator_notify_at.3
 dist_man_MANS += man/man3/dtfl_stream_unary_notify.3
 dist_man_MANS += man/man3/dtfl_stream_delay.3
+dist_man_MANS += man/man3/dtfl_stream_aggregate.3
+dist_man_MANS += man/man3/dtfl_stream_state_machine.3
+dist_man_MANS += man/man3/dtfl_stream_branch.3
+dist_man_MANS += man/man3/dtfl_stream_broadcast.3
+dist_man_MANS += man/man3/dtfl_iterator_source.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -129,8 +139,17 @@ tests_pbt_pbt_input_SOURCES = tests/pbt/pbt_input.c
 tests_pbt_pbt_input_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_input_LDADD = $(INTERNAL_PBT_LIBS)
 
-check_PROGRAMS += tests/unit/test_notificator
-TESTS += tests/unit/test_notificator
+check_PROGRAMS += tests/unit/test_notificator tests/unit/test_ops_notify
+TESTS += tests/unit/test_notificator tests/unit/test_ops_notify
 tests_unit_test_notificator_SOURCES = tests/unit/test_notificator.c
 tests_unit_test_notificator_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_notificator_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_ops_notify_SOURCES = tests/unit/test_ops_notify.c
+tests_unit_test_ops_notify_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_notify_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_ops_notify
+TESTS += tests/pbt/pbt_ops_notify
+tests_pbt_pbt_ops_notify_SOURCES = tests/pbt/pbt_ops_notify.c
+tests_pbt_pbt_ops_notify_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_ops_notify_LDADD = $(INTERNAL_PBT_LIBS)

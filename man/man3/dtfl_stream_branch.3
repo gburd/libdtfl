@@ -1,0 +1,88 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_BRANCH 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_branch ,
+.Nm dtfl_stream_branch_when
+.Nd split a stream into two by a predicate
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft void
+.Fo dtfl_stream_branch
+.Fa "dtfl_stream *st"
+.Fa "dtfl_tpred_fn pred"
+.Fa "dtfl_ctx ctx"
+.Fa "dtfl_stream **yes"
+.Fa "dtfl_stream **no"
+.Fc
+.Ft void
+.Fo dtfl_stream_branch_when
+.Fa "dtfl_stream *st"
+.Fa "bool (*pred)(void *ctx, const uint64_t *time)"
+.Fa "dtfl_ctx ctx"
+.Fa "dtfl_stream **yes"
+.Fa "dtfl_stream **no"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_branch
+splits
+.Fa st
+into two streams by a per-record predicate over the record and its
+time: records for which
+.Fa pred
+returns
+.Dv true
+go to
+.Pf * Fa yes ,
+the rest to
+.Pf * Fa no .
+.Pp
+.Fn dtfl_stream_branch_when
+splits whole messages by a predicate over the time alone: when
+.Fa pred
+returns
+.Dv true
+for a message's time the whole message goes to
+.Pf * Fa yes ,
+otherwise to
+.Pf * Fa no .
+Use it instead of
+.Fn dtfl_stream_branch
+when the decision depends only on the time.
+.Pp
+Both outputs carry the input's record type.
+Neither operator needs the input frontier.
+The context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+Both functions store the two output streams through
+.Fa yes
+and
+.Fa no .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_stream *evens, *odds;
+dtfl_stream_branch(s, pred_even, DTFL_NOCTX, &evens, &odds);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_stream_ok_err 3 ,
+.Xr dtfl_stream_partition 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C form of timely's
+.Vt Branch
+and
+.Vt BranchWhen
+traits.
+They are public at the pinned release
+.Pq Li timely-v0.31.0
+and were removed upstream afterward (#818); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).

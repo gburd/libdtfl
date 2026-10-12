@@ -1,0 +1,77 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_ITERATOR_SOURCE 3
+.Os
+.Sh NAME
+.Nm dtfl_iterator_source
+.Nd a flow-controlled source operator
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fo dtfl_iterator_source
+.Fa "dtfl_scope *scope"
+.Fa "const dtfl_type *type"
+.Fa "dtfl_timed_iter_fn next"
+.Fa "dtfl_probe *probe"
+.Fa "dtfl_ctx ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_iterator_source
+builds a source operator in
+.Fa scope
+that repeatedly calls
+.Fa next
+to ingest input, holding back while
+.Fa probe
+is behind the frontier the last ingest targeted.
+Each call to
+.Fa next
+writes the time of its batch into its
+.Fa time
+argument and emits the batch's records of
+.Fa type
+through its
+.Vt dtfl_emit
+handle; it returns
+.Dv false
+to end the input.
+Times chosen by successive calls must be non-decreasing.
+.Pp
+On each schedule the source ingests while the probe is not behind the
+current target, downgrading its capability to each batch's time; when
+the probe falls behind the target it reactivates and waits, which
+bounds how far the source runs ahead of downstream progress.
+The scope's time must be totally ordered.
+The caller owns
+.Fa probe
+and frees it after the computation; the context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+.Fn dtfl_iterator_source
+returns the source stream, carrying
+.Fa type .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_probe *p = dtfl_probe_new();
+dtfl_stream *s = dtfl_iterator_source(scope, dtfl_type_u64(),
+    read_batch, p, DTFL_NOCTX);
+s = dtfl_stream_probe_with(s, p);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_probe_new 3 ,
+.Xr dtfl_to_stream 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Fn iterator_source .
+It is public at the pinned release
+.Pq Li timely-v0.31.0
+and was removed upstream afterward (#818); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The stream, the operator and the probe belong to the thread that runs
+the worker and must not be used from another thread (PLAN section 5).

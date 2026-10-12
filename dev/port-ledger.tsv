@@ -131,15 +131,15 @@ timely-dataflow	timely/src/dataflow/operators/generic/notificator.rs	442	src/tim
 timely-dataflow	timely/src/dataflow/operators/generic/operator.rs	588	src/timely/operator.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/operator_info.rs	23	include/dtfl/timely.h	P4	done	
 timely-dataflow	timely/src/dataflow/operators/mod.rs	43	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/aggregate.rs	105	src/timely/ops_aggregate.c	P4	todo	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/aggregate.rs	105	src/timely/ops_aggregate.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/aggregation/mod.rs	18	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/state_machine.rs	110	src/timely/ops_state_machine.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/branch.rs	128	src/timely/ops_branch.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/broadcast.rs	36	src/timely/ops_broadcast.c	P4	todo	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/state_machine.rs	110	src/timely/ops_state_machine.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/branch.rs	128	src/timely/ops_branch.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/broadcast.rs	36	src/timely/ops_broadcast.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/count.rs	70	src/timely/ops_count.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/delay.rs	150	src/timely/ops_delay.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/filter.rs	38	src/timely/ops_filter.c	P4	done	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	todo	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
