@@ -56,3 +56,7 @@ tests_pbt_pbt_batch_LDADD = $(INTERNAL_PBT_LIBS)
 os_thread_sources = src/base/os_thread.h src/base/os_thread.c
 libdtfl_la_SOURCES += $(os_thread_sources)
 libdtfl_internal_la_SOURCES += $(os_thread_sources)
+
+# Embedding host hooks: logging sink and thread spawn (dtfl_embedding(7)).
+dist_man_MANS += man/man3/dtfl_set_log_hook.3 man/man3/dtfl_set_thread_hooks.3 \
+	man/man7/dtfl_embedding.7

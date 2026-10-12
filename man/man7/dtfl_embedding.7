@@ -1,0 +1,161 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_EMBEDDING 7
+.Os
+.Sh NAME
+.Nm dtfl_embedding
+.Nd embedding libdtfl in a host program
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft int
+.Fn dtfl_set_alloc_hooks "const dtfl_alloc_hooks *hooks"
+.Ft void
+.Fn dtfl_set_panic_hook "dtfl_panic_fn fn" "void *ctx"
+.Ft void
+.Fn dtfl_set_log_hook "dtfl_log_fn fn" "void *ctx"
+.Ft int
+.Fn dtfl_set_thread_hooks "const dtfl_thread_hooks *hooks"
+.Sh DESCRIPTION
+libdtfl is built to run inside a host program, such as a database
+server, that supplies its own memory, error reporting, logging and
+threads.
+Four process-wide hooks route each of those boundaries through the
+host.
+Each has a default, so a standalone program needs none of them.
+.Ss The four host hooks
+.Bl -tag -width "dtfl_set_thread_hooks()"
+.It Fn dtfl_set_alloc_hooks
+All memory libdtfl allocates comes from these.
+The default is the libc allocator.
+See
+.Xr dtfl_set_alloc_hooks 3 .
+.It Fn dtfl_set_panic_hook
+Called on a contract violation or an allocation failure.
+It must not return.
+The default prints to standard error and calls
+.Xr abort 3 .
+See
+.Xr dtfl_set_panic_hook 3 .
+.It Fn dtfl_set_log_hook
+Receives human-readable diagnostics at
+.Dv DTFL_LOG_DEBUG ,
+.Dv DTFL_LOG_INFO ,
+.Dv DTFL_LOG_WARN
+and
+.Dv DTFL_LOG_ERROR .
+The default writes WARN and ERROR to standard error and drops the rest.
+This is separate from the structured event logging in
+.In dtfl/log.h .
+See
+.Xr dtfl_set_log_hook 3 .
+.It Fn dtfl_set_thread_hooks
+Spawn and join callbacks for worker, network and connection threads.
+The default is
+.Xr pthread_create 3 .
+See
+.Xr dtfl_set_thread_hooks 3 .
+.El
+.Pp
+All four hooks are process-wide.
+They must be installed before the first
+.Fn dtfl_execute ,
+and the allocation hook before any libdtfl call allocates.
+Because the hooks are the whole of libdtfl's writable global state, two
+independent
+.Fn dtfl_execute
+calls can run at the same time in one process once the hooks are set.
+.Ss Per-thread state
+Almost all library state lives in a worker and belongs to the thread
+that runs it: scopes, streams, collections, operators, capabilities,
+input handles, probes and traces are worker-owned and never leave their
+worker thread.
+The one piece of per-thread library state is the buffer behind
+.Fn dtfl_last_error_detail ,
+which holds the detail of the most recent error reported on the calling
+thread.
+Worker-owned handles and that buffer are why a host must not move a
+worker or its handles between threads; the full contract is in
+.Xr dtfl 7 .
+.Ss Hosts that control their own threads
+A host that cannot hand libdtfl free-running threads has two ways to
+embed it.
+.Pp
+First, it can supply thread hooks whose
+.Fa spawn
+is backed by the host's own worker mechanism, for example a PostgreSQL
+background worker.
+.Fn dtfl_execute
+then starts and joins each worker through those hooks.
+.Pp
+Second, and simplest when the host already has an event loop, it can
+avoid
+.Fn dtfl_execute
+entirely and drive a single worker cooperatively:
+.Bd -literal -offset indent
+dtfl_worker *w = dtfl_worker_new_standalone();
+dtfl_worker_dataflow(w, "my", tc, build, ctx);
+while (dtfl_worker_has_dataflows(w))
+	dtfl_worker_step(w);
+dtfl_worker_free(w);
+.Ed
+.Pp
+In the second mode no thread is created, so no thread hook is needed;
+the host calls
+.Fn dtfl_worker_step
+from its own thread whenever it chooses, interleaving dataflow progress
+with its other work.
+.Ss What libdtfl never does
+libdtfl installs no signal handlers and calls no
+.Xr getenv 3 ,
+.Xr signal 3
+or
+.Xr getopt 3 .
+Environment lookup, when a host wants it, happens only through a
+callback the host supplies to
+.Fn dtfl_config_from_env .
+This keeps the library safe to load into a host that owns those
+facilities itself.
+.Sh EXAMPLES
+A PostgreSQL extension wires every boundary to the server before
+starting a computation:
+.Bd -literal -offset indent
+static void *pg_malloc(size_t n, void *c) { return palloc(n); }
+static void *pg_realloc(void *p, size_t n, void *c)
+{ return repalloc(p, n); }
+static void pg_free(void *p, void *c) { pfree(p); }
+
+static void pg_panic(const char *msg, void *c)
+{ ereport(ERROR, errmsg("dtfl: %s", msg)); }   /* longjmp, no return */
+
+static void pg_log(dtfl_log_level lvl, const char *msg, void *c)
+{ int e[] = { DEBUG1, LOG, WARNING, ERROR }; elog(e[lvl], "%s", msg); }
+
+dtfl_alloc_hooks ah = { pg_malloc, pg_realloc, pg_free, NULL };
+dtfl_set_alloc_hooks(&ah);
+dtfl_set_panic_hook(pg_panic, NULL);
+dtfl_set_log_hook(pg_log, NULL);
+dtfl_set_thread_hooks(&bgworker_hooks);  /* or drive standalone */
+.Ed
+.Pp
+A host that cannot spawn threads drops the thread hooks and uses the
+standalone loop shown above instead of
+.Fn dtfl_execute .
+.Sh SEE ALSO
+.Xr dtfl_set_alloc_hooks 3 ,
+.Xr dtfl_set_log_hook 3 ,
+.Xr dtfl_set_panic_hook 3 ,
+.Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+Rust programs choose a global allocator, panic strategy, logging facade
+and thread library at link time.
+These hooks give a C host the same control at run time, so libdtfl can
+live inside a program that owns those facilities.
+.Sh THREAD SAFETY
+Install all four hooks before the first
+.Fn dtfl_execute .
+Once installed, the panic, log and thread callbacks may run on any
+worker thread and must be thread-safe.
+Everything else libdtfl exposes follows the per-thread ownership
+contract in
+.Xr dtfl 7 .
