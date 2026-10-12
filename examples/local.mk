@@ -25,7 +25,8 @@ noinst_PROGRAMS += \
 	examples/timely/openloop \
 	examples/timely/loopdemo \
 	examples/timely/unionfind \
-	examples/timely/bfs
+	examples/timely/bfs \
+	examples/timely/pagerank
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -90,5 +91,9 @@ examples_timely_unionfind_LDADD = $(EXAMPLE_LDADD)
 examples_timely_bfs_SOURCES = examples/timely/bfs.c
 examples_timely_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_bfs_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_pagerank_SOURCES = examples/timely/pagerank.c
+examples_timely_pagerank_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_pagerank_LDADD = $(EXAMPLE_LDADD)
 
 EXTRA_DIST += examples/timely/example_args.h
