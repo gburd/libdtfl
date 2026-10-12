@@ -132,8 +132,9 @@ dtfl_stream_enter(dtfl_stream *st, dtfl_scope *child)
 	/*
 	 * Connect the outer stream to the child's input (a Target at the
 	 * child's own index in the parent) through the ingress nub.  The
-	 * produced batch's lifetime: the nub owns it and lives as long as
-	 * the outer operator, which outlives the subgraph's stepping.
+	 * produced batch is now owned by the subgraph (new_input), which
+	 * reads it in harvest_inputs and frees it on teardown; the nub only
+	 * writes it through the counter during stepping.
 	 */
 	channel = __dtfl_worker_new_identifier(outer_scope->worker);
 	target.node = __dtfl_subgraph_builder_index(child->builder);

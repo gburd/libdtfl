@@ -17,8 +17,6 @@
  */
 #include "timely/capture_int.h"
 
-#include <stdlib.h>
-
 /* One (time, record) pair, flattened for sorting. */
 typedef struct pair {
 	uint64_t time[DTFL_TIME_MAX];
@@ -26,22 +24,58 @@ typedef struct pair {
 	size_t len;
 } pair;
 
-typedef struct extract_sort {
-	const dtfl_time_class *tc;
-	const dtfl_type *type;
-} extract_sort;
-
-static const extract_sort *g_sort;	/* qsort has no context argument */
-
+/* Three-way order on pairs: time, then record (the type's Ord). */
 static int
-pair_cmp(const void *va, const void *vb)
+pair_cmp(const pair *a, const pair *b, const dtfl_time_class *tc,
+    const dtfl_type *type)
 {
-	const pair *a = va, *b = vb;
-	int c = __dtfl_words_cmp(a->time, b->time, g_sort->tc->depth);
+	int c = __dtfl_words_cmp(a->time, b->time, tc->depth);
 
 	if (c != 0)
 		return c;
-	return dtfl_type_cmp(g_sort->type, a->rec, a->len, b->rec, b->len);
+	return dtfl_type_cmp(type, a->rec, a->len, b->rec, b->len);
+}
+
+/*
+ * Heapsort over the pair array, in place and allocation-free, because
+ * qsort has no context argument for the time class and record type and
+ * the library allows no writable globals (PLAN section 5).
+ */
+static void
+sift_down(pair *v, size_t root, size_t n, const dtfl_time_class *tc,
+    const dtfl_type *type)
+{
+	for (;;) {
+		size_t child = 2 * root + 1, big = root;
+		pair tmp;
+
+		if (child < n && pair_cmp(&v[child], &v[big], tc, type) > 0)
+			big = child;
+		if (child + 1 < n && pair_cmp(&v[child + 1], &v[big], tc, type) > 0)
+			big = child + 1;
+		if (big == root)
+			return;
+		tmp = v[root];
+		v[root] = v[big];
+		v[big] = tmp;
+		root = big;
+	}
+}
+
+static void
+sort_pairs(pair *v, size_t n, const dtfl_time_class *tc, const dtfl_type *type)
+{
+	size_t i;
+
+	for (i = n / 2; i-- > 0;)
+		sift_down(v, i, n, tc, type);
+	for (i = n; i-- > 1;) {
+		pair tmp = v[0];
+
+		v[0] = v[i];
+		v[i] = tmp;
+		sift_down(v, 0, i, tc, type);
+	}
 }
 
 void
@@ -51,11 +85,8 @@ dtfl_event_link_extract(dtfl_event_link *l,
 {
 	const dtfl_event *e;
 	__dtfl_vec pairs;	/* pair */
-	extract_sort sort;
 	size_t i;
 
-	sort.tc = l->tc;
-	sort.type = l->type;
 	__dtfl_vec_init(&pairs, sizeof(pair));
 
 	/* Collect every record of every Messages event with its time. */
@@ -74,11 +105,8 @@ dtfl_event_link_extract(dtfl_event_link *l,
 		}
 	}
 
-	/* Sort by time then record (qsort(NULL, 0, ...) trips UBSan). */
-	g_sort = &sort;
 	if (pairs.len > 1)
-		qsort(pairs.data, pairs.len, sizeof(pair), pair_cmp);
-	g_sort = NULL;
+		sort_pairs((pair *)pairs.data, pairs.len, l->tc, l->type);
 
 	for (i = 0; i < pairs.len; i++) {
 		pair *pr = DTFL_VEC_AT(&pairs, pair, i);

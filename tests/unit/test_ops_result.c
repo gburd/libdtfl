@@ -78,7 +78,8 @@ sink_logic(dtfl_op *op, void *vctx)
 			const void *rec = dtfl_message_record(m, i, &len);
 
 			if (len <= sizeof c->recs[0]) {
-				memcpy(c->recs[c->n], rec, len);
+				if (len > 0)
+					memcpy(c->recs[c->n], rec, len);
 				c->lens[c->n] = len;
 				c->n++;
 			}
