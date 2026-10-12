@@ -67,10 +67,15 @@ notify_logic(dtfl_op *op, void *vctx)
 {
 	notify_ctx *c = vctx;
 
+	/*
+	 * Bind the live input frontiers before seeding: notify_seed calls
+	 * notify_at, which consults the frontier to decide whether the time
+	 * is already available.  Binding must therefore precede the seed.
+	 */
+	__dtfl_fnote_bind(&c->note, op->frontier);
 	if (!c->seeded)
 		notify_seed(c, op);
 
-	__dtfl_fnote_bind(&c->note, op->frontier);
 	c->pub.inner = &c->note;
 	if (c->unary)
 		c->logic.un(c->user, op, &c->pub);
