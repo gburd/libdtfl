@@ -81,6 +81,18 @@ tests_upstream_dd_trace_SOURCES = tests/upstream/dd/trace.c
 tests_upstream_dd_trace_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_dd_trace_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/upstream/dd/reduce
+TESTS += tests/upstream/dd/reduce
+tests_upstream_dd_reduce_SOURCES = tests/upstream/dd/reduce.c
+tests_upstream_dd_reduce_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_reduce_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_reduce
+TESTS += tests/unit/test_reduce
+tests_unit_test_reduce_SOURCES = tests/unit/test_reduce.c
+tests_unit_test_reduce_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_reduce_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_agent
 TESTS += tests/unit/test_agent
 tests_unit_test_agent_SOURCES = tests/unit/test_agent.c
@@ -128,3 +140,9 @@ TESTS += tests/pbt/pbt_arrange
 tests_pbt_pbt_arrange_SOURCES = tests/pbt/pbt_arrange.c
 tests_pbt_pbt_arrange_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_arrange_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_reduce
+TESTS += tests/pbt/pbt_reduce
+tests_pbt_pbt_reduce_SOURCES = tests/pbt/pbt_reduce.c
+tests_pbt_pbt_reduce_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_reduce_LDADD = $(INTERNAL_PBT_LIBS)
