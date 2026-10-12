@@ -14,6 +14,7 @@ dd_sources = \
 	src/dd/input.c \
 	src/dd/writer.c \
 	src/dd/agent.c \
+	src/dd/arrangement.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
@@ -32,10 +33,12 @@ dd_sources = \
 libdtfl_la_SOURCES += $(dd_sources)
 libdtfl_internal_la_SOURCES += $(dd_sources)
 dtflinclude_HEADERS += include/dtfl/collection.h
+dtflinclude_HEADERS += include/dtfl/arrange.h
 EXTRA_DIST += src/dd/exports.sym
 
 dist_man_MANS += man/man3/dtfl_collection_new.3
 dist_man_MANS += man/man3/dtfl_input_session_new.3
+dist_man_MANS += man/man3/dtfl_collection_arrange.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate
@@ -83,6 +86,12 @@ TESTS += tests/unit/test_wrappers
 tests_unit_test_wrappers_SOURCES = tests/unit/test_wrappers.c
 tests_unit_test_wrappers_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_wrappers_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_arrange
+TESTS += tests/unit/test_arrange
+tests_unit_test_arrange_SOURCES = tests/unit/test_arrange.c
+tests_unit_test_arrange_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_arrange_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate

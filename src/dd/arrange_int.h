@@ -243,4 +243,31 @@ bool __dtfl_trace_agent_cursor_through(__dtfl_trace_agent *a,
 __dtfl_replay_queue *__dtfl_trace_agent_new_listener(__dtfl_trace_agent *a,
     dtfl_activator *activator);
 
+/* ------------------------------------------------------------------ */
+/* P8 entry points on an arrangement (join_core, reduce_*).            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * These are the Arranged::join_core, reduce_core and reduce_abelian entry
+ * points (arrangement.rs).  The arrangement<->join/reduce cycle in the plan
+ * is resolved by declaring them here, in the internal header, so P7 does not
+ * link them: P8 defines join_core in src/dd/join.c and reduce_core /
+ * reduce_abelian in src/dd/reduce.c.  Signatures are intentionally opaque
+ * (void) until P8 fixes them against the pinned join.rs / reduce.rs; P7
+ * neither declares them in the public header nor references them, so the
+ * symbols gate and docs gate do not require a definition here.
+ *
+ * dtfl_arranged is forward declared via dtfl/arrange.h, included indirectly
+ * through collection_int.h is not; P8 includes dtfl/arrange.h for the type.
+ */
+#if 0 /* P8: defined in src/dd/join.c and src/dd/reduce.c. */
+struct dtfl_arranged;
+struct dtfl_collection *__dtfl_arranged_join_core(struct dtfl_arranged *a,
+    struct dtfl_arranged *other, void *result);
+struct dtfl_arranged *__dtfl_arranged_reduce_core(struct dtfl_arranged *a,
+    const char *name, void *logic, void *push);
+struct dtfl_arranged *__dtfl_arranged_reduce_abelian(struct dtfl_arranged *a,
+    const char *name, void *logic, void *push);
+#endif
+
 #endif /* DTFL_ARRANGE_INT_H */

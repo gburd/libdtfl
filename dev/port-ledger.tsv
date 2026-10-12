@@ -253,7 +253,7 @@ differential-dataflow	differential-dataflow/src/lattice.rs	371	src/progress/time
 differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	done	the Collection type and its linear methods (map/filter/flat_map/concat/negate/consolidate/inspect/enter/leave/probe/explode/delay); arrange/join/reduce land in P7-P8
 differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events; P6-trace left it todo (consumer-side logging, no storage dependency)
 differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	done	
-differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	todo	
+differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	done	
 differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/arrange_int.h	P7	done	
 differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	todo	
 differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	done	
