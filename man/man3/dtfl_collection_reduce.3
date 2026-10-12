@@ -1,0 +1,127 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_REDUCE 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_reduce ,
+.Nm dtfl_collection_reduce_named ,
+.Nm dtfl_collection_count ,
+.Nm dtfl_collection_distinct ,
+.Nm dtfl_collection_threshold ,
+.Nm dtfl_collection_threshold_named ,
+.Nm dtfl_reduce_emit_pair
+.Nd group a collection by key and reduce the values per key
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/reduce.h
+.Ft void
+.Fn dtfl_reduce_emit_pair "dtfl_reduce_emit *e" "const void *val" "size_t vlen" "const void *diff"
+.Ft dtfl_collection *
+.Fn dtfl_collection_reduce "dtfl_collection *c" "const dtfl_type *key_type" "const dtfl_type *val_type" "const dtfl_type *out_val" "const dtfl_diff *out_diff" "dtfl_reduce_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_reduce_named "dtfl_collection *c" "const char *name" "const dtfl_type *key_type" "const dtfl_type *val_type" "const dtfl_type *out_val" "const dtfl_diff *out_diff" "dtfl_reduce_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_count "dtfl_collection *c" "const dtfl_diff *out_diff"
+.Ft dtfl_collection *
+.Fn dtfl_collection_distinct "dtfl_collection *c" "const dtfl_diff *out_diff"
+.Ft dtfl_collection *
+.Fn dtfl_collection_threshold "dtfl_collection *c" "const dtfl_diff *out_diff" "dtfl_threshold_fn thresh" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_threshold_named "dtfl_collection *c" "const char *name" "const dtfl_diff *out_diff" "dtfl_threshold_fn thresh" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+The reduce family groups a collection by key and applies a user reduction
+to the multiset of values accumulated under each key.
+These operators are incremental: when a key's accumulated input changes at a
+new logical time, the operator retracts the output it produced before and
+asserts the new output, so the collection each defines is the exact function
+of its input at every time.
+.Pp
+.Fn dtfl_collection_reduce
+and
+.Fn dtfl_collection_reduce_named
+group
+.Fa c ,
+whose records are a key followed by a value
+.Pq key || val ,
+split by
+.Fa key_type ,
+with the value side described by
+.Fa val_type .
+For each key the
+.Fa logic
+callback receives the key and the accumulated input multiset, an array of
+.Fa n
+value and difference pairs presented in the order of
+.Fa val_type ,
+and emits output value and difference pairs through the
+.Vt dtfl_reduce_emit
+handle with
+.Fn dtfl_reduce_emit_pair .
+Each emitted value is of
+.Fa out_val
+and each difference is of
+.Fa out_diff ,
+which must be an Abelian class.
+The result is a collection of records
+.Pq key || out_val
+with differences of
+.Fa out_diff .
+.Fn dtfl_collection_reduce
+names the operator
+.Dq Reduce ;
+.Fn dtfl_collection_reduce_named
+takes an explicit
+.Fa name .
+.Pp
+.Fn dtfl_collection_count
+counts the occurrences of each key.
+The whole record of
+.Fa c
+is the key.
+For each key it emits the record
+.Pq key || count ,
+where the count is the summed input difference rendered as a value of the
+input difference class, with an output difference of one of
+.Fa out_diff ,
+which must be Abelian and have a one
+.Pq for example Fn dtfl_diff_i64 .
+.Pp
+.Fn dtfl_collection_distinct
+reduces the collection to one occurrence of each key whose accumulated
+difference is non-zero, with a difference of one of
+.Fa out_diff .
+.Pp
+.Fn dtfl_collection_threshold
+and
+.Fn dtfl_collection_threshold_named
+transform the multiplicity of each key.
+The
+.Fa thresh
+callback maps a key's accumulated input difference to an output difference of
+.Fa out_diff
+by writing it through
+.Fa out
+and returning true, or returns false to emit nothing.
+The operator emits the change in that output across times, so the predicate
+need not be incremental.
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_collection
+handle the caller frees with
+.Fn dtfl_collection_free .
+Allocation failure is reported through the panic hook, as elsewhere in the
+library.
+.Sh SEE ALSO
+.Xr dtfl_collection_arrange 3 ,
+.Xr dtfl_collection_new 3
+.Sh STANDARDS
+These operators port differential dataflow's
+.Fn reduce ,
+.Fn count ,
+.Fn distinct
+and
+.Fn threshold
+collection methods from the pinned upstream
+.Pq differential-dataflow-v0.25.1 .

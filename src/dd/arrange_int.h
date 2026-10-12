@@ -248,26 +248,93 @@ __dtfl_replay_queue *__dtfl_trace_agent_new_listener(__dtfl_trace_agent *a,
 /* ------------------------------------------------------------------ */
 
 /*
- * These are the Arranged::join_core, reduce_core and reduce_abelian entry
+ * These are the Arranged::join_core and reduce_core/reduce_abelian entry
  * points (arrangement.rs).  The arrangement<->join/reduce cycle in the plan
  * is resolved by declaring them here, in the internal header, so P7 does not
  * link them: P8 defines join_core in src/dd/join.c and reduce_core /
- * reduce_abelian in src/dd/reduce.c.  Signatures are intentionally opaque
- * (void) until P8 fixes them against the pinned join.rs / reduce.rs; P7
- * neither declares them in the public header nor references them, so the
- * symbols gate and docs gate do not require a definition here.
+ * reduce_abelian in src/dd/reduce.c.  P7 neither declares them in the public
+ * header nor references them, so the symbols gate and docs gate did not
+ * require a definition before P8.
  *
- * dtfl_arranged is forward declared via dtfl/arrange.h, included indirectly
- * through collection_int.h is not; P8 includes dtfl/arrange.h for the type.
+ * reduce reads an arranged (key -> val) input and produces an arranged
+ * (key -> out_val) output.  The signatures below match the pinned reduce.rs:
+ * reduce_core hands the per-key logic the accumulated input and the tentative
+ * accumulated output, and the logic populates the full output change;
+ * reduce_abelian wraps that logic to retract the prior output (negate and
+ * append) so the user logic need only produce the new output.  The __reduce_*
+ * entry points are the arrangement-level primitives; dtfl_collection_reduce
+ * and friends in src/dd/reduce.c compose arrange_by_key with them.  The join
+ * entry point stays opaque here until join.c fixes it.
  */
-#if 0 /* P8: defined in src/dd/join.c and src/dd/reduce.c. */
 struct dtfl_arranged;
+
+/*
+ * The reduce logic callback as the engine presents it (CursorTactic logic):
+ * `key` is the current key; `input` is the accumulated input multiset at the
+ * time under consideration (an array of n (value, diff) entries), `output`
+ * is the tentative accumulated output multiset (m entries), and the logic
+ * appends the output change through `emit` (push a (value, diff) with
+ * __dtfl_reduce_change_push).  reduce_abelian negates and appends `output`
+ * itself; a reduce_core logic receives the tentative output and does so (or
+ * not) as it likes.  Values are byte slices; diffs are the respective class
+ * widths.  The output value type and diff class are fixed when the operator
+ * is built.
+ */
+typedef struct __dtfl_reduce_change __dtfl_reduce_change;
+void __dtfl_reduce_change_push(__dtfl_reduce_change *ch, const void *val,
+    size_t vlen, const void *diff);
+
+typedef void (*__dtfl_reduce_logic_fn)(void *ctx, const void *key, size_t klen,
+    size_t n, const void *const *in_vals, const size_t *in_vlens,
+    const void *in_diffs, size_t m, const void *const *out_vals,
+    const size_t *out_vlens, const void *out_diffs, __dtfl_reduce_change *ch);
+
+/*
+ * __dtfl_arranged_reduce_core: the general reduce over an arranged input.
+ * `name` labels the operator.  `logic` computes the output change per key;
+ * `ovt`/`odc` are the output value type and diff class.  Returns an
+ * arrangement over the output trace (key -> out_val, odc diffs).  The caller
+ * frees it with dtfl_arranged_free.  `odc` need not be Abelian for the core.
+ */
+struct dtfl_arranged *__dtfl_arranged_reduce_core(struct dtfl_arranged *a,
+    const char *name, const dtfl_type *ovt, const __dtfl_diff_class *odc,
+    __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *));
+/*
+ * __dtfl_arranged_reduce_abelian: as reduce_core, but wraps `logic` to
+ * subtract the prior output (negate and append the tentative output), so the
+ * logic produces only the new output.  `odc` must be Abelian.
+ */
+struct dtfl_arranged *__dtfl_arranged_reduce_abelian(struct dtfl_arranged *a,
+    const char *name, const dtfl_type *ovt, const __dtfl_diff_class *odc,
+    __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *));
+
+#if 0 /* P8: defined in src/dd/join.c. */
 struct dtfl_collection *__dtfl_arranged_join_core(struct dtfl_arranged *a,
     struct dtfl_arranged *other, void *result);
-struct dtfl_arranged *__dtfl_arranged_reduce_core(struct dtfl_arranged *a,
-    const char *name, void *logic, void *push);
-struct dtfl_arranged *__dtfl_arranged_reduce_abelian(struct dtfl_arranged *a,
-    const char *name, void *logic, void *push);
 #endif
+
+/* ------------------------------------------------------------------ */
+/* Arrangement construction, shared with reduce (arrangement.c).       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Build a dtfl_arranged handle from a batch-pointer stream and a trace agent
+ * (the Arranged { stream, trace } constructor).  Takes ownership of *agent
+ * (moves it in; the caller must not free it).  Retains `type` and `diff`.
+ * `keyed` records whether the trace is a key batch (whole record is key) or
+ * a value batch.  reduce uses this to publish its output arrangement.
+ */
+struct dtfl_arranged *__dtfl_arranged_from_agent(dtfl_stream *stream,
+    __dtfl_trace_agent *agent, const dtfl_type *type, dtfl_diff *diff,
+    unsigned depth, bool keyed);
+/* The batch-pointer output stream of an arrangement (for building readers). */
+dtfl_stream *__dtfl_arranged_stream(const struct dtfl_arranged *a);
+/* Borrow the arrangement's trace agent (its shared reader). */
+__dtfl_trace_agent *__dtfl_arranged_agent(struct dtfl_arranged *a);
+/* The arrangement's time-word depth and diff class. */
+unsigned __dtfl_arranged_depth(const struct dtfl_arranged *a);
+const __dtfl_diff_class *__dtfl_arranged_diff_class(const struct dtfl_arranged *a);
+/* True when the arrangement's trace is a key batch (whole record is key). */
+bool __dtfl_arranged_keyed(const struct dtfl_arranged *a);
 
 #endif /* DTFL_ARRANGE_INT_H */

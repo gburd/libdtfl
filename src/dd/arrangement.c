@@ -910,3 +910,53 @@ dtfl_arranged_free(dtfl_arranged *a)
 	dtfl_diff_free(a->diff);
 	__dtfl_free(a);
 }
+
+/* ------------------------------------------------------------------ */
+/* Internal construction, shared with reduce (arrange_int.h).          */
+/* ------------------------------------------------------------------ */
+
+dtfl_arranged *
+__dtfl_arranged_from_agent(dtfl_stream *stream, __dtfl_trace_agent *agent,
+    const dtfl_type *type, dtfl_diff *diff, unsigned depth, bool keyed)
+{
+	dtfl_arranged *a = __dtfl_alloc(sizeof *a);
+
+	(void)keyed;	/* agent->keyed already records this */
+	a->stream = stream;
+	a->agent = *agent;		/* move the agent in */
+	a->type = dtfl_type_retain(type);
+	a->diff = diff;			/* ownership transferred by caller */
+	a->depth = depth;
+	a->owns_agent = true;
+	return a;
+}
+
+dtfl_stream *
+__dtfl_arranged_stream(const dtfl_arranged *a)
+{
+	return a->stream;
+}
+
+__dtfl_trace_agent *
+__dtfl_arranged_agent(dtfl_arranged *a)
+{
+	return &a->agent;
+}
+
+unsigned
+__dtfl_arranged_depth(const dtfl_arranged *a)
+{
+	return a->depth;
+}
+
+const __dtfl_diff_class *
+__dtfl_arranged_diff_class(const dtfl_arranged *a)
+{
+	return a->diff->cls;
+}
+
+bool
+__dtfl_arranged_keyed(const dtfl_arranged *a)
+{
+	return a->agent.keyed;
+}

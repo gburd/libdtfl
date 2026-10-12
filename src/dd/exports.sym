@@ -57,3 +57,10 @@ dtfl_arranged_type
 dtfl_arranged_diff
 dtfl_arranged_scope
 dtfl_arranged_free
+dtfl_reduce_emit_pair
+dtfl_collection_reduce
+dtfl_collection_reduce_named
+dtfl_collection_count
+dtfl_collection_distinct
+dtfl_collection_threshold
+dtfl_collection_threshold_named
