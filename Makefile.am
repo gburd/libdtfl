@@ -49,7 +49,8 @@ dist_check_SCRIPTS = \
 	tests/dist/test_symbols.sh \
 	tests/dist/test_headers.sh \
 	tests/dist/test_ledger.sh \
-	tests/dist/test_docs.sh
+	tests/dist/test_docs.sh \
+	tests/dist/test_completion.sh
 TESTS += $(dist_check_SCRIPTS)
 # ThreadSanitizer cannot map its shadow memory under the high-entropy
 # ASLR of newer kernels (vm.mmap_rnd_bits > 28): it aborts with
