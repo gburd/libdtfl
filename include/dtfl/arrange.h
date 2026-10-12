@@ -126,6 +126,85 @@ DTFL_API dtfl_scope *dtfl_arranged_scope(const dtfl_arranged *a);
 /* Releases the handle; the shared trace lives on until its last reader. */
 DTFL_API void dtfl_arranged_free(dtfl_arranged *a);
 
+/* ------------------------------------------------------------------ */
+/* Join (join.rs; collection.rs join family)                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A join result sink.  The result closure of a join writes each output
+ * record (the record bytes only) through it; the operator attaches the
+ * joined time (time1 join time2) and the multiplied diff (diff1 * diff2)
+ * to every record it emits.
+ */
+typedef struct dtfl_join_emit dtfl_join_emit;
+DTFL_API void dtfl_join_emit_record(dtfl_join_emit *e, const void *rec,
+    size_t len);
+
+/*
+ * The result closure of a join: for a key present in both inputs, it is
+ * called with the key and a matched pair of values, and emits zero or more
+ * output records of the join's out_type through the sink.  val1 and val2
+ * are the stored value bytes; key is the shared key bytes.
+ */
+typedef void (*dtfl_join_result_fn)(void *ctx, const void *key, size_t klen,
+    const void *val1, size_t v1len, const void *val2, size_t v2len,
+    dtfl_join_emit *out);
+
+/*
+ * dtfl_arranged_join_core (Arranged::join_core): joins two arranged traces
+ * sharing a key type.  For every pair of matched values the result closure
+ * emits output records of `out_type`, each carried at the joined time with
+ * the product of the two diffs; the output is consolidated.  The two diff
+ * classes must have a declared Multiply (join.rs); otherwise this reports
+ * DTFL_EALGEBRA and returns NULL.  The caller still owns a1 and a2.
+ */
+DTFL_API dtfl_collection *dtfl_arranged_join_core(dtfl_arranged *a1,
+    dtfl_arranged *a2, const dtfl_type *out_type, dtfl_join_result_fn result,
+    dtfl_ctx ctx);
+
+/*
+ * dtfl_collection_join_map (Collection::join_map): arranges both inputs by
+ * key and joins them, applying `result` to each matched (key, val1, val2).
+ * c1 holds key||val1 records, c2 holds key||val2; `key_type` splits both.
+ * `val1_type` and `val2_type` describe the stored values.  The output
+ * records are of `out_type`, with product diffs; it may report
+ * DTFL_EALGEBRA (NULL) if the diff classes do not multiply.
+ */
+DTFL_API dtfl_collection *dtfl_collection_join_map(dtfl_collection *c1,
+    dtfl_collection *c2, const dtfl_type *key_type, const dtfl_type *val1_type,
+    const dtfl_type *val2_type, const dtfl_type *out_type,
+    dtfl_join_result_fn result, dtfl_ctx ctx);
+
+/*
+ * dtfl_collection_join (Collection::join): matches (key, val1) and (key,
+ * val2) by key, yielding records key||val1||val2.  `out_type` describes
+ * that concatenation.  Equivalent to join_map with the identity-concat
+ * closure.
+ */
+DTFL_API dtfl_collection *dtfl_collection_join(dtfl_collection *c1,
+    dtfl_collection *c2, const dtfl_type *key_type, const dtfl_type *val1_type,
+    const dtfl_type *val2_type, const dtfl_type *out_type);
+
+/*
+ * dtfl_collection_semijoin (Collection::semijoin): matches (key, val) in
+ * `c` against the bare key records of `keys` by key, keeping the former
+ * with multiplicities multiplied.  `keys` is arranged by self (key ->
+ * unit).  The output records are key||val of `out_type`.
+ */
+DTFL_API dtfl_collection *dtfl_collection_semijoin(dtfl_collection *c,
+    dtfl_collection *keys, const dtfl_type *key_type, const dtfl_type *val_type,
+    const dtfl_type *out_type);
+
+/*
+ * dtfl_collection_antijoin (Collection::antijoin): subtracts the semijoin
+ * with `keys` from `c`, discarding records whose key is present in `keys`.
+ * `c`'s diff class must be Abelian.  The output records are key||val of
+ * `out_type`.
+ */
+DTFL_API dtfl_collection *dtfl_collection_antijoin(dtfl_collection *c,
+    dtfl_collection *keys, const dtfl_type *key_type, const dtfl_type *val_type,
+    const dtfl_type *out_type);
+
 #ifdef __cplusplus
 }
 #endif

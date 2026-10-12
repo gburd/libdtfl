@@ -19,6 +19,9 @@ dd_sources = \
 	src/dd/reduce.c \
 	src/dd/count.c \
 	src/dd/threshold.c \
+	src/dd/common.c \
+	src/dd/common_int.h \
+	src/dd/join.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
@@ -45,6 +48,7 @@ dist_man_MANS += man/man3/dtfl_collection_new.3
 dist_man_MANS += man/man3/dtfl_input_session_new.3
 dist_man_MANS += man/man3/dtfl_collection_arrange.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
+dist_man_MANS += man/man3/dtfl_collection_join.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate
@@ -92,6 +96,11 @@ TESTS += tests/unit/test_reduce
 tests_unit_test_reduce_SOURCES = tests/unit/test_reduce.c
 tests_unit_test_reduce_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_reduce_LDADD = $(INTERNAL_LIBS)
+check_PROGRAMS += tests/upstream/dd/join
+TESTS += tests/upstream/dd/join
+tests_upstream_dd_join_SOURCES = tests/upstream/dd/join.c
+tests_upstream_dd_join_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_join_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_agent
 TESTS += tests/unit/test_agent
@@ -146,3 +155,8 @@ TESTS += tests/pbt/pbt_reduce
 tests_pbt_pbt_reduce_SOURCES = tests/pbt/pbt_reduce.c
 tests_pbt_pbt_reduce_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_reduce_LDADD = $(INTERNAL_PBT_LIBS)
+check_PROGRAMS += tests/pbt/pbt_join
+TESTS += tests/pbt/pbt_join
+tests_pbt_pbt_join_SOURCES = tests/pbt/pbt_join.c
+tests_pbt_pbt_join_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_join_LDADD = $(INTERNAL_PBT_LIBS)

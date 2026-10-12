@@ -67,3 +67,9 @@ dtfl_collection_threshold_named
 dtfl_collection_count_total
 dtfl_collection_distinct_total
 dtfl_collection_threshold_total
+dtfl_join_emit_record
+dtfl_arranged_join_core
+dtfl_collection_join_map
+dtfl_collection_join
+dtfl_collection_semijoin
+dtfl_collection_antijoin

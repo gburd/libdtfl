@@ -35,6 +35,9 @@
 #include "dd/collection_int.h"
 #include "dd/trace/trace_int.h"
 
+/* dtfl_arranged is the opaque handle from dtfl/arrange.h (defined there). */
+typedef struct dtfl_arranged dtfl_arranged;
+
 /* ------------------------------------------------------------------ */
 /* Batch pointer records on the arrange output stream.                 */
 /* ------------------------------------------------------------------ */
@@ -314,8 +317,24 @@ struct dtfl_collection *__dtfl_arranged_join_core(struct dtfl_arranged *a,
 #endif
 
 /* ------------------------------------------------------------------ */
-/* Arrangement construction, shared with reduce (arrangement.c).       */
+/* Arrangement construction and views, shared by join and reduce.      */
 /* ------------------------------------------------------------------ */
+
+/*
+ * Internal view into a dtfl_arranged for the P8 operators (join reads two
+ * arrangements; reduce reads one).  The struct itself stays private to
+ * arrangement.c; these expose the batch-pointer stream, the shared trace
+ * reader (whose kt/vt/dc/tc fields describe the stored key, value and
+ * diff), and the arrangement's time depth.  __dtfl_arranged_agent returns a
+ * handle so a consumer may clone a reader or take a cursor through it; it
+ * must not free the agent.
+ */
+dtfl_stream *__dtfl_arranged_stream(const dtfl_arranged *a);
+__dtfl_trace_agent *__dtfl_arranged_agent(const dtfl_arranged *a);
+unsigned __dtfl_arranged_depth(const dtfl_arranged *a);
+const __dtfl_diff_class *__dtfl_arranged_diff_class(const dtfl_arranged *a);
+/* True when the arrangement's trace is a key batch (whole record is key). */
+bool __dtfl_arranged_keyed(const dtfl_arranged *a);
 
 /*
  * Build a dtfl_arranged handle from a batch-pointer stream and a trace agent
@@ -324,17 +343,17 @@ struct dtfl_collection *__dtfl_arranged_join_core(struct dtfl_arranged *a,
  * `keyed` records whether the trace is a key batch (whole record is key) or
  * a value batch.  reduce uses this to publish its output arrangement.
  */
-struct dtfl_arranged *__dtfl_arranged_from_agent(dtfl_stream *stream,
+dtfl_arranged *__dtfl_arranged_from_agent(dtfl_stream *stream,
     __dtfl_trace_agent *agent, const dtfl_type *type, dtfl_diff *diff,
     unsigned depth, bool keyed);
-/* The batch-pointer output stream of an arrangement (for building readers). */
-dtfl_stream *__dtfl_arranged_stream(const struct dtfl_arranged *a);
-/* Borrow the arrangement's trace agent (its shared reader). */
-__dtfl_trace_agent *__dtfl_arranged_agent(struct dtfl_arranged *a);
-/* The arrangement's time-word depth and diff class. */
-unsigned __dtfl_arranged_depth(const struct dtfl_arranged *a);
-const __dtfl_diff_class *__dtfl_arranged_diff_class(const struct dtfl_arranged *a);
-/* True when the arrangement's trace is a key batch (whole record is key). */
-bool __dtfl_arranged_keyed(const struct dtfl_arranged *a);
+
+/*
+ * __dtfl_collection_arrange_by_key (collection.rs arrange_by_key): index a
+ * collection of key||val records into a value trace split by `kt`, routing
+ * updates by the key prefix so a join finds matching keys on one worker.
+ * The arrangement retains `kt` as its key type; `vt` describes the value.
+ */
+dtfl_arranged *__dtfl_collection_arrange_by_key(dtfl_collection *c,
+    const dtfl_type *kt, const dtfl_type *vt, const char *name);
 
 #endif /* DTFL_ARRANGE_INT_H */
