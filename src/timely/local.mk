@@ -41,6 +41,7 @@ timely_sources = \
 	src/timely/ops_probe.c \
 	src/timely/ops_feedback.c \
 	src/timely/ops_reclock.c \
+	src/timely/ops_enterleave.c \
 	src/timely/event.c \
 	src/timely/capture.c \
 	src/timely/extract.c \
@@ -74,6 +75,7 @@ dist_man_MANS += man/man3/dtfl_stream_reclock.3
 dist_man_MANS += man/man3/dtfl_stream_capture.3
 dist_man_MANS += man/man3/dtfl_event_link_replay.3
 dist_man_MANS += man/man3/dtfl_event_link_extract.3
+dist_man_MANS += man/man3/dtfl_stream_enter.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -141,3 +143,9 @@ TESTS += tests/unit/test_event
 tests_unit_test_event_SOURCES = tests/unit/test_event.c
 tests_unit_test_event_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_event_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_ops_enterleave
+TESTS += tests/unit/test_ops_enterleave
+tests_unit_test_ops_enterleave_SOURCES = tests/unit/test_ops_enterleave.c
+tests_unit_test_ops_enterleave_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_enterleave_LDADD = $(INTERNAL_LIBS)

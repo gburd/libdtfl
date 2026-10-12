@@ -112,3 +112,6 @@ dtfl_event_link_free
 dtfl_event_link_pusher
 dtfl_event_link_replay
 dtfl_event_link_extract
+# P4d: enter/leave across a scope boundary (ops_enterleave).
+dtfl_stream_enter
+dtfl_stream_leave

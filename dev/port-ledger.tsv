@@ -107,7 +107,7 @@ timely-dataflow	timely/src/dataflow/operators/core/capture/extract.rs	83	src/tim
 timely-dataflow	timely/src/dataflow/operators/core/capture/mod.rs	97	include/dtfl/timely.h	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/timely/replay.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/concat.rs	90	src/timely/ops_concat.c	P4	done	
-timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/exchange.rs	54	src/timely/ops_exchange.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_filter.c	P4	done	
