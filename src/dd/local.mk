@@ -176,3 +176,9 @@ TESTS += tests/pbt/pbt_join
 tests_pbt_pbt_join_SOURCES = tests/pbt/pbt_join.c
 tests_pbt_pbt_join_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_join_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_iterate
+TESTS += tests/pbt/pbt_iterate
+tests_pbt_pbt_iterate_SOURCES = tests/pbt/pbt_iterate.c
+tests_pbt_pbt_iterate_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_iterate_LDADD = $(INTERNAL_PBT_LIBS)
