@@ -1,16 +1,23 @@
 # SPDX-License-Identifier: MIT
-# src/dd: differential dataflow.  P5/P6: diff classes, consolidation,
-# trace descriptions.  No public API yet, so no headers, man pages or
-# exports.sym.
+# src/dd: differential dataflow.  P5: diff classes, consolidation, trace
+# descriptions, the Collection type and the differential input session.
+# The trace/arrange layer and the join/reduce collection methods land in
+# P6 and later.
 
 dd_sources = \
 	src/dd/dd_int.h \
+	src/dd/collection_int.h \
 	src/dd/diff.c \
 	src/dd/consolidate.c \
+	src/dd/collection.c \
 	src/dd/trace/description.c
 
 libdtfl_la_SOURCES += $(dd_sources)
 libdtfl_internal_la_SOURCES += $(dd_sources)
+dtflinclude_HEADERS += include/dtfl/collection.h
+EXTRA_DIST += src/dd/exports.sym
+
+dist_man_MANS += man/man3/dtfl_collection_new.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate
