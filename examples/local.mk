@@ -23,7 +23,9 @@ noinst_PROGRAMS += \
 	examples/timely/flow_controlled \
 	examples/timely/event_driven \
 	examples/timely/openloop \
-	examples/timely/loopdemo
+	examples/timely/loopdemo \
+	examples/timely/unionfind \
+	examples/timely/bfs
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -80,5 +82,13 @@ examples_timely_openloop_LDADD = $(EXAMPLE_LDADD)
 examples_timely_loopdemo_SOURCES = examples/timely/loopdemo.c
 examples_timely_loopdemo_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_loopdemo_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_unionfind_SOURCES = examples/timely/unionfind.c
+examples_timely_unionfind_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_unionfind_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_bfs_SOURCES = examples/timely/bfs.c
+examples_timely_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_bfs_LDADD = $(EXAMPLE_LDADD)
 
 EXTRA_DIST += examples/timely/example_args.h
