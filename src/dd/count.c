@@ -114,7 +114,7 @@ static void
 emit_count(count_scan *w, const uint64_t *time, bool positive)
 {
 	count_ctx *c = w->c;
-	unsigned char valbuf[16];
+	unsigned char valbuf[16] = { 0 };
 	size_t vlen;
 	size_t tw = (size_t)c->depth * sizeof(uint64_t);
 	size_t odw = c->odc->width;

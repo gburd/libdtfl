@@ -2534,7 +2534,7 @@ count_logic(void *vctx, const void *key, size_t klen, size_t n,
 	count_ctx *cc = vctx;
 	size_t odw = cc->odc->width;
 	unsigned char *one = odw != 0 ? __dtfl_alloc(odw) : NULL;
-	unsigned char valbuf[16];
+	unsigned char valbuf[16] = { 0 };
 	size_t vlen;
 
 	(void)key; (void)klen; (void)n; (void)in_vals; (void)in_vlens;
