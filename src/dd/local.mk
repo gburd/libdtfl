@@ -7,10 +7,13 @@
 dd_sources = \
 	src/dd/dd_int.h \
 	src/dd/collection_int.h \
+	src/dd/arrange_int.h \
 	src/dd/diff.c \
 	src/dd/consolidate.c \
 	src/dd/collection.c \
 	src/dd/input.c \
+	src/dd/writer.c \
+	src/dd/agent.c \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
 	src/dd/trace/layout.c \
@@ -64,6 +67,12 @@ TESTS += tests/upstream/dd/trace
 tests_upstream_dd_trace_SOURCES = tests/upstream/dd/trace.c
 tests_upstream_dd_trace_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_dd_trace_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_agent
+TESTS += tests/unit/test_agent
+tests_unit_test_agent_SOURCES = tests/unit/test_agent.c
+tests_unit_test_agent_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_agent_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate

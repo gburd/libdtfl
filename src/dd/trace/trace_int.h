@@ -578,9 +578,20 @@ void __dtfl_trace_set_logical_compaction(__dtfl_trace *t,
     const __dtfl_antichain *frontier);
 void __dtfl_trace_set_physical_compaction(__dtfl_trace *t,
     const __dtfl_antichain *frontier);
+/* TraceReader::get_logical_compaction / get_physical_compaction (borrowed). */
+const __dtfl_antichain *__dtfl_trace_get_logical_compaction(
+    const __dtfl_trace *t);
+const __dtfl_antichain *__dtfl_trace_get_physical_compaction(
+    const __dtfl_trace *t);
 /* Returns false if `upper` has no clean cut; else fills *out. */
 bool __dtfl_trace_cursor_through(__dtfl_trace *t,
     const __dtfl_antichain *upper, __dtfl_cursor_list *out);
 void __dtfl_trace_cursor(__dtfl_trace *t, __dtfl_cursor_list *out);
+/*
+ * TraceReader::map_batches: every batch currently in the trace, as a new
+ * owned array (*nout entries, each retained; the caller releases them and
+ * frees the array).  Used by the agent's new_listener to seed a queue.
+ */
+__dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
 
 #endif /* DTFL_TRACE_INT_H */

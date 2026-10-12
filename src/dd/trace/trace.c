@@ -82,6 +82,18 @@ __dtfl_trace_set_physical_compaction(__dtfl_trace *t,
 	__dtfl_spine_set_physical_compaction(&t->spine, frontier);
 }
 
+const __dtfl_antichain *
+__dtfl_trace_get_logical_compaction(const __dtfl_trace *t)
+{
+	return &t->spine.logical_frontier;
+}
+
+const __dtfl_antichain *
+__dtfl_trace_get_physical_compaction(const __dtfl_trace *t)
+{
+	return &t->spine.physical_frontier;
+}
+
 /*
  * TraceReader::cursor_through: assemble a CursorList over the batches a cut
  * at `upper` selects.  Returns false if there is no clean cut; otherwise it
@@ -113,4 +125,21 @@ __dtfl_trace_cursor(__dtfl_trace *t, __dtfl_cursor_list *out)
 	if (!__dtfl_trace_cursor_through(t, &empty, out))
 		__dtfl_panic("trace: unable to acquire a complete cursor");
 	__dtfl_antichain_free(&empty);
+}
+
+/*
+ * map_batches: the batches currently in the spine, as an owned array.  A
+ * NULL/empty upper selects every batch; there is always a clean cut at the
+ * empty frontier, so this never fails.
+ */
+__dtfl_batch_ord **
+__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout)
+{
+	__dtfl_antichain empty;
+	__dtfl_batch_ord **batches;
+
+	__dtfl_antichain_init(&empty, t->tc);
+	batches = __dtfl_spine_batches_through(&t->spine, &empty, nout);
+	__dtfl_antichain_free(&empty);
+	return batches;
 }
