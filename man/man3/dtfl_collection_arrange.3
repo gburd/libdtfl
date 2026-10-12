@@ -4,6 +4,7 @@
 .Os
 .Sh NAME
 .Nm dtfl_collection_arrange ,
+.Nm dtfl_arrange_from_upsert ,
 .Nm dtfl_arranged_as_collection ,
 .Nm dtfl_arranged_emit_record ,
 .Nm dtfl_arranged_trace ,
@@ -25,6 +26,8 @@ Timely and differential dataflow library
 .In dtfl/arrange.h
 .Ft dtfl_arranged *
 .Fn dtfl_collection_arrange "dtfl_collection *c" "const char *name"
+.Ft dtfl_arranged *
+.Fn dtfl_arrange_from_upsert "dtfl_collection *upserts" "const dtfl_type *key_type" "const dtfl_type *val_type" "const char *name"
 .Ft void
 .Fn dtfl_arranged_emit_record "dtfl_arranged_emit *e" "const void *rec" "size_t len"
 .Ft dtfl_collection *
@@ -74,6 +77,24 @@ It indexes the whole record as the key.
 labels the operator, or is
 .Dv NULL
 for the default.
+.Pp
+.Fn dtfl_arrange_from_upsert
+arranges a stream of keyed upserts.
+Each record of
+.Va upserts
+is a key followed by an
+.Vt option
+value: one tag byte, 0 for None and 1 for Some, then the value when Some.
+The update's embedded time is the upsert time, and the diff is ignored.
+The collection holds, for each key, the most recent value by time; a None
+uninstalls the key.
+The operator computes the retractions itself, so the result trace indexes
+key to value with signed diffs.
+A repeated value produces no change, and a tie in time takes the greatest
+.Vt option
+value
+.Pq None < Some .
+The time class must be totally ordered.
 .Pp
 .Fn dtfl_arranged_as_collection
 reads an arrangement back as a collection.
@@ -125,6 +146,7 @@ report the record type, the difference class and the scope the arrangement
 belongs to.
 .Sh RETURN VALUES
 .Fn dtfl_collection_arrange ,
+.Fn dtfl_arrange_from_upsert ,
 .Fn dtfl_trace_import ,
 and the enter and leave functions return a new
 .Vt dtfl_arranged
@@ -151,4 +173,4 @@ A trace imports only into dataflows on its own worker.
 .Xr dtfl-differential 7
 .Sh STANDARDS
 Ported from differential-dataflow 0.25.1
-.Pq Pa operators/arrange/arrangement.rs , Pa operators/arrange/agent.rs , Pa operators/arrange/writer.rs .
+.Pq Pa operators/arrange/arrangement.rs , Pa operators/arrange/agent.rs , Pa operators/arrange/writer.rs , Pa operators/arrange/upsert.rs .

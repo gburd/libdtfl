@@ -52,6 +52,21 @@ DTFL_API dtfl_arranged *dtfl_collection_arrange(dtfl_collection *c,
     const char *name);
 
 /*
+ * Arranges a stream of keyed upserts into a shared trace
+ * (arrange_from_upsert).  Each record of `upserts` is a key followed by an
+ * option(value) (one tag byte, 0 for None and 1 for Some, then the value),
+ * and the update's embedded time is the upsert time; the diff is ignored.
+ * The collection holds, for each key, the most recent value by time, and a
+ * None uninstalls the key.  The operator computes the retractions itself,
+ * so the result trace indexes key -> value with isize diffs.  Ties in time
+ * take the greatest option(value) (None < Some).  The time class must be
+ * totally ordered.  Returns a handle the caller frees with
+ * dtfl_arranged_free.
+ */
+DTFL_API dtfl_arranged *dtfl_arrange_from_upsert(dtfl_collection *upserts,
+    const dtfl_type *key_type, const dtfl_type *val_type, const char *name);
+
+/*
  * Reads an arrangement back as a collection (as_collection).  Each stored
  * (key, value) becomes zero or more output records of `out_type`: `fn`
  * writes them from the key and value bytes through the emit handle, and the

@@ -15,6 +15,7 @@ dd_sources = \
 	src/dd/writer.c \
 	src/dd/agent.c \
 	src/dd/arrangement.c \
+	src/dd/upsert.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
@@ -93,6 +94,12 @@ tests_unit_test_arrange_SOURCES = tests/unit/test_arrange.c
 tests_unit_test_arrange_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_arrange_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_upsert
+TESTS += tests/unit/test_upsert
+tests_unit_test_upsert_SOURCES = tests/unit/test_upsert.c
+tests_unit_test_upsert_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_upsert_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate
 tests_pbt_pbt_consolidate_SOURCES = tests/pbt/pbt_consolidate.c
@@ -110,3 +117,9 @@ TESTS += tests/pbt/pbt_trace
 tests_pbt_pbt_trace_SOURCES = tests/pbt/pbt_trace.c
 tests_pbt_pbt_trace_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_trace_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_arrange
+TESTS += tests/pbt/pbt_arrange
+tests_pbt_pbt_arrange_SOURCES = tests/pbt/pbt_arrange.c
+tests_pbt_pbt_arrange_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_arrange_LDADD = $(INTERNAL_PBT_LIBS)

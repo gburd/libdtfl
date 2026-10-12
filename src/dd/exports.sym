@@ -43,6 +43,7 @@ dtfl_collection_leave
 dtfl_collection_probe
 dtfl_collection_probe_with
 dtfl_collection_arrange
+dtfl_arrange_from_upsert
 dtfl_arranged_as_collection
 dtfl_arranged_emit_record
 dtfl_arranged_trace
