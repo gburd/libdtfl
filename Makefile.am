@@ -71,6 +71,7 @@ include src/comm/zc_local.mk
 include src/progress/local.mk
 include src/timely/local.mk
 include src/dd/local.mk
+include tests/interop/local.mk
 
 # Examples (noinst): included after the src fragments so the library and
 # its public headers exist to link against (AGENTS.md section 11).

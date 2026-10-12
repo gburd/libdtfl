@@ -1,0 +1,18 @@
+[package]
+name = "dtfl-gen-fixtures"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "ord_order"
+path = "ord_order.rs"
+
+[profile.release]
+opt-level = 1
+
+# No external dependencies: these generators use only std and the
+# documented libdtfl encodings, so a fixture never depends on a crates.io
+# resolution.  The pinned timely/differential crates are referenced only
+# where a fixture genuinely exercises their serialization (added per
+# fixture as needed, with a path dependency on the pinned checkout).
