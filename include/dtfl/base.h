@@ -5,8 +5,8 @@
  * dtfl/base.h: errors, hooks and version for libdtfl.
  *
  * Every other public header includes this one.  It declares the error
- * codes returned by fallible functions, the three process-wide host
- * hooks (allocation, panic and logging), and the
+ * codes returned by fallible functions, the four process-wide host
+ * hooks (allocation, panic, logging and thread spawning), and the
  * library version.  See dtfl(7), dtfl_embedding(7) and
  * dtfl_set_alloc_hooks(3).
  */
@@ -108,6 +108,37 @@ typedef void (*dtfl_log_fn)(dtfl_log_level level, const char *msg, void *ctx);
  * other hooks, before the first dtfl_execute().
  */
 DTFL_API void dtfl_set_log_hook(dtfl_log_fn fn, void *ctx);
+
+/*
+ * Thread-spawn hooks.  A host that supplies its own threads (for
+ * example a PostgreSQL background worker) routes worker, network and
+ * connection thread creation through these.  With no hooks set,
+ * libdtfl uses pthreads.
+ *
+ * spawn starts start(arg) on a new thread and stores an opaque handle
+ * in *handle_out; it returns 0 on success or a DTFL_E* code.  join
+ * waits for the handle's thread, stores what start returned in
+ * *retval_out, and returns 0 or a DTFL_E* code.  A handle is joined
+ * exactly once.  A host that cannot spawn threads at all instead drives
+ * dtfl_worker_new_standalone() and dtfl_worker_step() by hand and never
+ * calls dtfl_execute(); see dtfl_embedding(7).
+ */
+typedef int (*dtfl_thread_fn)(void *(*start)(void *), void *arg,
+    void **handle_out, void *ctx);
+typedef int (*dtfl_thread_join_fn)(void *handle, void **retval_out, void *ctx);
+typedef struct dtfl_thread_hooks {
+	dtfl_thread_fn spawn;
+	dtfl_thread_join_fn join;
+	void *ctx;
+} dtfl_thread_hooks;
+
+/*
+ * Installs thread hooks.  Both spawn and join must be non-NULL.  NULL
+ * hooks restore the pthread default.  Must be called before the first
+ * dtfl_execute(); returns DTFL_EINVAL if only one of the two function
+ * pointers is set.
+ */
+DTFL_API int dtfl_set_thread_hooks(const dtfl_thread_hooks *hooks);
 
 /* Library version. */
 #define DTFL_VERSION_MAJOR 0
