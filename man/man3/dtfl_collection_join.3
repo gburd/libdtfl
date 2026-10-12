@@ -1,0 +1,147 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_JOIN 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_join ,
+.Nm dtfl_collection_join_map ,
+.Nm dtfl_collection_semijoin ,
+.Nm dtfl_collection_antijoin ,
+.Nm dtfl_arranged_join_core ,
+.Nm dtfl_join_emit_record
+.Nd match pairs of records by key
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.Ft void
+.Fn dtfl_join_emit_record "dtfl_join_emit *e" "const void *rec" "size_t len"
+.Ft dtfl_collection *
+.Fn dtfl_arranged_join_core "dtfl_arranged *a1" "dtfl_arranged *a2" "const dtfl_type *out_type" "dtfl_join_result_fn result" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_join_map "dtfl_collection *c1" "dtfl_collection *c2" "const dtfl_type *key_type" "const dtfl_type *val1_type" "const dtfl_type *val2_type" "const dtfl_type *out_type" "dtfl_join_result_fn result" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_join "dtfl_collection *c1" "dtfl_collection *c2" "const dtfl_type *key_type" "const dtfl_type *val1_type" "const dtfl_type *val2_type" "const dtfl_type *out_type"
+.Ft dtfl_collection *
+.Fn dtfl_collection_semijoin "dtfl_collection *c" "dtfl_collection *keys" "const dtfl_type *key_type" "const dtfl_type *val_type" "const dtfl_type *out_type"
+.Ft dtfl_collection *
+.Fn dtfl_collection_antijoin "dtfl_collection *c" "dtfl_collection *keys" "const dtfl_type *key_type" "const dtfl_type *val_type" "const dtfl_type *out_type"
+.Sh DESCRIPTION
+The join operators match records of two collections that share a key, as the
+relational equijoin does.
+A collection joined by key stores
+.Pq key , value
+records laid out as the key bytes followed by the value bytes; the key type
+splits the record.
+For each key present in both inputs, every value on one side is matched with
+every value on the other, the matched diffs are multiplied, and the matched
+times are joined.
+The output is consolidated, so each
+.Pq record , time
+pair carries one net difference.
+.Pp
+.Fn dtfl_collection_join
+matches
+.Pq key , val1
+in
+.Va c1
+with
+.Pq key , val2
+in
+.Va c2
+and yields the concatenation key||val1||val2.
+.Va key_type ,
+.Va val1_type
+and
+.Va val2_type
+describe the shared key and the two values;
+.Va out_type
+describes the concatenated output record.
+.Pp
+.Fn dtfl_collection_join_map
+is
+.Fn dtfl_collection_join
+with a result closure: for each matched
+.Pq key , val1 , val2
+the
+.Va result
+function emits zero or more output records of
+.Va out_type
+through the sink with
+.Fn dtfl_join_emit_record ,
+and the operator attaches the joined time and the product diff to each.
+.Pp
+.Fn dtfl_collection_semijoin
+matches
+.Pq key , val
+in
+.Va c
+against the bare key records of
+.Va keys ,
+keeping the matched records of
+.Va c
+with multiplicities multiplied.
+When
+.Va keys
+carries multiplicities of zero or one this is the relational semijoin;
+otherwise it scales the counts.
+.Va keys
+is arranged by self, keying each record by itself.
+.Pp
+.Fn dtfl_collection_antijoin
+subtracts the semijoin with
+.Va keys
+from
+.Va c ,
+discarding the records of
+.Va c
+whose key is present in
+.Va keys .
+The difference class of
+.Va c
+must be Abelian, since the operator negates the semijoin.
+In almost all cases
+.Va keys
+should carry multiplicities of zero or one.
+.Pp
+.Fn dtfl_arranged_join_core
+joins two arrangements that share a key type, the layer the collection
+methods are built on.
+It avoids re-indexing when the inputs are already arranged.
+The two difference classes must have a declared product: an integer class
+times the same integer class, the present class times any class, or a tuple
+of integer classes times that integer.
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_collection
+the caller owns and frees with
+.Fn dtfl_collection_free .
+.Fn dtfl_arranged_join_core ,
+and the collection methods that reach it, return
+.Dv NULL
+and report
+.Dv DTFL_EALGEBRA
+when the two difference classes have no declared product.
+.Fn dtfl_arranged_join_core
+leaves the caller owning
+.Va a1
+and
+.Va a2 .
+.Sh OWNERSHIP
+A result closure's context is released by its destructor when the operator
+is dropped.
+The value and key bytes passed to a result closure are borrowed for the call
+only.
+.Sh THREAD SAFETY
+A join reads two arrangements on the worker that built them; every handle
+belongs to that worker and must not be used from another thread.
+When the inputs are collections, the operator exchanges their updates by key
+so matching keys meet on one worker.
+.Sh SEE ALSO
+.Xr dtfl_collection_arrange 3 ,
+.Xr dtfl_collection_new 3 ,
+.Xr dtfl-differential 7
+.Sh STANDARDS
+Ported from differential-dataflow 0.25.1
+.Pq Pa operators/join.rs , Pa operators/arrange/arrangement.rs , Pa collection.rs .
