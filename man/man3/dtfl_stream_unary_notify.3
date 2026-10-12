@@ -1,0 +1,117 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_UNARY_NOTIFY 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_unary_notify ,
+.Nm dtfl_stream_binary_notify
+.Nd build a generic operator with a notificator
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fo dtfl_stream_unary_notify
+.Fa "dtfl_stream *st"
+.Fa "dtfl_pact pact"
+.Fa "const char *name"
+.Fa "const uint64_t *init_times"
+.Fa "size_t ninit"
+.Fa "const dtfl_type *out_type"
+.Fa "dtfl_unary_notify_fn logic"
+.Fa "dtfl_ctx ctx"
+.Fc
+.Ft dtfl_stream *
+.Fo dtfl_stream_binary_notify
+.Fa "dtfl_stream *a"
+.Fa "dtfl_stream *b"
+.Fa "dtfl_pact pa"
+.Fa "dtfl_pact pb"
+.Fa "const char *name"
+.Fa "const uint64_t *init_times"
+.Fa "size_t ninit"
+.Fa "const dtfl_type *out_type"
+.Fa "dtfl_binary_notify_fn logic"
+.Fa "dtfl_ctx ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_unary_notify
+builds a one-input, one-output operator named
+.Fa name
+whose input uses
+.Fa pact
+and whose output carries
+.Fa out_type .
+.Fn dtfl_stream_binary_notify
+builds the two-input form over
+.Fa a
+and
+.Fa b
+with pacts
+.Fa pa
+and
+.Fa pb .
+.Pp
+Each call to the operator runs
+.Fa logic
+with the operator handle, through which it reads messages
+.Pq Xr dtfl_op_input_next 3 ,
+takes capabilities, and opens output sessions, and a
+.Vt dtfl_notificator
+that persists across schedules.
+The logic requests notifications with
+.Xr dtfl_notificator_notify_at 3
+and drains the ones the input frontiers have passed with
+.Xr dtfl_notificator_next 3 .
+.Pp
+.Fa init_times
+is an array of
+.Fa ninit
+times of the scope's class
+.Pq or Dv NULL ,
+at each of which an initial notification is requested before the first
+call.
+The context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+Both functions return the operator's output stream, carrying
+.Fa out_type .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Forward each message, then report each completed time. */
+static void logic(void *c, dtfl_op *op, dtfl_notificator *n) {
+	dtfl_message *m;
+	while ((m = dtfl_op_input_next(op, 0))) {
+		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
+		dtfl_session *s = dtfl_op_session(op, 0, cap);
+		dtfl_session_give_message(s, m);
+		dtfl_session_close(s);
+		dtfl_notificator_notify_at(n, cap);
+	}
+}
+dtfl_stream *out = dtfl_stream_unary_notify(s, dtfl_pact_pipeline(),
+    "example", NULL, 0, dtfl_stream_type(s), logic, DTFL_NOCTX);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_notificator_notify_at 3 ,
+.Xr dtfl_op_builder_new 3 ,
+.Xr dtfl_stream_delay 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C form of timely's
+.Fn unary_notify
+and
+.Fn binary_notify
+on the
+.Vt Operator
+trait.
+They are public at the pinned release
+.Pq Li timely-v0.31.0
+and were removed upstream afterward (#819); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The streams, the operator and the notificator belong to the thread that
+runs the worker and must not be used from another thread (PLAN
+section 5).

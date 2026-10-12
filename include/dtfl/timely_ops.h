@@ -91,6 +91,48 @@ DTFL_API bool dtfl_probe_done(const dtfl_probe *p);
 DTFL_API const uint64_t *dtfl_probe_frontier(const dtfl_probe *p, size_t *n);
 
 /* ------------------------------------------------------------------ */
+/* Notification (generic/notificator.rs, generic/operator.rs)          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A Notificator buffers requests for notification at a capability's time
+ * and delivers them once the input frontiers pass the time, in
+ * non-decreasing order within one delivery.  It is valid only during the
+ * logic call that receives it.  Removed upstream after the pin (#819).
+ */
+typedef struct dtfl_notificator dtfl_notificator;
+/* Requests a notification at `cap`'s time; takes ownership of `cap`. */
+DTFL_API void dtfl_notificator_notify_at(dtfl_notificator *n, dtfl_cap *cap);
+/*
+ * The next deliverable capability and how many requests it folds, or
+ * false when none is deliverable.  Transfers ownership of *cap.
+ */
+DTFL_API bool dtfl_notificator_next(dtfl_notificator *n, dtfl_cap **cap,
+    uint64_t *count);
+/* Input `input`'s frontier: *k times (Notificator::frontier). */
+DTFL_API const uint64_t *dtfl_notificator_frontier(const dtfl_notificator *n,
+    size_t input, size_t *k);
+
+/*
+ * unary_notify / binary_notify: a generic operator whose logic receives
+ * the operator handle (for messages, capabilities and output sessions)
+ * and a notificator.  `init_times` (ninit times of the scope's class, or
+ * NULL) requests an initial notification at each.  `out_type` is the
+ * output record type.  Removed upstream after the pin (#819).
+ */
+typedef void (*dtfl_unary_notify_fn)(void *ctx, dtfl_op *op,
+    dtfl_notificator *note);
+DTFL_API dtfl_stream *dtfl_stream_unary_notify(dtfl_stream *st, dtfl_pact pact,
+    const char *name, const uint64_t *init_times, size_t ninit,
+    const dtfl_type *out_type, dtfl_unary_notify_fn logic, dtfl_ctx ctx);
+typedef void (*dtfl_binary_notify_fn)(void *ctx, dtfl_op *op,
+    dtfl_notificator *note);
+DTFL_API dtfl_stream *dtfl_stream_binary_notify(dtfl_stream *a, dtfl_stream *b,
+    dtfl_pact pa, dtfl_pact pb, const char *name, const uint64_t *init_times,
+    size_t ninit, const dtfl_type *out_type, dtfl_binary_notify_fn logic,
+    dtfl_ctx ctx);
+
+/* ------------------------------------------------------------------ */
 /* Record operators (core and vec)                                     */
 /* ------------------------------------------------------------------ */
 

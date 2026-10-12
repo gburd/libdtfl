@@ -1,0 +1,78 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_AGGREGATE 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_aggregate
+.Nd fold keyed values within each timestamp
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fo dtfl_stream_aggregate
+.Fa "dtfl_stream *st"
+.Fa "size_t agg_size"
+.Fa "dtfl_agg_fold_fn fold"
+.Fa "dtfl_agg_emit_fn emit"
+.Fa "const dtfl_type *out_type"
+.Fa "dtfl_ctx ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_aggregate
+folds the values of
+.Pq key , value
+records within each timestamp, keyed by the key, then emits one result
+per key once the timestamp is complete.
+The records of
+.Fa st
+are pairs whose first field is the key; the input is exchanged by the
+key's hash, so all records with the same key reach the same worker.
+.Pp
+Each distinct key within a time keeps an aggregate of
+.Fa agg_size
+bytes, zero-initialised on first sight.
+.Fn fold
+is called for each
+.Pq key , value
+with the key and value bytes and the aggregate to update.
+Once the input frontier passes the time,
+.Fn emit
+is called once per key with the key and the final aggregate and writes
+the result records of
+.Fa out_type
+through its
+.Vt dtfl_emit
+handle.
+The context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+.Fn dtfl_stream_aggregate
+returns the stream of emitted result records, carrying
+.Fa out_type .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Sum values per key % 2 within a time. */
+static void sum(void *c, const void *k, size_t kl,
+    const void *v, size_t vl, void *agg)
+	{ *(uint64_t *)agg += dtfl_get_u64(v); }
+dtfl_stream *out = dtfl_stream_aggregate(s, sizeof(uint64_t),
+    sum, emit, pair_type, DTFL_NOCTX);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_stream_count 3 ,
+.Xr dtfl_stream_state_machine 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Aggregate
+trait.
+It is public at the pinned release
+.Pq Li timely-v0.31.0
+and was removed upstream afterward (#818); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).

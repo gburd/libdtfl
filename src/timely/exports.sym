@@ -103,6 +103,23 @@ dtfl_probe_frontier
 dtfl_feedback_new
 dtfl_feedback_connect
 dtfl_stream_reclock
+# P4c: notification-based operators (notificator, operator, ops_delay,
+# ops_aggregate, ops_state_machine, ops_branch, ops_broadcast,
+# ops_flow_controlled).  Public at the pin, removed upstream later.
+dtfl_notificator_notify_at
+dtfl_notificator_next
+dtfl_notificator_frontier
+dtfl_stream_unary_notify
+dtfl_stream_binary_notify
+dtfl_stream_delay
+dtfl_stream_delay_total
+dtfl_stream_delay_batch
+dtfl_stream_aggregate
+dtfl_stream_state_machine
+dtfl_stream_branch
+dtfl_stream_branch_when
+dtfl_stream_broadcast
+dtfl_iterator_source
 # P4d: capture, replay, extract and the event link (capture, event,
 # extract, replay).
 dtfl_stream_capture_into
