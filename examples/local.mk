@@ -101,4 +101,27 @@ examples_timely_wordcount_SOURCES = examples/timely/wordcount.c
 examples_timely_wordcount_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_wordcount_LDADD = $(EXAMPLE_LDADD)
 
-EXTRA_DIST += examples/timely/example_args.h
+# Smoke test: run a representative subset under `make check` so a
+# crashing, hanging or wrong-output example fails the build.  The
+# examples the harness runs are added to check_PROGRAMS so `make check`
+# builds them, and the script runs after them.
+check_PROGRAMS += \
+	examples/timely/hello \
+	examples/timely/exchange \
+	examples/timely/wordcount \
+	examples/timely/bfs \
+	examples/timely/unionfind \
+	examples/timely/pagerank \
+	examples/timely/capture
+
+dist_check_SCRIPTS += tests/dist/test_examples.sh
+TESTS += tests/dist/test_examples.sh
+
+EXTRA_DIST += examples/timely/example_args.h \
+	examples/timely/hello.expected \
+	examples/timely/exchange.expected \
+	examples/timely/wordcount.expected \
+	examples/timely/bfs.expected \
+	examples/timely/unionfind.expected \
+	examples/timely/pagerank.expected \
+	examples/timely/capture.expected
