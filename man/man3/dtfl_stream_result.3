@@ -1,0 +1,106 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_RESULT 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_ok ,
+.Nm dtfl_stream_err ,
+.Nm dtfl_stream_map_ok ,
+.Nm dtfl_stream_map_err ,
+.Nm dtfl_stream_and_then ,
+.Nm dtfl_stream_unwrap_or_else
+.Nd stream helpers for Result records
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_ok "dtfl_stream *st" "const dtfl_type *ok_type"
+.Ft dtfl_stream *
+.Fn dtfl_stream_err "dtfl_stream *st" "const dtfl_type *err_type"
+.Ft dtfl_stream *
+.Fn dtfl_stream_map_ok "dtfl_stream *st" "dtfl_val_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_map_err "dtfl_stream *st" "dtfl_val_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_and_then "dtfl_stream *st" "dtfl_and_then_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_unwrap_or_else "dtfl_stream *st" "const dtfl_type *out_type" "dtfl_val_fn fn" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+These operators act on a stream of
+.Em Result
+records, each a tag byte
+.Pq 0 for Ok, 1 for Err
+followed by the arm's value.
+.Pp
+.Fn dtfl_stream_ok
+and
+.Fn dtfl_stream_err
+keep only the records of one arm and emit the unwrapped value, of
+.Fa ok_type
+or
+.Fa err_type .
+.Pp
+.Fn dtfl_stream_map_ok
+and
+.Fn dtfl_stream_map_err
+transform the value of one arm with
+.Fa fn ,
+which writes the replacement value into the supplied buffer and returns
+its length, and pass the other arm through unchanged.
+The output is still a Result of the input's stream type.
+.Pp
+.Fn dtfl_stream_and_then
+maps an Ok value to a new Result:
+.Fa fn
+writes the output value and sets its Ok or Err tag.
+Err input records pass through.
+.Pp
+.Fn dtfl_stream_unwrap_or_else
+emits Ok values unwrapped and turns each Err value into a value of
+.Fa out_type
+with
+.Fa fn ,
+flattening the stream to plain values.
+.Pp
+A value transform writes at most a few kilobytes into its buffer; a
+larger value is a programming error for these helpers, which match the
+small Result payloads of the pinned code.
+The context in
+.Fa ctx
+is released by its destructor when the operator is dropped.
+.Sh RETURN VALUES
+Each returns the new stream, owned by the stream's scope.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static size_t to_ten(void *ctx, const void *val, size_t len,
+    void *out, size_t cap) {
+	dtfl_put_u64(out, 10);
+	return 8;
+}
+
+dtfl_stream *mapped = dtfl_stream_map_ok(results, to_ten, DTFL_NOCTX);
+dtfl_stream *oks = dtfl_stream_ok(results, dtfl_type_u64());
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+.Sh SEE ALSO
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn ok ,
+.Fn err ,
+.Fn map_ok ,
+.Fn map_err ,
+.Fn and_then
+and
+.Fn unwrap_or_else
+helpers of
+.Pa vec/result.rs ,
+public at the pin and removed upstream after it.
+.Sh THREAD SAFETY
+Each operator and its streams belong to the worker thread that built
+them.
+The callbacks run on that thread during the worker's steps.

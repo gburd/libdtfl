@@ -1,0 +1,60 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_BARRIER 3
+.Os
+.Sh NAME
+.Nm dtfl_barrier_new ,
+.Nm dtfl_barrier_wait ,
+.Nm dtfl_barrier_free
+.Nd reusable all-workers barrier
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_barrier *
+.Fn dtfl_barrier_new "dtfl_worker *w"
+.Ft void
+.Fn dtfl_barrier_wait "dtfl_barrier *b"
+.Ft void
+.Fn dtfl_barrier_free "dtfl_barrier *b"
+.Sh DESCRIPTION
+A barrier is a reusable rendezvous across all workers.
+.Fn dtfl_barrier_new
+builds a small dataflow with one input and a probe on it.
+Every worker must create its barriers in the same order.
+.Pp
+.Fn dtfl_barrier_wait
+advances this worker one round and steps the worker until the probe
+reports that round reached, which happens only once every worker has
+advanced to it.
+Waiting does not block dataflow execution: other dataflows on the worker
+keep running during the wait.
+.Pp
+.Fn dtfl_barrier_free
+drops the barrier and its dataflow.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_barrier *b = dtfl_barrier_new(worker);
+for (int round = 0; round < iterations; round++) {
+	do_phase(round);
+	dtfl_barrier_wait(b);	/* all workers reach here together */
+}
+dtfl_barrier_free(b);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+.Sh SEE ALSO
+.Xr dtfl_execute 3 ,
+.Xr dtfl_sequencer_new 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Barrier
+of
+.Pa synchronization/barrier.rs .
+.Sh THREAD SAFETY
+A barrier belongs to the worker thread that created it.
+Every worker creates and waits on its own barrier; the rendezvous
+across workers happens through the dataflow's progress tracking, not
+through shared memory.

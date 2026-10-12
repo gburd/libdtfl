@@ -732,6 +732,15 @@ subgraph_destroy(subgraph *sg)
 	__dtfl_free(sg->incomplete);
 	__dtfl_vec_free(&sg->temp_active);
 	__dtfl_vec_free(&sg->maybe_shutdown);
+	/*
+	 * The scope-input counters (enter operators' produced batches) are
+	 * owned here: the enter nub lives in the parent scope and may be
+	 * freed before this subgraph stops reading them in harvest_inputs.
+	 */
+	for (i = 0; i < sg->inputs; i++) {
+		__dtfl_cb_free(sg->input_messages[i]);
+		__dtfl_free(sg->input_messages[i]);
+	}
 	__dtfl_free(sg->input_messages);
 	for (i = 0; i < sg->outputs; i++)
 		__dtfl_mantichain_free(&sg->output_capabilities[i]);

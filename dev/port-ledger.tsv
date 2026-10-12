@@ -101,13 +101,13 @@ timely-dataflow	timely/src/dataflow/channels/pushers/progress.rs	71	src/timely/p
 timely-dataflow	timely/src/dataflow/channels/pushers/tee.rs	151	src/timely/push_tee.c	P4	done	
 timely-dataflow	timely/src/dataflow/mod.rs	27	include/dtfl/timely.h	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/capability.rs	546	src/timely/capability.c	P4	done	
-timely-dataflow	timely/src/dataflow/operators/core/capture/capture.rs	151	src/timely/capture.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	307	src/timely/event.c	P3	todo	BatchLogger needs Event; bincode framing (D9)
-timely-dataflow	timely/src/dataflow/operators/core/capture/extract.rs	83	src/timely/extract.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/mod.rs	97	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/timely/replay.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/capture/capture.rs	151	src/timely/capture.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	307	src/timely/event.c	P3	done	BatchLogger needs Event; bincode framing (D9)
+timely-dataflow	timely/src/dataflow/operators/core/capture/extract.rs	83	src/timely/extract.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/mod.rs	97	include/dtfl/timely.h	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/timely/replay.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/concat.rs	90	src/timely/ops_concat.c	P4	done	
-timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/exchange.rs	54	src/timely/ops_exchange.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_filter.c	P4	done	
@@ -144,7 +144,7 @@ timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_in
 timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	done	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	todo	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	worker.rs and scope.rs import each other
@@ -163,9 +163,9 @@ timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	t
 timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	done	coordinate-vector times (D3)
 timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	todo	
 timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/timely_int.h	P3	todo	
-timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	todo	
+timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	done	
 timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	todo	
+timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	done	
 timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	todo	
 timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	todo	
 timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	todo	
