@@ -12,6 +12,16 @@ dtfl_diff_retain
 dtfl_diff_free
 dtfl_diff_width
 dtfl_diff_is_abelian
+dtfl_input_session_new
+dtfl_input_session_to_collection
+dtfl_input_session_update
+dtfl_input_session_update_at
+dtfl_input_session_insert
+dtfl_input_session_remove
+dtfl_input_session_advance_to
+dtfl_input_session_time
+dtfl_input_session_flush
+dtfl_input_session_close
 dtfl_collection_type
 dtfl_collection_diff
 dtfl_collection_scope

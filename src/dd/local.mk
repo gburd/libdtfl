@@ -10,6 +10,7 @@ dd_sources = \
 	src/dd/diff.c \
 	src/dd/consolidate.c \
 	src/dd/collection.c \
+	src/dd/input.c \
 	src/dd/trace/description.c
 
 libdtfl_la_SOURCES += $(dd_sources)
@@ -18,6 +19,7 @@ dtflinclude_HEADERS += include/dtfl/collection.h
 EXTRA_DIST += src/dd/exports.sym
 
 dist_man_MANS += man/man3/dtfl_collection_new.3
+dist_man_MANS += man/man3/dtfl_input_session_new.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate
