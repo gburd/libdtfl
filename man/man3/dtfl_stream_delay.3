@@ -1,0 +1,80 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_DELAY 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_delay ,
+.Nm dtfl_stream_delay_total ,
+.Nm dtfl_stream_delay_batch
+.Nd advance the timestamps of records
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_delay "dtfl_stream *st" "dtfl_delay_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_delay_total "dtfl_stream *st" "dtfl_delay_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_stream *
+.Fn dtfl_stream_delay_batch "dtfl_stream *st" "dtfl_delay_batch_fn fn" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+.Fn dtfl_stream_delay
+re-times each record of
+.Fa st
+to the time
+.Fn fn
+returns for it, which must be greater than or equal to the record's
+current time, and releases the record at the new time once the input
+frontier has passed it.
+The callback
+.Fa fn
+receives the record bytes, its length, the current time, and a buffer
+.Fa new_time
+of the scope's class to fill.
+.Pp
+.Fn dtfl_stream_delay_total
+is
+.Fn dtfl_stream_delay
+specialised to a totally ordered time; its behaviour is identical.
+.Pp
+.Fn dtfl_stream_delay_batch
+re-times whole messages: the callback sees only the message time, not
+the records, and all records of a message move together to the new
+time.
+.Pp
+A re-timed time that is not greater than or equal to the old time is a
+contract violation and panics through the panic hook.
+The context
+.Fa ctx
+is released by its destructor when the operator is dropped (PLAN D5).
+.Sh RETURN VALUES
+Each function returns the re-timed stream, carrying the same record
+type as
+.Fa st .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Move each record i (all fed at time 0) to time i. */
+static void to_value(void *c, const void *rec, size_t len,
+    const uint64_t *t, uint64_t *nt) { *nt = dtfl_get_u64(rec); }
+dtfl_stream *out = dtfl_stream_delay(s, to_value, DTFL_NOCTX);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_stream_reclock 3 ,
+.Xr dtfl_stream_unary_notify 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Delay
+trait.
+It is public at the pinned release
+.Pq Li timely-v0.31.0
+and was removed upstream afterward (#818); the port keeps the pinned
+behavior.
+The
+.Fn unary_frontier
+equivalent buffers records per time and releases them when a
+notificator reports the time complete.
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).
