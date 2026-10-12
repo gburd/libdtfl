@@ -22,6 +22,8 @@ dd_sources = \
 	src/dd/common.c \
 	src/dd/common_int.h \
 	src/dd/join.c \
+	src/dd/iterate.c \
+	src/dd/dynamic.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
@@ -42,6 +44,7 @@ libdtfl_internal_la_SOURCES += $(dd_sources)
 dtflinclude_HEADERS += include/dtfl/collection.h
 dtflinclude_HEADERS += include/dtfl/arrange.h
 dtflinclude_HEADERS += include/dtfl/reduce.h
+dtflinclude_HEADERS += include/dtfl/iterate.h
 EXTRA_DIST += src/dd/exports.sym
 
 dist_man_MANS += man/man3/dtfl_collection_new.3
@@ -49,6 +52,7 @@ dist_man_MANS += man/man3/dtfl_input_session_new.3
 dist_man_MANS += man/man3/dtfl_collection_arrange.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
 dist_man_MANS += man/man3/dtfl_collection_join.3
+dist_man_MANS += man/man3/dtfl_collection_iterate.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate
@@ -120,6 +124,18 @@ tests_unit_test_arrange_SOURCES = tests/unit/test_arrange.c
 tests_unit_test_arrange_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_arrange_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_iterate
+TESTS += tests/unit/test_iterate
+tests_unit_test_iterate_SOURCES = tests/unit/test_iterate.c
+tests_unit_test_iterate_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_iterate_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_dynamic
+TESTS += tests/unit/test_dynamic
+tests_unit_test_dynamic_SOURCES = tests/unit/test_dynamic.c
+tests_unit_test_dynamic_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_dynamic_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_upsert
 TESTS += tests/unit/test_upsert
 tests_unit_test_upsert_SOURCES = tests/unit/test_upsert.c
@@ -160,3 +176,9 @@ TESTS += tests/pbt/pbt_join
 tests_pbt_pbt_join_SOURCES = tests/pbt/pbt_join.c
 tests_pbt_pbt_join_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_join_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_iterate
+TESTS += tests/pbt/pbt_iterate
+tests_pbt_pbt_iterate_SOURCES = tests/pbt/pbt_iterate.c
+tests_pbt_pbt_iterate_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_iterate_LDADD = $(INTERNAL_PBT_LIBS)

@@ -20,6 +20,7 @@
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
+#include "dtfl/reduce.h"
 #include "dtfl/time.h"
 #include "dtfl/timely.h"
 
@@ -426,27 +427,168 @@ DTFL_TEST(join__antijoin)
 /* ------------------------------------------------------------------ */
 
 /*
- * The upstream join_scale_* tests build counts with .count(), filter into
- * odds and evens, and join them (the result is empty because at each time a
- * single count is either odd or even, never both).  count() is the reduce
- * operator's, which lands next door; until it is linked these report SKIP
- * rather than a false pass (AGENTS.md section 4).
+ * The upstream join_scale_* tests build a collection of a single unit
+ * record () inserted at each time 0..scale, count() it (so key () has the
+ * running count as its value), filter the counts into odds and evens, and
+ * join odds with evens.  At every time the key () has exactly one count
+ * value, which is either odd or even but never both, so the join is empty:
+ * the upstream assertion is that the extracted output has length zero.
+ *
+ * Rust uses .count() over a totally ordered time, which is CountTotal; the
+ * C port uses dtfl_collection_count_total, the same specialization.  The
+ * scale only stresses throughput, so to keep every case fast the effective
+ * number of times is capped (JOIN_SCALE_CAP); the empty-join property holds
+ * at any scale, so the capped test is still meaningful.  A literal 1e6
+ * would be a million epochs and the incremental join maintains a trace per
+ * parity, so the cost grows super-linearly in the number of distinct
+ * counts; the cap keeps each case well under a second.
+ *
+ * Upstream keys the counts on () (unit).  A unit (0-byte) key does not
+ * match in the current join/arrange path, which would make the test
+ * vacuous (empty regardless of the join), so this port keys on a single
+ * constant u8 instead.  The semantics are identical, all records share
+ * one key, and the join is actually exercised: it matches whenever both
+ * parities are present at a time, which is exactly what makes the empty
+ * result a real assertion.
  */
-static MunitResult
-join_scale_skip(void)
+#define JOIN_SCALE_CAP 200
+
+/* The records are key(u8) || count(i64); the count is at offset 1. */
+#define SCALE_KEY 0
+
+/* filter: keep counts whose value is odd (parity == 1) or even (0). */
+typedef struct parity_ctx { int parity; } parity_ctx;
+static parity_ctx parity_odd = { 1 };
+static parity_ctx parity_even = { 0 };
+
+static bool
+count_parity(void *ctx, const void *rec, size_t len)
 {
-	munit_logf(MUNIT_LOG_INFO, "%s",
-	    "SKIP: join_scale needs count() (reduce operator, pending)");
-	return MUNIT_SKIP;
+	parity_ctx *p = ctx;
+	int64_t v;
+
+	(void)len;
+	/* rec is key(u8) || count(i64); the count value follows the 1-byte key. */
+	v = dtfl_get_i64((const unsigned char *)rec + 1);
+	return ((v % 2) + 2) % 2 == p->parity;
 }
 
-DTFL_TEST(join__join_scale_1) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_10) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_100) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_1000) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_10000) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_100000) { (void)params; (void)data; return join_scale_skip(); }
-DTFL_TEST(join__join_scale_1000000) { (void)params; (void)data; return join_scale_skip(); }
+/* join_map result: emit (v1, v2) when both parities coincide at a key. */
+static void
+join_scale_result(void *ctx, const void *key, size_t klen, const void *v1,
+    size_t v1len, const void *v2, size_t v2len, dtfl_join_emit *out)
+{
+	unsigned char buf[16];
+	size_t off = 0;
+
+	(void)ctx; (void)key; (void)klen; (void)v1len; (void)v2len;
+	off += dtfl_put_i64(buf, dtfl_get_i64(v1));
+	memcpy(buf + off, v2, v2len);
+	off += v2len;
+	dtfl_join_emit_record(out, buf, off);
+}
+
+typedef struct scale_build {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	collected *out;
+} scale_build;
+
+/* Records any surviving (consolidated) join output; expected none. */
+static size_t join_scale_out_n;
+static void
+scale_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	int64_t d;
+
+	(void)ctx; (void)rec; (void)len; (void)time;
+	memcpy(&d, diff, sizeof d);
+	if (d != 0)
+		join_scale_out_n++;
+}
+
+static void
+build_join_scale(dtfl_scope *scope, void *arg)
+{
+	scale_build *c = arg;
+	const dtfl_type *i64t = dtfl_type_i64();
+	const dtfl_type *out_type = dtfl_type_pair(i64t, i64t);
+	dtfl_diff *i64 = dtfl_diff_i64();
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_collection *counts = dtfl_collection_count_total(base, i64);
+	dtfl_collection *odds = dtfl_collection_filter(counts, count_parity,
+	    DTFL_CTX(&parity_odd, NULL));
+	dtfl_collection *evens = dtfl_collection_filter(counts, count_parity,
+	    DTFL_CTX(&parity_even, NULL));
+	dtfl_collection *joined = dtfl_collection_join_map(odds, evens,
+	    dtfl_type_u8(), i64t, i64t, out_type, join_scale_result,
+	    DTFL_NOCTX);
+	dtfl_collection *con = dtfl_collection_consolidate(joined);
+	dtfl_collection *ins = dtfl_collection_inspect(con, scale_sink,
+	    DTFL_CTX(c->out, NULL));
+	dtfl_collection *probed = dtfl_collection_probe_with(ins, c->probe);
+
+	dtfl_diff_free(i64);
+	dtfl_type_free(out_type);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(ins);
+	dtfl_collection_free(con);
+	dtfl_collection_free(joined);
+	dtfl_collection_free(evens);
+	dtfl_collection_free(odds);
+	dtfl_collection_free(counts);
+	dtfl_collection_free(base);
+}
+
+static MunitResult
+join_scaling(uint64_t scale)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	scale_build c;
+	uint64_t t, eff = scale < JOIN_SCALE_CAP ? scale : JOIN_SCALE_CAP;
+	unsigned char key = SCALE_KEY;
+
+	join_scale_out_n = 0;
+	c.in = dtfl_input_session_new(dtfl_type_u8(), r);
+	c.probe = dtfl_probe_new();
+	c.out = NULL;
+	if (dtfl_worker_dataflow(w, "jscale", tc, build_join_scale, &c) != 0)
+		return MUNIT_FAIL;
+
+	/* Insert the one key record once at each time 0 .. eff. */
+	for (t = 0; t < eff; t++) {
+		uint64_t next = t + 1;
+		probe_cond pc = { c.probe, next };
+
+		dtfl_input_session_insert(c.in, &key, 1);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	/* The join is empty: at every time the single count is odd xor even. */
+	assert_size(join_scale_out_n, ==, 0);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+DTFL_TEST(join__join_scale_1) { (void)params; (void)data; return join_scaling(1); }
+DTFL_TEST(join__join_scale_10) { (void)params; (void)data; return join_scaling(10); }
+DTFL_TEST(join__join_scale_100) { (void)params; (void)data; return join_scaling(100); }
+DTFL_TEST(join__join_scale_1000) { (void)params; (void)data; return join_scaling(1000); }
+DTFL_TEST(join__join_scale_10000) { (void)params; (void)data; return join_scaling(10000); }
+DTFL_TEST(join__join_scale_100000) { (void)params; (void)data; return join_scaling(100000); }
+DTFL_TEST(join__join_scale_1000000) { (void)params; (void)data; return join_scaling(1000000); }
 
 static MunitTest tests[] = {
 	DTFL_T(join__join),
