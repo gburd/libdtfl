@@ -14,6 +14,7 @@ dd_sources = \
 	src/dd/input.c \
 	src/dd/writer.c \
 	src/dd/agent.c \
+	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
 	src/dd/trace/layout.c \
@@ -23,6 +24,9 @@ dd_sources = \
 	src/dd/trace/merge_batcher.c \
 	src/dd/trace/chunker.c \
 	src/dd/trace/spine_fueled.c \
+	src/dd/trace/wrap_frontier.c \
+	src/dd/trace/wrap_enter.c \
+	src/dd/trace/wrap_enter_at.c \
 	src/dd/trace/trace.c
 
 libdtfl_la_SOURCES += $(dd_sources)
@@ -73,6 +77,12 @@ TESTS += tests/unit/test_agent
 tests_unit_test_agent_SOURCES = tests/unit/test_agent.c
 tests_unit_test_agent_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_agent_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_wrappers
+TESTS += tests/unit/test_wrappers
+tests_unit_test_wrappers_SOURCES = tests/unit/test_wrappers.c
+tests_unit_test_wrappers_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_wrappers_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate
