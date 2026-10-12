@@ -122,3 +122,11 @@ dtfl_stream_map_ok
 dtfl_stream_map_err
 dtfl_stream_and_then
 dtfl_stream_unwrap_or_else
+# P4d: barrier and sequencer (sync).
+dtfl_barrier_new
+dtfl_barrier_wait
+dtfl_barrier_free
+dtfl_sequencer_new
+dtfl_sequencer_push
+dtfl_sequencer_next
+dtfl_sequencer_free

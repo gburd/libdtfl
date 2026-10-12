@@ -163,9 +163,9 @@ timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	t
 timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	done	coordinate-vector times (D3)
 timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	todo	
 timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/timely_int.h	P3	todo	
-timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	todo	
+timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	done	
 timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	todo	
+timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	done	
 timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	todo	
 timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	todo	
 timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	todo	
