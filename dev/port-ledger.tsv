@@ -251,7 +251,7 @@ differential-dataflow	differential-dataflow/src/hashable.rs	38	src/base/hash.c	P
 differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	done	
 differential-dataflow	differential-dataflow/src/lattice.rs	371	src/progress/time.c	P1	done	the time-class lattice operations need it (D3)
 differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	done	the Collection type and its linear methods (map/filter/flat_map/concat/negate/consolidate/inspect/enter/leave/probe/explode/delay); arrange/join/reduce land in P7-P8
-differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events
+differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events; P6-trace left it todo (consumer-side logging, no storage dependency)
 differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	todo	
 differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	todo	
 differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/dd_int.h	P7	todo	
@@ -265,20 +265,20 @@ differential-dataflow	differential-dataflow/src/operators/int_proxy/mod.rs	67	-	
 differential-dataflow	differential-dataflow/src/operators/int_proxy/reduce.rs	376	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
 differential-dataflow	differential-dataflow/src/operators/iterate.rs	271	src/dd/iterate.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	EditList, ValueHistory; Cursor::populate_key uses EditList
+differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	P6-trace: EditList/ValueHistory are consumer-side (populate_key default is in cursor.c); land with P7 arrange/reduce
 differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	todo	
 differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	todo	graded chunks are the pageable unit for trace spill
 differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	todo	
-differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/cursor/mod.rs	185	src/dd/trace/cursor.c	P6	todo	
+differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/cursor/mod.rs	185	src/dd/trace/cursor.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/description.rs	108	src/dd/trace/description.c	P6	done	
-differential-dataflow	differential-dataflow/src/trace/implementations/chunker.rs	87	src/dd/trace/chunker.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/merge_batcher.rs	419	src/dd/trace/merge_batcher.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594	src/dd/trace/layout.c	P6	todo	BatchContainer, OffsetList
-differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	todo	
+differential-dataflow	differential-dataflow/src/trace/implementations/chunker.rs	87	src/dd/trace/chunker.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/merge_batcher.rs	419	src/dd/trace/merge_batcher.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594	src/dd/trace/layout.c	P6	done	BatchContainer, OffsetList
+differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	todo	
 differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	todo	
 differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	todo	
@@ -289,7 +289,7 @@ differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/j
 differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	todo	
 differential-dataflow	differential-dataflow/tests/reduce_reference.rs	409	tests/upstream/dd/reduce_reference.c	P8	todo	
 differential-dataflow	differential-dataflow/tests/scc.rs	273	tests/upstream/dd/scc.c	P9	todo	
-differential-dataflow	differential-dataflow/tests/trace.rs	59	tests/upstream/dd/trace.c	P6	todo	
+differential-dataflow	differential-dataflow/tests/trace.rs	59	tests/upstream/dd/trace.c	P6	done	
 differential-dataflow	dogsdogsdogs/examples/delta_query.rs	152	examples/dogs/delta_query.c	P9	todo	
 differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/delta_query2.c	P9	todo	
 differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	todo	

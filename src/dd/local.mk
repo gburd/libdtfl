@@ -11,7 +11,16 @@ dd_sources = \
 	src/dd/consolidate.c \
 	src/dd/collection.c \
 	src/dd/input.c \
-	src/dd/trace/description.c
+	src/dd/trace/trace_int.h \
+	src/dd/trace/description.c \
+	src/dd/trace/layout.c \
+	src/dd/trace/cursor.c \
+	src/dd/trace/cursor_list.c \
+	src/dd/trace/ord_neu.c \
+	src/dd/trace/merge_batcher.c \
+	src/dd/trace/chunker.c \
+	src/dd/trace/spine_fueled.c \
+	src/dd/trace/trace.c
 
 libdtfl_la_SOURCES += $(dd_sources)
 libdtfl_internal_la_SOURCES += $(dd_sources)
@@ -36,6 +45,26 @@ tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
 tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_merge_batcher tests/unit/test_cursor \
+	tests/unit/test_ord_neu
+TESTS += tests/unit/test_merge_batcher tests/unit/test_cursor \
+	tests/unit/test_ord_neu
+tests_unit_test_merge_batcher_SOURCES = tests/unit/test_merge_batcher.c
+tests_unit_test_merge_batcher_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_merge_batcher_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_cursor_SOURCES = tests/unit/test_cursor.c
+tests_unit_test_cursor_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_cursor_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_ord_neu_SOURCES = tests/unit/test_ord_neu.c
+tests_unit_test_ord_neu_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ord_neu_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/dd/trace
+TESTS += tests/upstream/dd/trace
+tests_upstream_dd_trace_SOURCES = tests/upstream/dd/trace.c
+tests_upstream_dd_trace_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_trace_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate
 tests_pbt_pbt_consolidate_SOURCES = tests/pbt/pbt_consolidate.c
@@ -47,3 +76,9 @@ TESTS += tests/pbt/pbt_collection
 tests_pbt_pbt_collection_SOURCES = tests/pbt/pbt_collection.c
 tests_pbt_pbt_collection_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_collection_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_trace
+TESTS += tests/pbt/pbt_trace
+tests_pbt_pbt_trace_SOURCES = tests/pbt/pbt_trace.c
+tests_pbt_pbt_trace_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_trace_LDADD = $(INTERNAL_PBT_LIBS)
