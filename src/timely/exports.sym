@@ -120,3 +120,30 @@ dtfl_stream_branch
 dtfl_stream_branch_when
 dtfl_stream_broadcast
 dtfl_iterator_source
+# P4d: capture, replay, extract and the event link (capture, event,
+# extract, replay).
+dtfl_stream_capture_into
+dtfl_event_link_new
+dtfl_event_link_new_sync
+dtfl_event_link_free
+dtfl_event_link_pusher
+dtfl_event_link_replay
+dtfl_event_link_extract
+# P4d: enter/leave across a scope boundary (ops_enterleave).
+dtfl_stream_enter
+dtfl_stream_leave
+# P4d: Result stream helpers (ops_result).
+dtfl_stream_ok
+dtfl_stream_err
+dtfl_stream_map_ok
+dtfl_stream_map_err
+dtfl_stream_and_then
+dtfl_stream_unwrap_or_else
+# P4d: barrier and sequencer (sync).
+dtfl_barrier_new
+dtfl_barrier_wait
+dtfl_barrier_free
+dtfl_sequencer_new
+dtfl_sequencer_push
+dtfl_sequencer_next
+dtfl_sequencer_free

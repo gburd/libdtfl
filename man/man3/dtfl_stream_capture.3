@@ -1,0 +1,100 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_CAPTURE 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_capture_into ,
+.Nm dtfl_event_link_new ,
+.Nm dtfl_event_link_new_sync ,
+.Nm dtfl_event_link_pusher ,
+.Nm dtfl_event_link_free
+.Nd capture a timely stream for later replay
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft void
+.Fn dtfl_stream_capture_into "dtfl_stream *st" "dtfl_event_pusher p" "dtfl_ctx ctx"
+.Ft dtfl_event_link *
+.Fn dtfl_event_link_new "const dtfl_time_class *tc" "const dtfl_type *type"
+.Ft dtfl_event_link *
+.Fn dtfl_event_link_new_sync "const dtfl_time_class *tc" "const dtfl_type *type"
+.Ft dtfl_event_pusher
+.Fn dtfl_event_link_pusher "dtfl_event_link *l"
+.Ft void
+.Fn dtfl_event_link_free "dtfl_event_link *l"
+.Sh DESCRIPTION
+.Fn dtfl_stream_capture_into
+records every event of
+.Fa st
+through the event pusher
+.Fa p :
+each received message becomes a
+.Em Messages
+event, and each change to the stream's frontier a
+.Em Progress
+event.
+A later
+.Xr dtfl_event_link_replay 3
+reconstructs the stream and its frontier in another scope, so a captured
+stream can be moved between dataflows, serialized, or examined after the
+computation has finished.
+.Pp
+A
+.Vt dtfl_event_pusher
+is a pair of callbacks and a context.
+.Fn dtfl_event_link_pusher
+returns a pusher that appends to an event link, the in-memory log created
+by
+.Fn dtfl_event_link_new .
+Events hold times of class
+.Fa tc
+and records of
+.Fa type .
+.Fn dtfl_event_link_new_sync
+creates a link whose pushes and reads are serialized with a mutex, so a
+stream captured on one thread can be replayed or extracted on another.
+.Pp
+.Fn dtfl_event_link_free
+drops a link and every event it holds.
+A long chain is freed iteratively, not by recursion.
+The context in
+.Fa ctx
+is released by its destructor when the capture operator is dropped.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_event_link *link = dtfl_event_link_new(tc, dtfl_type_u64());
+
+/* in one dataflow: capture a stream */
+dtfl_stream_capture_into(stream, dtfl_event_link_pusher(link), DTFL_NOCTX);
+
+/* in another dataflow: replay it */
+dtfl_stream *replayed = dtfl_event_link_replay(link, scope);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+An invalid stream or a type mismatch is a programming error and calls
+the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_event_link_extract 3 ,
+.Xr dtfl_event_link_replay 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn capture_into
+operator and the
+.Vt EventLink
+and
+.Vt EventPusher
+types of
+.Pa capture/event.rs .
+.Sh THREAD SAFETY
+A stream and its capture operator belong to the worker thread that built
+them.
+A plain event link, like a worker handle, belongs to one thread.
+A link made with
+.Fn dtfl_event_link_new_sync
+is thread-safe: it may be pushed on one thread and replayed or extracted
+on another.

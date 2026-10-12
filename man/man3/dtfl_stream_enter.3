@@ -1,0 +1,88 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_ENTER 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_enter ,
+.Nm dtfl_stream_leave
+.Nd move a stream across a scope boundary
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_enter "dtfl_stream *st" "dtfl_scope *child"
+.Ft dtfl_stream *
+.Fn dtfl_stream_leave "dtfl_stream *st"
+.Sh DESCRIPTION
+.Fn dtfl_stream_enter
+projects
+.Fa st ,
+a stream of some scope, into
+.Fa child ,
+a direct child of that scope, and returns the matching stream in the
+child.
+Each record keeps its data; its time is refined to the child's class by
+.Fn Refines::to_inner :
+for a region the time is unchanged, for an iterative
+.Pq product
+scope it gains the minimum inner coordinate, and for an alternating
+scope it is doubled.
+.Pp
+.Fn dtfl_stream_leave
+projects
+.Fa st ,
+a stream of a child scope, back into that scope's parent, and returns
+the stream in the parent.
+Each time is projected by
+.Fn to_outer ,
+the inverse of
+.Fn to_inner :
+a region time is unchanged, an iterative scope drops its inner
+coordinate, and an alternating time is halved.
+.Pp
+Both are checked at build time:
+.Fn dtfl_stream_enter
+panics unless
+.Fa child
+is a direct child of the stream's scope, and
+.Fn dtfl_stream_leave
+panics unless the stream's scope has a parent.
+Neither adds a scheduled operator; the projection is a pusher wired
+directly onto the scope boundary, so a pass-through region costs
+nothing at run time.
+Progress crosses the boundary correctly because the boundary edge is
+recorded for the progress tracker.
+.Sh RETURN VALUES
+Each returns the projected stream, owned by the destination scope.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_scope_region(scope, "region", build_region, &ctx);
+
+static void build_region(dtfl_scope *inner, void *arg) {
+	struct ctx *c = arg;
+	dtfl_stream *s = dtfl_stream_enter(c->data, inner);
+	s = dtfl_stream_filter(s, keep, DTFL_NOCTX);
+	c->result = dtfl_stream_leave(s);
+}
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+A scope that is not the required parent or child is a programming error
+and calls the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_scope_scoped 3 ,
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Fn enter
+and
+.Fn leave
+operators of
+.Pa core/enterleave.rs .
+.Sh THREAD SAFETY
+Both streams and the boundary pusher belong to the worker thread that
+built them.
+The projection runs on that thread during the worker's steps.

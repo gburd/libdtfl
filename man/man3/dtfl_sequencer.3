@@ -1,0 +1,88 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_SEQUENCER 3
+.Os
+.Sh NAME
+.Nm dtfl_sequencer_new ,
+.Nm dtfl_sequencer_push ,
+.Nm dtfl_sequencer_next ,
+.Nm dtfl_sequencer_free
+.Nd shared totally ordered log across workers
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_sequencer *
+.Fn dtfl_sequencer_new "dtfl_worker *w" "const dtfl_type *type"
+.Ft void
+.Fn dtfl_sequencer_push "dtfl_sequencer *s" "const void *rec" "size_t len"
+.Ft const void *
+.Fn dtfl_sequencer_next "dtfl_sequencer *s" "size_t *len"
+.Ft void
+.Fn dtfl_sequencer_free "dtfl_sequencer *s"
+.Sh DESCRIPTION
+A sequencer is a shared log that every worker observes in the same
+order.
+.Fn dtfl_sequencer_new
+builds a dataflow that timestamps proposed records with the elapsed
+time, broadcasts each to every worker, and delivers them in a total
+order broken by the proposing worker and a per-worker counter.
+Every worker must create its sequencers in the same order, over the
+same record
+.Fa type .
+.Pp
+.Fn dtfl_sequencer_push
+proposes a record of
+.Fa len
+bytes.
+It is not visible until the next worker step sends it and the elapsed
+time frontier passes.
+.Pp
+.Fn dtfl_sequencer_next
+returns the next sequenced record and stores its length in
+.Fa len ,
+or
+.Dv NULL
+when none is ready.
+The returned pointer is owned by the sequencer and stays valid until the
+next call to
+.Fn dtfl_sequencer_next
+or
+.Fn dtfl_sequencer_free .
+Every worker sees the same records in the same order.
+.Pp
+.Fn dtfl_sequencer_free
+drops the sequencer; its dataflow releases its capability so the log
+can wind down.
+.Sh RETURN VALUES
+.Fn dtfl_sequencer_next
+returns a record pointer, or
+.Dv NULL
+when the log has nothing ready.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_sequencer *s = dtfl_sequencer_new(worker, dtfl_type_u64());
+unsigned char buf[8];
+dtfl_put_u64(buf, value);
+dtfl_sequencer_push(s, buf, sizeof buf);
+dtfl_worker_step(worker);
+const void *rec; size_t len;
+while ((rec = dtfl_sequencer_next(s, &len)) != NULL)
+	handle(rec, len);
+.Ed
+.Sh ERRORS
+These functions do not return error codes.
+.Sh SEE ALSO
+.Xr dtfl_barrier 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Sequencer
+of
+.Pa synchronization/sequence.rs .
+.Sh THREAD SAFETY
+A sequencer belongs to the worker thread that created it.
+Records cross between workers through the dataflow's channels, not
+through the handle, so the handle is used only on its own worker.

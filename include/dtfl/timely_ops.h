@@ -242,9 +242,46 @@ DTFL_API dtfl_stream *dtfl_stream_state_machine(dtfl_stream *st,
 DTFL_API dtfl_stream *dtfl_stream_reclock(dtfl_stream *data,
     dtfl_stream *clock);
 
-/* Result helpers on streams of dtfl_type_result records (tag byte + value). */
+/*
+ * Result helpers on streams of Result records: a tag byte (0 Ok, 1 Err)
+ * then the value.  ok / err keep one arm and emit its unwrapped value
+ * (ok_type / err_type).  map_ok / map_err transform one arm's value in
+ * place and pass the other arm through, so the output is still a Result
+ * record of the same stream type.  and_then maps an Ok value to a new
+ * Result.  unwrap_or_else emits the Ok value unwrapped, or the fallback
+ * the callback computes from the Err value (out_type).
+ *
+ * A value transform writes the replacement value into *out (room for
+ * cap bytes; the library reserves enough) and returns its length.
+ */
+typedef size_t (*dtfl_val_fn)(void *ctx, const void *val, size_t len,
+    void *out, size_t cap);
 DTFL_API dtfl_stream *dtfl_stream_ok(dtfl_stream *st, const dtfl_type *ok_type);
 DTFL_API dtfl_stream *dtfl_stream_err(dtfl_stream *st, const dtfl_type *err_type);
+/*
+ * map_ok / map_err: fn maps one arm's value to the replacement value;
+ * the other arm passes through unchanged.  The output stream keeps the
+ * input's record type (tag + value).
+ */
+DTFL_API dtfl_stream *dtfl_stream_map_ok(dtfl_stream *st, dtfl_val_fn fn,
+    dtfl_ctx ctx);
+DTFL_API dtfl_stream *dtfl_stream_map_err(dtfl_stream *st, dtfl_val_fn fn,
+    dtfl_ctx ctx);
+/*
+ * and_then: fn maps an Ok value to a new Result.  It writes the output
+ * value into *out and returns its length, setting *is_ok to the output
+ * tag.  Err input records pass through unchanged.
+ */
+typedef size_t (*dtfl_and_then_fn)(void *ctx, const void *val, size_t len,
+    void *out, size_t cap, bool *is_ok);
+DTFL_API dtfl_stream *dtfl_stream_and_then(dtfl_stream *st,
+    dtfl_and_then_fn fn, dtfl_ctx ctx);
+/*
+ * unwrap_or_else: Ok values pass unwrapped; fn turns an Err value into
+ * a value of out_type.  The output stream carries out_type.
+ */
+DTFL_API dtfl_stream *dtfl_stream_unwrap_or_else(dtfl_stream *st,
+    const dtfl_type *out_type, dtfl_val_fn fn, dtfl_ctx ctx);
 
 /*
  * iterator_source (flow_controlled): emits records from `next` with

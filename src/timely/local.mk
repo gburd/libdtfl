@@ -8,6 +8,7 @@ timely_sources = \
 	src/timely/timely_int.h \
 	src/timely/log_codec_int.h \
 	src/timely/ops_src_int.h \
+	src/timely/capture_int.h \
 	src/timely/activate.c \
 	src/timely/worker.c \
 	src/timely/timely_log.c \
@@ -49,6 +50,13 @@ timely_sources = \
 	src/timely/ops_branch.c \
 	src/timely/ops_broadcast.c \
 	src/timely/ops_flow_controlled.c
+	src/timely/ops_enterleave.c \
+	src/timely/ops_result.c \
+	src/timely/sync.c \
+	src/timely/event.c \
+	src/timely/capture.c \
+	src/timely/extract.c \
+	src/timely/replay.c
 
 libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
@@ -83,6 +91,13 @@ dist_man_MANS += man/man3/dtfl_stream_state_machine.3
 dist_man_MANS += man/man3/dtfl_stream_branch.3
 dist_man_MANS += man/man3/dtfl_stream_broadcast.3
 dist_man_MANS += man/man3/dtfl_iterator_source.3
+dist_man_MANS += man/man3/dtfl_stream_capture.3
+dist_man_MANS += man/man3/dtfl_event_link_replay.3
+dist_man_MANS += man/man3/dtfl_event_link_extract.3
+dist_man_MANS += man/man3/dtfl_stream_enter.3
+dist_man_MANS += man/man3/dtfl_stream_result.3
+dist_man_MANS += man/man3/dtfl_barrier.3
+dist_man_MANS += man/man3/dtfl_sequencer.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -153,3 +168,38 @@ TESTS += tests/pbt/pbt_ops_notify
 tests_pbt_pbt_ops_notify_SOURCES = tests/pbt/pbt_ops_notify.c
 tests_pbt_pbt_ops_notify_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_ops_notify_LDADD = $(INTERNAL_PBT_LIBS)
+check_PROGRAMS += tests/unit/test_capture
+TESTS += tests/unit/test_capture
+tests_unit_test_capture_SOURCES = tests/unit/test_capture.c
+tests_unit_test_capture_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_capture_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_event
+TESTS += tests/unit/test_event
+tests_unit_test_event_SOURCES = tests/unit/test_event.c
+tests_unit_test_event_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_event_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_ops_enterleave
+TESTS += tests/unit/test_ops_enterleave
+tests_unit_test_ops_enterleave_SOURCES = tests/unit/test_ops_enterleave.c
+tests_unit_test_ops_enterleave_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_enterleave_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_ops_result
+TESTS += tests/unit/test_ops_result
+tests_unit_test_ops_result_SOURCES = tests/unit/test_ops_result.c
+tests_unit_test_ops_result_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ops_result_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_sync
+TESTS += tests/unit/test_sync
+tests_unit_test_sync_SOURCES = tests/unit/test_sync.c
+tests_unit_test_sync_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_sync_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_capture
+TESTS += tests/pbt/pbt_capture
+tests_pbt_pbt_capture_SOURCES = tests/pbt/pbt_capture.c
+tests_pbt_pbt_capture_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_capture_LDADD = $(INTERNAL_PBT_LIBS)
