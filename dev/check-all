@@ -33,7 +33,21 @@ fi
 run() {
 	name="$1"; shift
 	b="$root/$name"
+	# Reusing a build dir across a struct-size change (a header edited
+	# after some .o was built) under-allocates and trips ASan with a
+	# false overflow.  If any header is newer than this dir's stamp,
+	# start clean.  find -delete, not rm -rf (the hook forbids rm -rf).
+	if [ -d "$b" ]; then
+		if [ -z "$(find "$src/include" "$src/src" -name '*.h' \
+		    -newer "$b/.hdrstamp" -print -quit 2>/dev/null)" ] \
+		    && [ -f "$b/.hdrstamp" ]; then
+			: # headers unchanged; reuse the dir for a fast incremental build
+		else
+			find "$b" -mindepth 1 -delete 2>/dev/null || true
+		fi
+	fi
 	mkdir -p "$b"
+	touch "$b/.hdrstamp"
 	( cd "$b" && "$src/configure" -q "$@" >config.out 2>&1 \
 	  && make -j"$jobs" >build.out 2>&1 \
 	  && make -j"$jobs" check >check.out 2>&1 )

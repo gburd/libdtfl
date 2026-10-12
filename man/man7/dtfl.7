@@ -32,12 +32,18 @@ A worker and every handle derived from it belong to the thread that
 runs the worker.
 The objects documented as thread-safe in their own pages are the
 exceptions.
-The library keeps no hidden global state other than the allocation and
-panic hooks and a per-thread error-detail buffer, and it never reads the
-environment.
+The library keeps no hidden global state other than the allocation,
+panic, log and thread hooks and a per-thread error-detail buffer, and
+it never reads the environment.
+To embed libdtfl in a host that supplies its own memory, logging and
+threads, see
+.Xr dtfl_embedding 7 .
 .Sh SEE ALSO
 .Xr dtfl_set_alloc_hooks 3 ,
-.Xr dtfl_strerror 3
+.Xr dtfl_set_log_hook 3 ,
+.Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl_strerror 3 ,
+.Xr dtfl_embedding 7
 .Pp
 The libdtfl manual, available as
 .Ql info libdtfl .

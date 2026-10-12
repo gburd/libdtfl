@@ -682,7 +682,8 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
    - `dtfl_event_link_sync`, the `link_sync::EventLink` port;
    - `dtfl_guards` (join and status);
    - the global setters (`dtfl_set_alloc_hooks()`,
-     `dtfl_set_panic_hook()`).  The global setters must be called
+     `dtfl_set_panic_hook()`, `dtfl_set_log_hook()` and
+     `dtfl_set_thread_hooks()`).  The global setters must be called
      before the first `dtfl_execute()`.
 
    Upstream's `ProbeHandle` holds an `Rc<RefCell<MutableAntichain>>`
@@ -697,8 +698,12 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
    `Rc`), and so does libdtfl.  A trace imports only into dataflows on
    the same worker.
 5. **No hidden global state.** All state lives in the worker or the
-   execution.  There are three exceptions:
-   - the two hook setters in rule 2;
+   execution.  There are two kinds of exception:
+   - the four host hooks in rule 2 (allocation, panic, logging and
+     thread spawning), each a process-wide setter that must be called
+     before the first `dtfl_execute()`.  Their backing globals are
+     `hooks`, `hooks_used`, `panic_fn`, `panic_ctx`, `log_fn`,
+     `log_ctx`, `thread_hooks` and `thread_hooks_set`;
    - the thread-local error-detail buffer behind
      `dtfl_last_error_detail()` (D6).
 
@@ -715,9 +720,9 @@ How the contract is verified:
 - `make check-tsan`: ThreadSanitizer over the Process, ProcessBinary
   and localhost Cluster suites;
 - the `Process` allocator under `helgrind`, nightly;
-- `tests/dist/test_no_globals.sh`, which uses `nm` to fail on any
-  writable or thread-local symbol in `libdtfl.so` other than the three
-  in rule 5.
+- `tests/dist/test_symbols.sh`, which uses `nm` to fail on any
+  writable or thread-local symbol in `libdtfl.so` outside the
+  allowlist in rule 5.
 
 ## 6. Verification
 
@@ -780,7 +785,8 @@ need extra tools.
      frozen (section 13).
    - `test_headers.sh`: each public header compiles on its own as C11
      and as C++17, with `-Wall -Wextra -Werror -pedantic`.
-   - `test_no_globals.sh`, described in section 5.
+   - the writable-globals check, folded into `test_symbols.sh` and
+     described in section 5.
    - `test_ledger.sh`: every `done` ledger row's target exists and
      carries the provenance header.  Every `done` test-ledger row names
      a C test that exists and is registered.  The ledgers parse.

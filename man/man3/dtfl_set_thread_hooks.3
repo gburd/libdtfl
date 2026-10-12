@@ -1,0 +1,147 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_SET_THREAD_HOOKS 3
+.Os
+.Sh NAME
+.Nm dtfl_set_thread_hooks
+.Nd install libdtfl thread-spawn hooks
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft int
+.Fn dtfl_set_thread_hooks "const dtfl_thread_hooks *hooks"
+.Sh DESCRIPTION
+By default libdtfl starts worker, network and connection threads with
+.Xr pthread_create 3 .
+A host that supplies its own threads, such as a PostgreSQL background
+worker pool, installs thread hooks so that
+.Fn dtfl_execute
+routes every thread through the host:
+.Bd -literal -offset indent
+typedef int (*dtfl_thread_fn)(void *(*start)(void *), void *arg,
+    void **handle_out, void *ctx);
+typedef int (*dtfl_thread_join_fn)(void *handle, void **retval_out,
+    void *ctx);
+typedef struct dtfl_thread_hooks {
+	dtfl_thread_fn spawn;
+	dtfl_thread_join_fn join;
+	void *ctx;
+} dtfl_thread_hooks;
+.Ed
+.Pp
+.Fa spawn
+starts
+.Fa start Ns Pq Fa arg
+on a new thread and stores an opaque handle in
+.Fa *handle_out ;
+it returns 0 on success or a
+.Dv DTFL_E*
+code.
+.Fa join
+waits for the thread named by
+.Fa handle ,
+stores what
+.Fa start
+returned in
+.Fa *retval_out ,
+and returns 0 or a
+.Dv DTFL_E*
+code.
+A handle is joined exactly once.
+The
+.Fa ctx
+member is passed to both.
+.Pp
+Both
+.Fa spawn
+and
+.Fa join
+must be non-NULL.
+Passing
+.Dv NULL
+for
+.Fa hooks ,
+or a structure with both function pointers
+.Dv NULL ,
+restores the pthread default.
+.Pp
+A host that cannot spawn arbitrary threads at all does not install
+hooks and does not call
+.Fn dtfl_execute .
+It drives a single worker on its own thread with
+.Fn dtfl_worker_new_standalone
+and
+.Fn dtfl_worker_step ;
+see
+.Xr dtfl_embedding 7 .
+.Pp
+The hooks are process-wide and must be installed before the first
+.Fn dtfl_execute ,
+like the allocation, panic and log hooks.
+.Sh RETURN VALUES
+Returns 0 on success, or
+.Er DTFL_EINVAL
+if exactly one of
+.Fa spawn
+and
+.Fa join
+is set.
+.Sh EXAMPLES
+A spawn hook backed by pthreads, the shape a host adapts to its own
+thread API:
+.Bd -literal -offset indent
+static int
+host_spawn(void *(*start)(void *), void *arg, void **out, void *ctx)
+{
+	pthread_t *t = malloc(sizeof *t);
+	if (pthread_create(t, NULL, start, arg) != 0) {
+		free(t);
+		return DTFL_EIO;
+	}
+	*out = t;
+	return 0;
+}
+static int
+host_join(void *h, void **ret, void *ctx)
+{
+	pthread_t *t = h;
+	pthread_join(*t, ret);
+	free(t);
+	return 0;
+}
+
+dtfl_thread_hooks hooks = { host_spawn, host_join, NULL };
+dtfl_set_thread_hooks(&hooks);
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_EINVAL
+.It Bq Er DTFL_EINVAL
+Exactly one of
+.Fa spawn
+and
+.Fa join
+is
+.Dv NULL .
+.El
+.Sh SEE ALSO
+.Xr dtfl_set_alloc_hooks 3 ,
+.Xr dtfl_set_log_hook 3 ,
+.Xr dtfl 7 ,
+.Xr dtfl_embedding 7
+.Sh HISTORY
+Rust's timely dataflow spawns its workers with
+.Ql std::thread ;
+this hook lets a C host interpose its own thread creation, which an
+embedded runtime such as a database server requires.
+.Sh THREAD SAFETY
+.Fn dtfl_set_thread_hooks
+must be called before the first
+.Fn dtfl_execute .
+The
+.Fa spawn
+and
+.Fa join
+callbacks run on the thread that starts or joins workers and must be
+thread-safe.
