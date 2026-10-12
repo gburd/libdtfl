@@ -257,8 +257,9 @@ differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs
 differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/arrange_int.h	P7	done	
 differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	done	
 differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/common.rs	376	src/dd/common.c	P8	todo	
+differential-dataflow	differential-dataflow/src/operators/count.rs	141	src/dd/count.c	P8	done	
 differential-dataflow	differential-dataflow/src/operators/common.rs	376	src/dd/common.c	P8	wip	ValueHistory and the join thinker done; discover_times and the reduce helpers land with reduce
-differential-dataflow	differential-dataflow/src/operators/count.rs	141	src/dd/count.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/int_proxy/history.rs	5	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
 differential-dataflow	differential-dataflow/src/operators/int_proxy/join.rs	218	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
 differential-dataflow	differential-dataflow/src/operators/int_proxy/mod.rs	67	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
@@ -266,8 +267,8 @@ differential-dataflow	differential-dataflow/src/operators/int_proxy/reduce.rs	37
 differential-dataflow	differential-dataflow/src/operators/iterate.rs	271	src/dd/iterate.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	wip	join_core, join, join_map, semijoin, antijoin done; join_scale tests blocked on count
 differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	P6-trace: EditList/ValueHistory are consumer-side (populate_key default is in cursor.c); land with P7 arrange/reduce
-differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	todo	
+differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	done	
+differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	done	
 differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	todo	graded chunks are the pageable unit for trace spill
 differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	todo	
 differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	done	
@@ -285,8 +286,9 @@ differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	s
 differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/wrap_int.h	P7	done	
 differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	todo	
 differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	todo	calls reduce_abelian (import.rs:63,142)
+differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	todo	
+differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	done	
 differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	wip	join, join_map, semijoin, antijoin done; join_scale blocked on count
-differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	todo	
 differential-dataflow	differential-dataflow/tests/reduce_reference.rs	409	tests/upstream/dd/reduce_reference.c	P8	todo	
 differential-dataflow	differential-dataflow/tests/scc.rs	273	tests/upstream/dd/scc.c	P9	todo	
 differential-dataflow	differential-dataflow/tests/trace.rs	59	tests/upstream/dd/trace.c	P6	done	
