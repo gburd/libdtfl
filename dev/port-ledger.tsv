@@ -252,11 +252,11 @@ differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	d
 differential-dataflow	differential-dataflow/src/lattice.rs	371	src/progress/time.c	P1	done	the time-class lattice operations need it (D3)
 differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	done	the Collection type and its linear methods (map/filter/flat_map/concat/negate/consolidate/inspect/enter/leave/probe/explode/delay); arrange/join/reduce land in P7-P8
 differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events; P6-trace left it todo (consumer-side logging, no storage dependency)
-differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/dd_int.h	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	todo	
+differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/arrange_int.h	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	done	
 differential-dataflow	differential-dataflow/src/operators/common.rs	376	src/dd/common.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/count.rs	141	src/dd/count.c	P8	todo	
 differential-dataflow	differential-dataflow/src/operators/int_proxy/history.rs	5	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
@@ -279,10 +279,10 @@ differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594
 differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	done	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/dd_int.h	P7	todo	
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/wrap_int.h	P7	done	
 differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	todo	
 differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	todo	calls reduce_abelian (import.rs:63,142)
 differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	todo	

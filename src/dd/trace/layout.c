@@ -275,8 +275,13 @@ stash_diff(__dtfl_upds_builder *b, size_t i)
 static size_t
 stash_len(const __dtfl_upds_builder *b)
 {
-	return b->tw == 0 ? b->stash_d.len / DTFL_MAX(b->dw, 1u)
-			  : b->stash_t.len / b->tw;
+	/*
+	 * Each staged update is one element of stash_t (tw words) and one of
+	 * stash_d (dw bytes); a __dtfl_vec counts elements, so the staged
+	 * count is the element count of whichever stash carries width.  When
+	 * tw == 0 (unit time) stash_t has no width, so read stash_d.
+	 */
+	return b->tw == 0 ? b->stash_d.len : b->stash_t.len;
 }
 
 /* consolidation::consolidate over the stash by (time, diff order). */
