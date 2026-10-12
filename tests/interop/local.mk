@@ -25,13 +25,22 @@ tests_interop_test_log_stream_SOURCES = tests/interop/test_log_stream.c
 tests_interop_test_log_stream_CFLAGS = $(TEST_CFLAGS)
 tests_interop_test_log_stream_LDADD = $(INTERNAL_LIBS)
 
+# Operator output oracle: join/count/reduce against real differential.
+check_PROGRAMS += tests/interop/test_operator_oracle
+TESTS += tests/interop/test_operator_oracle
+tests_interop_test_operator_oracle_SOURCES = tests/interop/test_operator_oracle.c
+tests_interop_test_operator_oracle_CFLAGS = $(TEST_CFLAGS)
+tests_interop_test_operator_oracle_LDADD = $(INTERNAL_LIBS)
+
 # Ship the fixtures and the generators in the distribution tarball.
 EXTRA_DIST += \
 	tests/interop/fixtures/ord_order.bin \
 	tests/interop/fixtures/capture_wire.bin \
 	tests/interop/fixtures/log_stream.bin \
+	tests/interop/fixtures/operator_oracle.bin \
 	dev/gen-fixtures.d/Cargo.toml \
 	dev/gen-fixtures.d/Cargo.lock \
 	dev/gen-fixtures.d/ord_order.rs \
 	dev/gen-fixtures.d/capture_wire.rs \
-	dev/gen-fixtures.d/log_stream.rs
+	dev/gen-fixtures.d/log_stream.rs \
+	dev/gen-fixtures.d/operator_oracle.rs

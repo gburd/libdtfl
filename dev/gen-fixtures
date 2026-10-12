@@ -39,6 +39,7 @@ mkdir -p "$dest"
 ( cd "$gendir" && cargo run --quiet --bin ord_order ) > "$dest/ord_order.bin"
 ( cd "$gendir" && cargo run --quiet --bin capture_wire ) > "$dest/capture_wire.bin"
 ( cd "$gendir" && cargo run --quiet --bin log_stream ) > "$dest/log_stream.bin"
+( cd "$gendir" && cargo run --quiet --bin operator_oracle ) > "$dest/operator_oracle.bin"
 
 if [ "$mode" = "--check" ]; then
 	rc=0

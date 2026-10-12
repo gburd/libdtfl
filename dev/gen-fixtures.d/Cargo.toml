@@ -16,6 +16,10 @@ path = "capture_wire.rs"
 name = "log_stream"
 path = "log_stream.rs"
 
+[[bin]]
+name = "operator_oracle"
+path = "operator_oracle.rs"
+
 [profile.release]
 opt-level = 1
 
