@@ -11,7 +11,12 @@ dd_sources = \
 	src/dd/consolidate.c \
 	src/dd/collection.c \
 	src/dd/input.c \
-	src/dd/trace/description.c
+	src/dd/trace/trace_int.h \
+	src/dd/trace/description.c \
+	src/dd/trace/layout.c \
+	src/dd/trace/cursor.c \
+	src/dd/trace/cursor_list.c \
+	src/dd/trace/ord_neu.c
 
 libdtfl_la_SOURCES += $(dd_sources)
 libdtfl_internal_la_SOURCES += $(dd_sources)
@@ -35,6 +40,15 @@ TESTS += tests/unit/test_collection
 tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
 tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_cursor tests/unit/test_ord_neu
+TESTS += tests/unit/test_cursor tests/unit/test_ord_neu
+tests_unit_test_cursor_SOURCES = tests/unit/test_cursor.c
+tests_unit_test_cursor_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_cursor_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_ord_neu_SOURCES = tests/unit/test_ord_neu.c
+tests_unit_test_ord_neu_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ord_neu_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate
