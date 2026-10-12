@@ -69,12 +69,15 @@ typedef struct arrange_ctx {
 	__dtfl_trace_writer writer;
 	__dtfl_vec caps;		/* dtfl_cap *, lower envelope of batcher */
 	__dtfl_antichain prev_frontier;
-	const dtfl_type *rt;		/* record (key) type; not retained */
+	const dtfl_type *rt;		/* record (whole) type; not retained */
+	const dtfl_type *kt;		/* key type for the builder split */
+	const dtfl_type *vt;		/* value type (unit for key batches) */
 	const dtfl_time_class *tc;
 	const __dtfl_diff_class *dc;
 	unsigned depth;
 	size_t dw;
 	bool keyed;
+	void *route;			/* arrange_route_ctx * (by-key); owned */
 } arrange_ctx;
 
 /* Finds the capability for time `t` among the held caps, or SIZE_MAX. */
@@ -100,7 +103,7 @@ seal_batch(arrange_ctx *c, const __dtfl_antichain *upper)
 	__dtfl_batch_ord *batch;
 
 	__dtfl_merge_batcher_seal(&c->batcher, upper, &chain, &nchain, &desc);
-	batch = __dtfl_builder_ord_seal(c->keyed, c->rt, dtfl_type_unit(),
+	batch = __dtfl_builder_ord_seal(c->keyed, c->kt, c->vt,
 	    c->tc, c->dc, chain, nchain, &desc);
 	{
 		size_t i;
@@ -326,15 +329,51 @@ arrange_free(void *vctx)
 	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
+	if (c->route != NULL)
+		__dtfl_free(c->route);
 	__dtfl_free(c);
 }
 
 /* ------------------------------------------------------------------ */
-/* dtfl_collection_arrange.                                            */
+/* dtfl_collection_arrange / arrange_by_key.                           */
 /* ------------------------------------------------------------------ */
 
-dtfl_arranged *
-dtfl_collection_arrange(dtfl_collection *c, const char *name)
+/*
+ * Routes a key||val update record by its key prefix, so matching keys
+ * from the two join inputs land on the same worker (ExchangePact by key).
+ * The context carries the key type (to split) and the record's time/diff
+ * widths (to bound the key span).  A key batch (whole record is the key)
+ * uses the record's own hash and never installs this.
+ */
+typedef struct arrange_route_ctx {
+	const dtfl_type *kt;
+	unsigned depth;
+	size_t dw;
+} arrange_route_ctx;
+
+static uint64_t
+arrange_route_by_key(const void *rec, size_t len, void *vctx)
+{
+	arrange_route_ctx *rc = vctx;
+	size_t rlen = __dtfl_update_rec_len(rc->depth, rc->dw, len);
+	size_t klen = dtfl_type_value_len(rc->kt, rec, rlen);
+
+	if (klen == SIZE_MAX || klen > rlen)
+		klen = rlen;
+	return dtfl_type_hash(rc->kt, rec, klen);
+}
+
+/*
+ * arrange_core: index a collection into a shared trace.  `keyed` true
+ * stores the whole record as the key with a unit value (arrange_by_self,
+ * what dtfl_collection_arrange builds and routes by the whole record);
+ * `keyed` false splits each key||val record with `kt`, storing the key and
+ * value in a value batch (arrange_by_key) and routing by the key prefix so
+ * join matches land together.  `kt`/`vt` are retained by the arrangement.
+ */
+static dtfl_arranged *
+arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
+    const dtfl_type *vt, const char *name)
 {
 	dtfl_scope *scope = dtfl_stream_scope(c->stream);
 	const dtfl_time_class *tc = dtfl_scope_time_class(scope);
@@ -345,17 +384,20 @@ dtfl_collection_arrange(dtfl_collection *c, const char *name)
 	dtfl_arranged *a = __dtfl_alloc(sizeof *a);
 	__dtfl_trace *trace;
 	const dtfl_type *bptr = __dtfl_batch_ptr_type();
+	dtfl_pact pact;
 	dtfl_op_builder *b;
 
-	/* A keyed trace: the whole record is the key, the value is unit. */
-	trace = __dtfl_trace_new(true, c->type, dtfl_type_unit(), tc, dc);
+	trace = __dtfl_trace_new(keyed, kt, vt, tc, dc);
 
 	ac->rt = c->type;
+	ac->kt = kt;
+	ac->vt = vt;
 	ac->tc = tc;
 	ac->dc = dc;
 	ac->depth = depth;
 	ac->dw = dw;
-	ac->keyed = true;
+	ac->keyed = keyed;
+	ac->route = NULL;
 	__dtfl_merge_batcher_init(&ac->batcher, c->type, tc, dc);
 	__dtfl_chunker_init(&ac->chunker, c->type, depth, dc);
 	__dtfl_vec_init(&ac->caps, sizeof(dtfl_cap *));
@@ -367,22 +409,51 @@ dtfl_collection_arrange(dtfl_collection *c, const char *name)
 	}
 
 	/* TraceAgent::new gives the reader (shared) and the writer. */
-	__dtfl_trace_agent_new(trace, true, c->type, dtfl_type_unit(), tc, dc,
-	    &ac->reader, &ac->writer);
+	__dtfl_trace_agent_new(trace, keyed, kt, vt, tc, dc, &ac->reader,
+	    &ac->writer);
 	/* The Arranged keeps a cloned reader; the operator keeps ac->reader. */
 	__dtfl_trace_agent_clone(&ac->reader, &a->agent);
 
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
-	dtfl_op_builder_input(b, c->stream, dtfl_pact_exchange(NULL, NULL));
+	if (keyed) {
+		pact = dtfl_pact_exchange(NULL, NULL);
+	} else {
+		arrange_route_ctx *rc = __dtfl_alloc(sizeof *rc);
+
+		rc->kt = kt;
+		rc->depth = depth;
+		rc->dw = dw;
+		ac->route = rc;
+		pact = dtfl_pact_exchange(arrange_route_by_key, rc);
+	}
+	dtfl_op_builder_input(b, c->stream, pact);
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_ALWAYS);
 	a->stream = dtfl_op_builder_output(b, bptr);
 	dtfl_op_builder_build(b, arrange_logic, ac, arrange_free);
 
-	a->type = dtfl_type_retain(c->type);
+	a->type = dtfl_type_retain(keyed ? c->type : kt);
 	a->diff = dtfl_diff_retain(c->diff);
 	a->depth = depth;
 	a->owns_agent = true;
 	return a;
+}
+
+dtfl_arranged *
+dtfl_collection_arrange(dtfl_collection *c, const char *name)
+{
+	return arrange_core(c, true, c->type, dtfl_type_unit(), name);
+}
+
+/*
+ * __dtfl_collection_arrange_by_key: index a collection of key||val records
+ * into a value trace split by `kt`, routing by key.  Used by join to
+ * arrange both inputs by their shared key (collection.rs arrange_by_key).
+ */
+dtfl_arranged *
+__dtfl_collection_arrange_by_key(dtfl_collection *c, const dtfl_type *kt,
+    const dtfl_type *vt, const char *name)
+{
+	return arrange_core(c, false, kt, vt, name);
 }
 
 /* ------------------------------------------------------------------ */
@@ -897,6 +968,24 @@ dtfl_scope *
 dtfl_arranged_scope(const dtfl_arranged *a)
 {
 	return dtfl_stream_scope(a->stream);
+}
+
+dtfl_stream *
+__dtfl_arranged_stream(const dtfl_arranged *a)
+{
+	return a->stream;
+}
+
+__dtfl_trace_agent *
+__dtfl_arranged_agent(const dtfl_arranged *a)
+{
+	return (__dtfl_trace_agent *)&a->agent;
+}
+
+unsigned
+__dtfl_arranged_depth(const dtfl_arranged *a)
+{
+	return a->depth;
 }
 
 void

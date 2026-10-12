@@ -57,3 +57,9 @@ dtfl_arranged_type
 dtfl_arranged_diff
 dtfl_arranged_scope
 dtfl_arranged_free
+dtfl_join_emit_record
+dtfl_arranged_join_core
+dtfl_collection_join_map
+dtfl_collection_join
+dtfl_collection_semijoin
+dtfl_collection_antijoin
