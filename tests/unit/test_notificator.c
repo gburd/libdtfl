@@ -67,7 +67,9 @@ expect_none(__dtfl_fnotificator *n)
 
 DTFL_TEST(dataflow_operators_generic_notificator__notificator_delivers_notifications_in_topo_order)
 {
-	dtfl_time_class *tc = dtfl_time_product(dtfl_time_u64(), dtfl_time_u64());
+	dtfl_time_class *u64a = dtfl_time_u64();
+	dtfl_time_class *u64b = dtfl_time_u64();
+	dtfl_time_class *tc = dtfl_time_product(u64a, u64b);
 	__dtfl_mutable_antichain frontier;
 	__dtfl_change_batch internal;
 	__dtfl_fnotificator note;
@@ -75,6 +77,9 @@ DTFL_TEST(dataflow_operators_generic_notificator__notificator_delivers_notificat
 	uint64_t t[2];
 
 	(void)params; (void)data;
+	/* product retains its children; drop our own references. */
+	dtfl_time_class_free(u64a);
+	dtfl_time_class_free(u64b);
 
 	/* The frontier starts at Product(0, 0); the cap holds its own batch. */
 	prod(t, 0, 0);
