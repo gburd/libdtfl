@@ -74,3 +74,4 @@ __pycache__/
 
 # The global gitignore ignores dist/; tests/dist holds the release gates.
 !tests/dist/
+/dev/gen-fixtures.d/target/
