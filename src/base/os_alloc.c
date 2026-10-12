@@ -47,6 +47,9 @@ static void default_panic(const char *msg, void *ctx);
 static dtfl_panic_fn _Atomic panic_fn = default_panic;
 static void *_Atomic panic_ctx;
 
+static dtfl_log_fn _Atomic log_fn;
+static void *_Atomic log_ctx;
+
 /* Per-thread error detail (PLAN section 5, rule 5). */
 static _Thread_local char err_detail[512];
 
@@ -164,6 +167,34 @@ __dtfl_panic(const char *fmt, ...)
 	fn(msg, atomic_load(&panic_ctx));
 	/* A hook that returns breaks the contract; do not continue. */
 	abort();
+}
+
+void
+dtfl_set_log_hook(dtfl_log_fn fn, void *ctx)
+{
+	atomic_store(&log_ctx, ctx);
+	atomic_store(&log_fn, fn);
+}
+
+void
+__dtfl_log(dtfl_log_level level, const char *fmt, ...)
+{
+	char msg[1024];
+	va_list ap;
+	dtfl_log_fn fn;
+
+	fn = atomic_load(&log_fn);
+	if (fn == NULL && level < DTFL_LOG_WARN)
+		return;	/* quiet default: drop DEBUG and INFO */
+	va_start(ap, fmt);
+	vsnprintf(msg, sizeof msg, fmt, ap);
+	va_end(ap);
+	if (fn != NULL) {
+		fn(level, msg, atomic_load(&log_ctx));
+		return;
+	}
+	fprintf(stderr, "libdtfl: %s\n", msg);
+	fflush(stderr);
 }
 
 int

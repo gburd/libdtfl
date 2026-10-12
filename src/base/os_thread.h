@@ -16,14 +16,22 @@
 
 #include "base/base_int.h"
 
+/*
+ * A thread handle holds either a pthread_t (the default path) or the
+ * opaque handle a host's thread hooks returned.  `hooked` says which,
+ * so join takes the matching path.
+ */
 typedef struct __dtfl_thread {
 	pthread_t tid;
+	void *handle;
+	bool hooked;
 } __dtfl_thread;
 
 /*
  * Starts fn(arg) on a new thread named `name` (truncated to what the OS
- * allows; informational only).  Returns 0 and fills *out, or DTFL_EIO
- * with error detail if the OS refuses.
+ * allows; informational only, and ignored on the hooked path).  Returns
+ * 0 and fills *out, or DTFL_EIO with error detail if the OS or the host
+ * hook refuses.
  */
 int __dtfl_thread_spawn(const char *name, void *(*fn)(void *), void *arg,
     __dtfl_thread *out);

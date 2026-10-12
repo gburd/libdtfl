@@ -60,6 +60,16 @@ size_t __dtfl_mul_size(size_t n, size_t size);
  */
 DTFL_NORETURN void __dtfl_panic(const char *fmt, ...) DTFL_PRINTF(1, 2);
 
+/*
+ * Diagnostic logging: format a message and hand it to the log hook.
+ * This is the human-readable diagnostic log, separate from the
+ * structured event logging in src/base/log_registry.c.  Use it for
+ * non-fatal "failed to ..." diagnostics; a contract violation panics
+ * instead.  With no hook set, WARN and ERROR go to stderr and DEBUG and
+ * INFO are dropped.
+ */
+void __dtfl_log(dtfl_log_level level, const char *fmt, ...) DTFL_PRINTF(2, 3);
+
 #define DTFL_ASSERT(cond)						\
 	do {								\
 		if (DTFL_UNLIKELY(!(cond)))				\
