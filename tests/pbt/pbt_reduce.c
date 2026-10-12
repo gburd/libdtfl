@@ -27,7 +27,7 @@
 
 #include <string.h>
 
-#define MAXOPS 40
+#define MAXOPS 32
 #define NKEY 4
 #define NVAL 4
 #define NEPOCH 4

@@ -861,7 +861,8 @@ run_logic(replayer *r, engine_logic *lg, const void *key, size_t klen,
 			const void *v = valtab_get(r->out_tab,
 			    vtd_val(&r->output_buffer, i), &l);
 
-			memcpy(arena + off, v, l);
+			if (l != 0)
+				memcpy(arena + off, v, l);
 			ovals[i] = arena + off;
 			off += l;
 			if (r->odc->width != 0)
@@ -1468,6 +1469,8 @@ rd_build_batches(reduce_op_ctx *c, const __dtfl_antichain *held,
 			size_t *idx = NULL;
 			ob_sort ss = { ob, c };
 
+			__dtfl_antichain_init(&lo, c->tc);
+			__dtfl_antichain_init(&hi, c->tc);
 			__dtfl_antichain_copy(&lo, &out_lower);
 			__dtfl_antichain_copy(&hi, &out_upper);
 			__dtfl_antichain_init_elem(&since, c->tc, minimum);
@@ -1544,7 +1547,7 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 	valtab in_tab, out_tab;
 	replayer eng;
 	pending next;
-	__dtfl_antichain lower_cp, upper_cp;
+	__dtfl_antichain lower_cp;
 	/* The held times, an antichain of the capabilities. */
 	__dtfl_antichain held;
 	size_t pend_pos;
@@ -1570,8 +1573,8 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 	}
 
 	/* lower_limit as an antichain (for batches_through). */
+	__dtfl_antichain_init(&lower_cp, c->tc);
 	__dtfl_antichain_copy(&lower_cp, &c->lower_limit);
-	__dtfl_antichain_copy(&upper_cp, &c->upper_limit);
 
 	/* Cursors over source and output batches preceding lower. */
 	have_src = __dtfl_trace_agent_cursor_through(&c->source, &lower_cp,
@@ -1736,7 +1739,6 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 	__dtfl_cursor_list_free(&batch_cl);
 	__dtfl_antichain_free(&held);
 	__dtfl_antichain_free(&lower_cp);
-	__dtfl_antichain_free(&upper_cp);
 }
 
 /* ================================================================== */
@@ -1812,29 +1814,25 @@ reduce_logic(dtfl_op *op, void *vctx)
 		size_t a, b;
 
 		__dtfl_antichain_init(&joined, c->tc);
-		/* join of two antichains: all pairwise joins, kept minimal. */
-		if (__dtfl_antichain_len(&c->upper_limit) == 0 || fn == 0) {
-			/* An empty antichain is the top: join is the other. */
-			for (a = 0; a < __dtfl_antichain_len(&c->upper_limit); a++)
-				__dtfl_antichain_insert(&joined,
-				    __dtfl_antichain_at(&c->upper_limit, a));
-			for (b = 0; b < fn; b++)
-				__dtfl_antichain_insert(&joined,
-				    frontier + (size_t)c->tw * b);
-		} else {
-			for (a = 0; a < __dtfl_antichain_len(&c->upper_limit); a++)
-				for (b = 0; b < fn; b++) {
-					uint64_t j[DTFL_TIME_MAX];
+		/*
+		 * antichain_join_into: the pairwise joins of the elements, kept
+		 * minimal (lattice.rs).  The empty antichain is the maximum, so
+		 * joining with it yields the empty antichain (no pairs): when the
+		 * input frontier is empty after close, upper_limit becomes empty
+		 * and the operator seals the output to empty and releases.
+		 */
+		for (a = 0; a < __dtfl_antichain_len(&c->upper_limit); a++)
+			for (b = 0; b < fn; b++) {
+				uint64_t j[DTFL_TIME_MAX];
 
-					if (c->tw != 0)
-						dtfl_time_join(c->tc,
-						    __dtfl_antichain_at(
-						    &c->upper_limit, a),
-						    frontier + (size_t)c->tw * b,
-						    j);
-					__dtfl_antichain_insert(&joined, j);
-				}
-		}
+				if (c->tw != 0)
+					dtfl_time_join(c->tc,
+					    __dtfl_antichain_at(
+					    &c->upper_limit, a),
+					    frontier + (size_t)c->tw * b,
+					    j);
+				__dtfl_antichain_insert(&joined, j);
+			}
 		__dtfl_antichain_clear(&c->upper_limit);
 		for (a = 0; a < __dtfl_antichain_len(&joined); a++)
 			__dtfl_antichain_insert(&c->upper_limit,
