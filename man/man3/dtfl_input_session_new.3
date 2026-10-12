@@ -1,0 +1,141 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_INPUT_SESSION_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_input_session_new ,
+.Nm dtfl_input_session_to_collection ,
+.Nm dtfl_input_session_update ,
+.Nm dtfl_input_session_update_at ,
+.Nm dtfl_input_session_insert ,
+.Nm dtfl_input_session_remove ,
+.Nm dtfl_input_session_advance_to ,
+.Nm dtfl_input_session_time ,
+.Nm dtfl_input_session_flush ,
+.Nm dtfl_input_session_close
+.Nd feed a differential dataflow collection
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/collection.h
+.Ft dtfl_input_session *
+.Fn dtfl_input_session_new "const dtfl_type *type" "const dtfl_diff *diff"
+.Ft dtfl_collection *
+.Fn dtfl_input_session_to_collection "dtfl_input_session *s" "dtfl_scope *scope"
+.Ft void
+.Fn dtfl_input_session_update "dtfl_input_session *s" "const void *record" "size_t len" "const void *change"
+.Ft void
+.Fn dtfl_input_session_update_at "dtfl_input_session *s" "const void *record" "size_t len" "const uint64_t *at" "const void *change"
+.Ft void
+.Fn dtfl_input_session_insert "dtfl_input_session *s" "const void *record" "size_t len"
+.Ft void
+.Fn dtfl_input_session_remove "dtfl_input_session *s" "const void *record" "size_t len"
+.Ft void
+.Fn dtfl_input_session_advance_to "dtfl_input_session *s" "const uint64_t *t"
+.Ft const uint64_t *
+.Fn dtfl_input_session_time "const dtfl_input_session *s"
+.Ft void
+.Fn dtfl_input_session_flush "dtfl_input_session *s"
+.Ft void
+.Fn dtfl_input_session_close "dtfl_input_session *s"
+.Sh DESCRIPTION
+An input session batches differential collection updates and ships them
+to a timely dataflow input under coarsened capabilities, which exposes
+more concurrency than the logical times suggest.
+.Pp
+.Fn dtfl_input_session_new
+creates a session over records of
+.Fa type
+with differences of class
+.Fa diff ,
+retaining both.
+.Fn dtfl_input_session_to_collection
+adds the session's input to
+.Fa scope ,
+whose time class must be totally ordered, and returns the collection it
+feeds.
+It may be called once per session, and the session's epoch starts at the
+scope's minimum time.
+.Pp
+.Fn dtfl_input_session_update
+adds
+.Fa change
+to the weight of
+.Fa record
+at the current epoch;
+.Fn dtfl_input_session_update_at
+does the same at a future time
+.Fa at ,
+which must not precede the epoch.
+.Fn dtfl_input_session_insert
+and
+.Fn dtfl_input_session_remove
+are shorthands that add and retract one copy of a record, and need a
+diff class with a unit value
+.Pq and an Abelian class for remove .
+.Pp
+.Fn dtfl_input_session_advance_to
+moves the epoch to
+.Fa t ,
+which must not precede the current epoch; it does not inform timely
+dataflow until the next flush.
+.Fn dtfl_input_session_time
+returns the current epoch.
+.Fn dtfl_input_session_flush
+sends every buffered update into the input and advances the input's
+frontier to the epoch; it must be called before expecting the dataflow
+to report progress.
+.Fn dtfl_input_session_close
+flushes, seals the input and frees the session.
+.Sh RETURN VALUES
+.Fn dtfl_input_session_new
+returns a new session owned by the caller.
+.Fn dtfl_input_session_to_collection
+returns the collection the input feeds.
+.Fn dtfl_input_session_time
+returns the current epoch, or
+.Dv NULL
+before the session is added to a scope.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_diff *r = dtfl_diff_i64();
+dtfl_input_session *in = dtfl_input_session_new(dtfl_type_u64(), r);
+dtfl_collection *c = dtfl_input_session_to_collection(in, scope);
+unsigned char key[8];
+uint64_t next = 1;
+
+dtfl_put_u64(key, 42);
+dtfl_input_session_insert(in, key, sizeof key);
+dtfl_input_session_advance_to(in, &next);
+dtfl_input_session_flush(in);
+/* ... step the worker until the probe passes `next` ... */
+dtfl_input_session_remove(in, key, sizeof key);
+dtfl_input_session_close(in);
+dtfl_collection_free(c);
+dtfl_diff_free(r);
+.Ed
+.Sh ERRORS
+These functions report contract violations through the panic hook: a
+time that does not advance the epoch, a diff class that lacks the unit
+value or negation that
+.Fn dtfl_input_session_insert
+and
+.Fn dtfl_input_session_remove
+need, or a scope whose time class is not totally ordered.
+.Sh SEE ALSO
+.Xr dtfl_collection_new 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl_input_new 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of differential dataflow's
+.Vt InputSession
+and the
+.Vt Input
+trait of
+.Pa input.rs .
+.Sh THREAD SAFETY
+An input session and the collection it returns belong to the worker
+thread that created them and must not be shared.
+Each worker in a multi-worker computation builds its own session.

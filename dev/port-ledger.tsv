@@ -248,9 +248,9 @@ differential-dataflow	differential-dataflow/src/difference.rs	319	src/dd/diff.c	
 differential-dataflow	differential-dataflow/src/dynamic/mod.rs	77	src/dd/dynamic.c	P8	todo	PointStamp: trailing minimum coordinates trimmed (D3)
 differential-dataflow	differential-dataflow/src/dynamic/pointstamp.rs	323	src/dd/dynamic.c	P8	todo	order, lattice, summaries and codec are in src/progress/time.c (POINTSTAMP); this row is enter_dynamic/leave_dynamic
 differential-dataflow	differential-dataflow/src/hashable.rs	38	src/base/hash.c	P1	done	FNV-1a over record bytes; not interoperable with Rust routing (D9)
-differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	todo	
+differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	done	
 differential-dataflow	differential-dataflow/src/lattice.rs	371	src/progress/time.c	P1	done	the time-class lattice operations need it (D3)
-differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	todo	
+differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	done	the Collection type and its linear methods (map/filter/flat_map/concat/negate/consolidate/inspect/enter/leave/probe/explode/delay); arrange/join/reduce land in P7-P8
 differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events
 differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	todo	
 differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	todo	

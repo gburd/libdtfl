@@ -1,0 +1,251 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_COLLECTION_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_diff_i64 ,
+.Nm dtfl_diff_i32 ,
+.Nm dtfl_diff_i16 ,
+.Nm dtfl_diff_i8 ,
+.Nm dtfl_diff_u64 ,
+.Nm dtfl_diff_u32 ,
+.Nm dtfl_diff_u16 ,
+.Nm dtfl_diff_u8 ,
+.Nm dtfl_diff_present ,
+.Nm dtfl_diff_retain ,
+.Nm dtfl_diff_free ,
+.Nm dtfl_diff_width ,
+.Nm dtfl_diff_is_abelian ,
+.Nm dtfl_collection_type ,
+.Nm dtfl_collection_diff ,
+.Nm dtfl_collection_scope ,
+.Nm dtfl_collection_free ,
+.Nm dtfl_collection_emit_record ,
+.Nm dtfl_collection_emit_pair ,
+.Nm dtfl_collection_map ,
+.Nm dtfl_collection_flat_map ,
+.Nm dtfl_collection_filter ,
+.Nm dtfl_collection_negate ,
+.Nm dtfl_collection_concat ,
+.Nm dtfl_collection_concatenate ,
+.Nm dtfl_collection_consolidate ,
+.Nm dtfl_collection_inspect ,
+.Nm dtfl_collection_explode ,
+.Nm dtfl_collection_delay ,
+.Nm dtfl_collection_enter ,
+.Nm dtfl_collection_leave ,
+.Nm dtfl_collection_probe ,
+.Nm dtfl_collection_probe_with
+.Nd differential dataflow collections and their operators
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/collection.h
+.Ft dtfl_diff *
+.Fn dtfl_diff_i64 "void"
+.Ft dtfl_diff *
+.Fn dtfl_diff_u64 "void"
+.Ft dtfl_diff *
+.Fn dtfl_diff_present "void"
+.Ft dtfl_diff *
+.Fn dtfl_diff_retain "const dtfl_diff *d"
+.Ft void
+.Fn dtfl_diff_free "const dtfl_diff *d"
+.Ft size_t
+.Fn dtfl_diff_width "const dtfl_diff *d"
+.Ft bool
+.Fn dtfl_diff_is_abelian "const dtfl_diff *d"
+.Ft const dtfl_type *
+.Fn dtfl_collection_type "const dtfl_collection *c"
+.Ft const dtfl_diff *
+.Fn dtfl_collection_diff "const dtfl_collection *c"
+.Ft dtfl_scope *
+.Fn dtfl_collection_scope "const dtfl_collection *c"
+.Ft void
+.Fn dtfl_collection_free "dtfl_collection *c"
+.Ft void
+.Fn dtfl_collection_emit_record "dtfl_collection_emit *e" "const void *rec" "size_t len"
+.Ft void
+.Fn dtfl_collection_emit_pair "dtfl_collection_emit *e" "const void *rec" "size_t len" "const void *factor"
+.Ft dtfl_collection *
+.Fn dtfl_collection_map "dtfl_collection *c" "const dtfl_type *out_type" "dtfl_collection_map_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_flat_map "dtfl_collection *c" "const dtfl_type *out_type" "dtfl_collection_map_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_filter "dtfl_collection *c" "dtfl_collection_pred_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_negate "dtfl_collection *c"
+.Ft dtfl_collection *
+.Fn dtfl_collection_concat "dtfl_collection *a" "dtfl_collection *b"
+.Ft dtfl_collection *
+.Fn dtfl_collection_concatenate "dtfl_scope *scope" "dtfl_collection *const *sources" "size_t n"
+.Ft dtfl_collection *
+.Fn dtfl_collection_consolidate "dtfl_collection *c"
+.Ft dtfl_collection *
+.Fn dtfl_collection_inspect "dtfl_collection *c" "dtfl_collection_inspect_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_explode "dtfl_collection *c" "const dtfl_type *out_type" "const dtfl_diff *factor_diff" "dtfl_collection_explode_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_delay "dtfl_collection *c" "dtfl_collection_delay_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_enter "dtfl_collection *c" "dtfl_scope *child"
+.Ft dtfl_collection *
+.Fn dtfl_collection_leave "dtfl_collection *c"
+.Ft dtfl_collection *
+.Fn dtfl_collection_probe "dtfl_collection *c" "dtfl_probe **probe"
+.Ft dtfl_collection *
+.Fn dtfl_collection_probe_with "dtfl_collection *c" "dtfl_probe *probe"
+.Sh DESCRIPTION
+A
+.Vt dtfl_collection
+is a timely dataflow stream whose records are differential updates: a
+.Pq record , time , diff
+triple that says how the multiplicity of
+.Va record
+changes by
+.Va diff
+at logical time
+.Va time .
+The collection operators build new collections from old ones, each
+transforming the record, time or diff part of every update.
+.Pp
+A
+.Vt dtfl_diff
+is the algebra of a collection's difference type.
+.Fn dtfl_diff_i64
+is the default and the signed classes are Abelian (they support
+negation);
+.Fn dtfl_diff_u64
+and the other unsigned classes are a commutative monoid; and
+.Fn dtfl_diff_present
+is a semigroup only, whose values never cancel.
+.Fn dtfl_diff_retain
+and
+.Fn dtfl_diff_free
+adjust the reference count.
+.Fn dtfl_diff_width
+is the byte width of a value, and
+.Fn dtfl_diff_is_abelian
+reports whether the class supports negation, which
+.Fn dtfl_collection_negate
+requires.
+.Pp
+.Fn dtfl_collection_type ,
+.Fn dtfl_collection_diff
+and
+.Fn dtfl_collection_scope
+report the record type, diff class and scope behind a collection.
+.Fn dtfl_collection_free
+releases the handle without touching the dataflow.
+.Pp
+.Fn dtfl_collection_map
+and
+.Fn dtfl_collection_flat_map
+transform the record of each update, keeping its time and diff;
+.Fn dtfl_collection_map
+emits exactly one output record per input and
+.Fn dtfl_collection_flat_map
+emits zero or more.
+Both callbacks write their output records with
+.Fn dtfl_collection_emit_record ,
+which supplies the record only; the operator attaches the time and
+diff.
+.Fn dtfl_collection_filter
+keeps the updates whose record satisfies the predicate.
+.Fn dtfl_collection_negate
+flips the sign of every diff and requires an Abelian class.
+.Fn dtfl_collection_concat
+and
+.Fn dtfl_collection_concatenate
+accumulate the updates of several collections.
+.Fn dtfl_collection_consolidate
+groups updates by
+.Pq record , time ,
+sums their diffs, drops those that sum to zero and exchanges records
+across workers, so the result holds at most one update per
+.Pq record , time .
+.Fn dtfl_collection_inspect
+calls the callback for every update.
+.Fn dtfl_collection_explode
+replaces each record and multiplies its diff by a factor of
+.Fa factor_diff ,
+moving aggregatable data into the difference; its callback emits
+.Pq record , factor
+pairs with
+.Fn dtfl_collection_emit_pair .
+.Fn dtfl_collection_delay
+re-times each update by a monotone function that only advances time.
+.Fn dtfl_collection_enter
+and
+.Fn dtfl_collection_leave
+move a collection across a scope boundary, projecting the embedded time
+with the scope refinement.
+.Fn dtfl_collection_probe
+and
+.Fn dtfl_collection_probe_with
+attach a timely probe to the collection's output.
+.Sh RETURN VALUES
+The
+.Fn dtfl_diff_*
+constructors and the collection operators return a new handle owned by
+the caller, except that a collection handle shares the worker's
+dataflow.
+.Fn dtfl_collection_explode
+returns
+.Dv NULL
+when the multiply of the factor and input diff classes is undefined.
+.Fn dtfl_diff_width
+returns the value width and
+.Fn dtfl_diff_is_abelian
+returns a boolean.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void dbl(void *ctx, const void *rec, size_t len,
+    dtfl_collection_emit *out) {
+	unsigned char buf[8];
+	dtfl_put_u64(buf, dtfl_get_u64(rec) * 2);
+	dtfl_collection_emit_record(out, buf, sizeof buf);
+	(void)ctx; (void)len;
+}
+
+dtfl_diff *r = dtfl_diff_i64();
+dtfl_input_session *in = dtfl_input_session_new(dtfl_type_u64(), r);
+dtfl_collection *c = dtfl_input_session_to_collection(in, scope);
+dtfl_collection *d = dtfl_collection_map(c, dtfl_type_u64(), dbl, DTFL_NOCTX);
+dtfl_probe *p;
+dtfl_collection *out = dtfl_collection_probe(
+    dtfl_collection_consolidate(d), &p);
+dtfl_collection_free(out);
+dtfl_collection_free(d);
+dtfl_collection_free(c);
+dtfl_diff_free(r);
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_EALGEBRA
+.It Bq Er DTFL_EALGEBRA
+.Fn dtfl_collection_explode
+has no multiply declared for the factor and input diff classes.
+.El
+.Sh SEE ALSO
+.Xr dtfl_execute 3 ,
+.Xr dtfl_input_session_new 3 ,
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl_type 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of differential dataflow's
+.Vt Collection
+type and its linear methods
+.Pq map , filter , flat_map , concat , negate , consolidate , inspect , explode , delay , enter , leave
+and the difference classes of
+.Pa difference.rs .
+.Sh THREAD SAFETY
+A
+.Vt dtfl_collection
+handle and the collection operators belong to the worker thread that
+builds the dataflow and must not be shared.
+A
+.Vt dtfl_diff
+is immutable once created and its reference count is atomic, so a
+diff class may be shared between threads.
