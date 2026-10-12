@@ -178,7 +178,8 @@ DTFL_TEST(wrap__frontier_no_until)
 DTFL_TEST(wrap__enter_to_inner)
 {
 	dtfl_time_class *outer = dtfl_time_u64();
-	dtfl_time_class *inner = dtfl_time_product(outer, dtfl_time_u64());
+	dtfl_time_class *innerb = dtfl_time_u64();
+	dtfl_time_class *inner = dtfl_time_product(outer, innerb);
 	uint64_t lower = 0, upper = 3;
 	uint64_t keys[] = { 1, 2 };
 	uint64_t vals[] = { 7, 8 };
@@ -221,6 +222,7 @@ DTFL_TEST(wrap__enter_to_inner)
 	__dtfl_batch_ord_release(src);
 	__dtfl_batch_ord_release(dst);
 	dtfl_time_class_free(inner);
+	dtfl_time_class_free(innerb);
 	dtfl_time_class_free(outer);
 	return MUNIT_OK;
 }
