@@ -41,7 +41,9 @@ libdtfl_internal_la_SOURCES =
 libdtfl_internal_la_CFLAGS = $(AM_CFLAGS)
 
 check_PROGRAMS =
+noinst_PROGRAMS =
 TESTS =
+CLEANFILES =
 dist_check_SCRIPTS = \
 	tests/dist/test_api_discipline.sh \
 	tests/dist/test_symbols.sh \
@@ -69,6 +71,10 @@ include src/comm/zc_local.mk
 include src/progress/local.mk
 include src/timely/local.mk
 include src/dd/local.mk
+
+# Examples (noinst): included after the src fragments so the library and
+# its public headers exist to link against (AGENTS.md section 11).
+include examples/local.mk
 
 # Sanitizer and interop targets (PLAN section 6).
 check-asan:

@@ -496,12 +496,76 @@ DTFL_TEST(broadcast__replicates_to_all_peers)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* unary_notify with an initial notification (barrier.rs shape)        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A unary_notify seeded at time 0 over a feedback edge re-requests the
+ * next time until it reaches a bound, so the loop runs a fixed number of
+ * rounds.  Seeding calls notify_at before any data arrives, which
+ * consults the input frontier; the operator must bind that frontier
+ * before seeding (operator.c), or the seed dereferences a null frontier.
+ */
+typedef struct notify_seed_ctx {
+	uint64_t bound;
+	size_t fired;
+} notify_seed_ctx;
+
+static void
+notify_seed_logic(void *ctx, dtfl_op *op, dtfl_notificator *note)
+{
+	notify_seed_ctx *c = ctx;
+	dtfl_cap *cap;
+	uint64_t count;
+
+	(void)op;
+	while (dtfl_notificator_next(note, &cap, &count)) {
+		uint64_t next = dtfl_cap_time(cap)[0] + 1;
+
+		c->fired++;
+		if (next < c->bound)
+			dtfl_notificator_notify_at(note,
+			    dtfl_cap_delayed(cap, &next));
+		dtfl_cap_drop(cap);
+	}
+}
+
+static void
+build_notify_seed(dtfl_scope *scope, void *arg)
+{
+	notify_seed_ctx *c = arg;
+	uint64_t summary[DTFL_TIME_MAX];
+	uint64_t zero = 0;
+	dtfl_feedback *handle;
+	dtfl_stream *cycle, *out;
+
+	dtfl_summary_default(dtfl_scope_time_class(scope), summary);
+	summary[0] = 1;
+	cycle = dtfl_feedback_new(scope, dtfl_type_unit(), summary, &handle);
+	out = dtfl_stream_unary_notify(cycle, dtfl_pact_pipeline(), "Seeded",
+	    &zero, 1, dtfl_type_unit(), notify_seed_logic, DTFL_CTX(c, NULL));
+	dtfl_feedback_connect(handle, out);
+}
+
+DTFL_TEST(unary_notify__initial_notification_drives_loop)
+{
+	notify_seed_ctx c = { 5, 0 };
+
+	(void)params; (void)data;
+	run_standalone(build_notify_seed, &c);
+	/* Fired once per time 0..4: the seed and four re-requests. */
+	assert_size(c.fired, ==, 5);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(delay__shifts_times_and_frontier),
 	DTFL_T(aggregate__sums_per_key_per_time),
 	DTFL_T(state_machine__threads_state),
 	DTFL_T(branch__splits_by_predicate),
 	DTFL_T(broadcast__replicates_to_all_peers),
+	DTFL_T(unary_notify__initial_notification_drives_loop),
 	DTFL_T_END
 };
 
