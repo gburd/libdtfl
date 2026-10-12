@@ -23,6 +23,7 @@ dd_sources = \
 	src/dd/common_int.h \
 	src/dd/join.c \
 	src/dd/iterate.c \
+	src/dd/dynamic.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \
@@ -128,6 +129,12 @@ TESTS += tests/unit/test_iterate
 tests_unit_test_iterate_SOURCES = tests/unit/test_iterate.c
 tests_unit_test_iterate_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_iterate_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_dynamic
+TESTS += tests/unit/test_dynamic
+tests_unit_test_dynamic_SOURCES = tests/unit/test_dynamic.c
+tests_unit_test_dynamic_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_dynamic_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_upsert
 TESTS += tests/unit/test_upsert
