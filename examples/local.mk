@@ -19,7 +19,11 @@ noinst_PROGRAMS += \
 	examples/timely/unordered_input \
 	examples/timely/capture \
 	examples/timely/sequence \
-	examples/timely/barrier
+	examples/timely/barrier \
+	examples/timely/flow_controlled \
+	examples/timely/event_driven \
+	examples/timely/openloop \
+	examples/timely/loopdemo
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -60,5 +64,21 @@ examples_timely_sequence_LDADD = $(EXAMPLE_LDADD)
 examples_timely_barrier_SOURCES = examples/timely/barrier.c
 examples_timely_barrier_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_barrier_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_flow_controlled_SOURCES = examples/timely/flow_controlled.c
+examples_timely_flow_controlled_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_flow_controlled_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_event_driven_SOURCES = examples/timely/event_driven.c
+examples_timely_event_driven_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_event_driven_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_openloop_SOURCES = examples/timely/openloop.c
+examples_timely_openloop_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_openloop_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_loopdemo_SOURCES = examples/timely/loopdemo.c
+examples_timely_loopdemo_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_loopdemo_LDADD = $(EXAMPLE_LDADD)
 
 EXTRA_DIST += examples/timely/example_args.h
