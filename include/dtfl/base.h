@@ -5,8 +5,9 @@
  * dtfl/base.h: errors, hooks and version for libdtfl.
  *
  * Every other public header includes this one.  It declares the error
- * codes returned by fallible functions, the two process-wide hooks
- * (allocation and panic), and the library version.  See dtfl(7) and
+ * codes returned by fallible functions, the three process-wide host
+ * hooks (allocation, panic and logging), and the
+ * library version.  See dtfl(7), dtfl_embedding(7) and
  * dtfl_set_alloc_hooks(3).
  */
 #ifndef DTFL_BASE_H
@@ -80,6 +81,33 @@ typedef void (*dtfl_panic_fn)(const char *msg, void *ctx);
 
 /* Installs the panic hook.  NULL restores the default. */
 DTFL_API void dtfl_set_panic_hook(dtfl_panic_fn fn, void *ctx);
+
+/*
+ * Diagnostic log hook.  This is the human-readable diagnostic log, for
+ * messages such as "cannot start worker thread".  It is separate from
+ * the structured timely and differential event logging (the logging
+ * registry and BatchLogger reached through dtfl/log.h), which carries
+ * machine-readable events and is unaffected by this hook.
+ *
+ * A hook routes libdtfl's diagnostics into the host's logging system;
+ * a host like PostgreSQL maps the levels to elog(DEBUG1), elog(LOG),
+ * elog(WARNING) and elog(ERROR).
+ */
+typedef enum dtfl_log_level {
+	DTFL_LOG_DEBUG,
+	DTFL_LOG_INFO,
+	DTFL_LOG_WARN,
+	DTFL_LOG_ERROR
+} dtfl_log_level;
+typedef void (*dtfl_log_fn)(dtfl_log_level level, const char *msg, void *ctx);
+
+/*
+ * Installs the log hook.  With no hook set, libdtfl writes WARN and
+ * ERROR messages to stderr and drops DEBUG and INFO, so a library is
+ * quiet by default.  NULL restores that default.  Set it, like the
+ * other hooks, before the first dtfl_execute().
+ */
+DTFL_API void dtfl_set_log_hook(dtfl_log_fn fn, void *ctx);
 
 /* Library version. */
 #define DTFL_VERSION_MAJOR 0

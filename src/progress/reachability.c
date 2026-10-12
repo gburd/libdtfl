@@ -27,8 +27,6 @@
  */
 #include "progress/operate_int.h"
 
-#include <stdio.h>
-
 /* ------------------------------------------------------------------ */
 /* Builder                                                             */
 /* ------------------------------------------------------------------ */
@@ -717,7 +715,8 @@ __dtfl_reach_builder_build(__dtfl_reach_builder *b, __dtfl_connectivity *scope_s
 	__dtfl_vec acc;
 
 	if (!__dtfl_reach_builder_is_acyclic(b))
-		fprintf(stderr, "Cycle detected without timestamp increment\n");
+		__dtfl_log(DTFL_LOG_WARN,
+		    "Cycle detected without timestamp increment");
 	DTFL_ASSERT(nn > 0);
 	t->tc = tc;
 	t->depth = tc->depth;
