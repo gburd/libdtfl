@@ -30,8 +30,20 @@ tests_unit_test_consolidate_SOURCES = tests/unit/test_consolidate.c
 tests_unit_test_consolidate_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_consolidate_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_collection
+TESTS += tests/unit/test_collection
+tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
+tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/pbt/pbt_consolidate
 TESTS += tests/pbt/pbt_consolidate
 tests_pbt_pbt_consolidate_SOURCES = tests/pbt/pbt_consolidate.c
 tests_pbt_pbt_consolidate_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_consolidate_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_collection
+TESTS += tests/pbt/pbt_collection
+tests_pbt_pbt_collection_SOURCES = tests/pbt/pbt_collection.c
+tests_pbt_pbt_collection_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_collection_LDADD = $(INTERNAL_PBT_LIBS)
