@@ -144,7 +144,7 @@ timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_in
 timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
 timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	done	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	todo	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	worker.rs and scope.rs import each other
