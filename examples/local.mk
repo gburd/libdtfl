@@ -27,7 +27,8 @@ noinst_PROGRAMS += \
 	examples/timely/unionfind \
 	examples/timely/bfs \
 	examples/timely/pagerank \
-	examples/timely/wordcount
+	examples/timely/wordcount \
+	examples/timely/hashjoin
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -101,6 +102,10 @@ examples_timely_wordcount_SOURCES = examples/timely/wordcount.c
 examples_timely_wordcount_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_wordcount_LDADD = $(EXAMPLE_LDADD)
 
+examples_timely_hashjoin_SOURCES = examples/timely/hashjoin.c
+examples_timely_hashjoin_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
+
 # Smoke test: run a representative subset under `make check` so a
 # crashing, hanging or wrong-output example fails the build.  The
 # examples the harness runs are added to check_PROGRAMS so `make check`
@@ -112,6 +117,7 @@ check_PROGRAMS += \
 	examples/timely/bfs \
 	examples/timely/unionfind \
 	examples/timely/pagerank \
+	examples/timely/hashjoin \
 	examples/timely/capture
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh
@@ -124,4 +130,5 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/bfs.expected \
 	examples/timely/unionfind.expected \
 	examples/timely/pagerank.expected \
+	examples/timely/hashjoin.expected \
 	examples/timely/capture.expected

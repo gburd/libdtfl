@@ -67,6 +67,7 @@ run wordcount wordcount.expected cat
 run bfs bfs.expected sort
 run unionfind unionfind.expected cat
 run pagerank pagerank.expected cat
+run hashjoin hashjoin.expected cat
 run capture capture.expected sort
 
 # Multi-worker runs: exercise real cross-thread execution, output varies,
@@ -75,6 +76,7 @@ run hello - cat -w2
 run exchange - cat 4 3 -w3
 run bfs - cat
 run wordcount - cat -w2
+run hashjoin - cat -w2
 
 if [ "$fail" -eq 0 ]; then
 	echo "[examples] all smoke tests passed"
