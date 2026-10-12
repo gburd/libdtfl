@@ -166,3 +166,9 @@ TESTS += tests/unit/test_sync
 tests_unit_test_sync_SOURCES = tests/unit/test_sync.c
 tests_unit_test_sync_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_sync_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_capture
+TESTS += tests/pbt/pbt_capture
+tests_pbt_pbt_capture_SOURCES = tests/pbt/pbt_capture.c
+tests_pbt_pbt_capture_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_capture_LDADD = $(INTERNAL_PBT_LIBS)
