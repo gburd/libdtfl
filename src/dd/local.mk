@@ -17,6 +17,8 @@ dd_sources = \
 	src/dd/arrangement.c \
 	src/dd/upsert.c \
 	src/dd/reduce.c \
+	src/dd/count.c \
+	src/dd/threshold.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/description.c \

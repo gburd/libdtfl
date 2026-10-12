@@ -64,3 +64,6 @@ dtfl_collection_count
 dtfl_collection_distinct
 dtfl_collection_threshold
 dtfl_collection_threshold_named
+dtfl_collection_count_total
+dtfl_collection_distinct_total
+dtfl_collection_threshold_total

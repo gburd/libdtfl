@@ -9,6 +9,9 @@
 .Nm dtfl_collection_distinct ,
 .Nm dtfl_collection_threshold ,
 .Nm dtfl_collection_threshold_named ,
+.Nm dtfl_collection_count_total ,
+.Nm dtfl_collection_distinct_total ,
+.Nm dtfl_collection_threshold_total ,
 .Nm dtfl_reduce_emit_pair
 .Nd group a collection by key and reduce the values per key
 .Sh LIBRARY
@@ -30,6 +33,12 @@ Timely and differential dataflow library
 .Fn dtfl_collection_threshold "dtfl_collection *c" "const dtfl_diff *out_diff" "dtfl_threshold_fn thresh" "dtfl_ctx ctx"
 .Ft dtfl_collection *
 .Fn dtfl_collection_threshold_named "dtfl_collection *c" "const char *name" "const dtfl_diff *out_diff" "dtfl_threshold_fn thresh" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_collection_count_total "dtfl_collection *c" "const dtfl_diff *out_diff"
+.Ft dtfl_collection *
+.Fn dtfl_collection_distinct_total "dtfl_collection *c" "const dtfl_diff *out_diff"
+.Ft dtfl_collection *
+.Fn dtfl_collection_threshold_total "dtfl_collection *c" "const dtfl_diff *out_diff" "dtfl_threshold_fn thresh" "dtfl_ctx ctx"
 .Sh DESCRIPTION
 The reduce family groups a collection by key and applies a user reduction
 to the multiset of values accumulated under each key.
@@ -106,6 +115,18 @@ by writing it through
 and returning true, or returns false to emit nothing.
 The operator emits the change in that output across times, so the predicate
 need not be incremental.
+.Pp
+.Fn dtfl_collection_count_total ,
+.Fn dtfl_collection_distinct_total
+and
+.Fn dtfl_collection_threshold_total
+are optimizations of count, distinct and threshold for a totally ordered
+time
+.Pq Fn dtfl_time_is_total .
+They read the input trace before the current batch to recover each key's
+accumulated difference and emit the change directly, without the general
+reduce engine; they panic if the time class is not totally ordered.
+Their results match the general operators.
 .Sh RETURN VALUES
 Each function returns a new
 .Vt dtfl_collection

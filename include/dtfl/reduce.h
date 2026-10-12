@@ -115,6 +115,35 @@ DTFL_API dtfl_collection *dtfl_collection_threshold_named(dtfl_collection *c,
     const char *name, const dtfl_diff *out_diff, dtfl_threshold_fn thresh,
     dtfl_ctx ctx);
 
+/* ------------------------------------------------------------------ */
+/* Total-order specializations (count.rs, threshold.rs)                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * count_total, distinct_total and threshold_total are optimizations of
+ * count, distinct and threshold for a totally ordered time (count.rs
+ * CountTotal, threshold.rs ThresholdTotal).  They read the input trace
+ * before the current batch to recover each key's accumulated difference and
+ * emit the change in the counted or thresholded value directly, without the
+ * general reduce engine.  The collection's time class must be totally
+ * ordered (dtfl_time_is_total); otherwise they panic.  Each returns a new
+ * collection the caller frees.
+ *
+ * count_total emits the record key || count, where count is the summed input
+ * difference rendered as a value of the input difference class, with an
+ * output difference of one of `out_diff` (Abelian with a one).
+ * distinct_total emits each key whose accumulation is non-zero with a
+ * difference of one.  threshold_total maps a key's accumulated input
+ * difference to an output difference of `out_diff` through `thresh`, which
+ * must be Abelian, and emits the change.
+ */
+DTFL_API dtfl_collection *dtfl_collection_count_total(dtfl_collection *c,
+    const dtfl_diff *out_diff);
+DTFL_API dtfl_collection *dtfl_collection_distinct_total(dtfl_collection *c,
+    const dtfl_diff *out_diff);
+DTFL_API dtfl_collection *dtfl_collection_threshold_total(dtfl_collection *c,
+    const dtfl_diff *out_diff, dtfl_threshold_fn thresh, dtfl_ctx ctx);
+
 #ifdef __cplusplus
 }
 #endif
