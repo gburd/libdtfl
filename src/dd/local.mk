@@ -51,6 +51,7 @@ EXTRA_DIST += src/dd/exports.sym
 dist_man_MANS += man/man3/dtfl_collection_new.3
 dist_man_MANS += man/man3/dtfl_input_session_new.3
 dist_man_MANS += man/man3/dtfl_collection_arrange.3
+dist_man_MANS += man/man3/dtfl_collection_arrange_by_key.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
 dist_man_MANS += man/man3/dtfl_collection_join.3
 dist_man_MANS += man/man3/dtfl_collection_iterate.3
@@ -136,6 +137,12 @@ TESTS += tests/unit/test_arrange
 tests_unit_test_arrange_SOURCES = tests/unit/test_arrange.c
 tests_unit_test_arrange_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_arrange_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_arrange_by_key
+TESTS += tests/unit/test_arrange_by_key
+tests_unit_test_arrange_by_key_SOURCES = tests/unit/test_arrange_by_key.c
+tests_unit_test_arrange_by_key_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_arrange_by_key_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_iterate
 TESTS += tests/unit/test_iterate

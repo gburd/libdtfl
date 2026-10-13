@@ -1,0 +1,124 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_ARRANGE_BY_KEY 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_arrange_by_key ,
+.Nm dtfl_arranged_reduce_core ,
+.Nm dtfl_arranged_reduce_abelian
+.Nd arrange a keyed collection and reduce an arrangement directly
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.In dtfl/reduce.h
+.Ft dtfl_arranged *
+.Fn dtfl_collection_arrange_by_key "dtfl_collection *c" "const dtfl_type *key" "const dtfl_type *val" "const char *name"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_reduce_core "dtfl_arranged *a" "const char *name" "const dtfl_type *out_val" "const dtfl_diff *out_diff" "dtfl_reduce_core_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_reduce_abelian "dtfl_arranged *a" "const char *name" "const dtfl_type *out_val" "const dtfl_diff *out_diff" "dtfl_reduce_core_fn logic" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+.Fn dtfl_collection_arrange_by_key
+indexes a collection of
+.No key Ns || Ns value
+records by key.
+Each record is split into its key and value by the length of
+.Va key ,
+the leading field, updates are exchanged by the key prefix so a join finds
+matching keys on one worker, and the result trace indexes
+.Pq key , value .
+.Va val
+describes the value side so the library can order and index values.
+.Va name
+labels the operator, or is
+.Dv NULL
+for the default.
+The returned
+.Vt dtfl_arranged
+is the shared index that
+.Xr dtfl_arranged_join_core 3 ,
+.Fn dtfl_arranged_reduce_core
+and
+.Fn dtfl_arranged_reduce_abelian
+read: the cost of indexing is paid once and shared.
+.Pp
+.Fn dtfl_arranged_reduce_core
+reduces an arrangement
+.Va a
+.Pq key to value
+directly, producing an output arrangement
+.Pq key to Va out_val , Va out_diff No differences .
+For each key whose input or tentative output changes,
+.Va logic
+is called with the key, the accumulated input multiset and the tentative
+accumulated output multiset, and emits the output change through the sink.
+The input multiset is the
+.Va n
+pairs
+.Pq Va in_vals Ns Bq i , Va in_diffs Ns Bq i ,
+and the tentative output multiset is the
+.Va m
+pairs
+.Pq Va out_vals Ns Bq i , Va out_diffs Ns Bq i .
+The emitted pairs are the change to apply to the output, so a logic that
+wants to keep the prior output must retract it itself.
+.Va out_diff
+need not be Abelian.
+.Pp
+.Fn dtfl_arranged_reduce_abelian
+is the same, but wraps
+.Va logic
+so that it retracts the prior output automatically
+.Pq negates and appends the tentative output, then consolidates ,
+so
+.Va logic
+need only produce the new output for each key.
+.Va out_diff
+must be Abelian.
+.Pp
+In both,
+.Va a
+is read, not consumed; the caller still owns it.
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_arranged
+handle the caller owns and frees with
+.Xr dtfl_arranged_free 3 .
+.Fn dtfl_collection_arrange_by_key
+indexes
+.Va c ;
+the reduce functions produce an output arrangement over the reduced trace.
+.Sh EXAMPLES
+Arrange two keyed collections and equijoin them, then reduce one to a
+per-key aggregate:
+.Bd -literal -offset indent
+dtfl_arranged *l = dtfl_collection_arrange_by_key(c1, u64, u64, "L");
+dtfl_arranged *r = dtfl_collection_arrange_by_key(c2, u64, u64, "R");
+dtfl_collection *j = dtfl_arranged_join_core(l, r, out, result, DTFL_NOCTX);
+
+dtfl_arranged *a = dtfl_collection_arrange_by_key(c, u64, u64, "A");
+dtfl_arranged *s = dtfl_arranged_reduce_abelian(a, "Sum", i64, i64_diff,
+    sum_logic, DTFL_NOCTX);
+.Ed
+.Sh ERRORS
+.Fn dtfl_arranged_reduce_abelian
+requires
+.Va out_diff
+to be Abelian
+.Pq a negate operation ;
+passing a non-Abelian difference class is a programming error.
+.Sh SEE ALSO
+.Xr dtfl_collection_arrange 3 ,
+.Xr dtfl_collection_join 3 ,
+.Xr dtfl_collection_reduce 3 ,
+.Xr dtfl-differential 7
+.Sh HISTORY
+Ported from differential-dataflow 0.25.1
+.Pq Pa operators/arrange/arrangement.rs , Pa operators/reduce.rs , Pa collection.rs .
+.Sh THREAD SAFETY
+Every arrangement handle belongs to the worker that created it and must not
+be used from another thread.
+.Fn dtfl_collection_arrange_by_key
+and the reduce operators build on that worker's dataflow.

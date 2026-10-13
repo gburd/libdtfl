@@ -2487,6 +2487,71 @@ dtfl_collection_reduce(dtfl_collection *c, const dtfl_type *key_type,
 }
 
 /* ------------------------------------------------------------------ */
+/* Public reduce over an arrangement (arrangement.rs reduce_core,       */
+/* reduce_abelian): forwarders to the internal entry points.           */
+/* ------------------------------------------------------------------ */
+
+/* The user reduce-core logic plus its context. */
+typedef struct user_reduce_core {
+	dtfl_reduce_core_fn fn;
+	void *ctx;
+	void (*ctx_free)(void *);
+} user_reduce_core;
+
+/* Adapter: present the engine's arrays to the user reduce-core fn. */
+static void
+user_reduce_core_logic(void *vctx, const void *key, size_t klen, size_t n,
+    const void *const *in_vals, const size_t *in_vlens, const void *in_diffs,
+    size_t m, const void *const *out_vals, const size_t *out_vlens,
+    const void *out_diffs, __dtfl_reduce_change *ch)
+{
+	user_reduce_core *u = vctx;
+	dtfl_reduce_emit e;
+
+	e.ch = ch;
+	u->fn(u->ctx, key, klen, n, in_vals, in_vlens, in_diffs, m, out_vals,
+	    out_vlens, out_diffs, &e);
+}
+
+static void
+user_reduce_core_free(void *vctx)
+{
+	user_reduce_core *u = vctx;
+
+	if (u->ctx_free != NULL)
+		u->ctx_free(u->ctx);
+	__dtfl_free(u);
+}
+
+dtfl_arranged *
+dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
+    const dtfl_type *out_val, const dtfl_diff *out_diff,
+    dtfl_reduce_core_fn logic, dtfl_ctx ctx)
+{
+	user_reduce_core *u = __dtfl_alloc(sizeof *u);
+
+	u->fn = logic;
+	u->ctx = ctx.ptr;
+	u->ctx_free = ctx.free;
+	return __dtfl_arranged_reduce_core(a, name, out_val, out_diff->cls,
+	    user_reduce_core_logic, u, user_reduce_core_free);
+}
+
+dtfl_arranged *
+dtfl_arranged_reduce_abelian(dtfl_arranged *a, const char *name,
+    const dtfl_type *out_val, const dtfl_diff *out_diff,
+    dtfl_reduce_core_fn logic, dtfl_ctx ctx)
+{
+	user_reduce_core *u = __dtfl_alloc(sizeof *u);
+
+	u->fn = logic;
+	u->ctx = ctx.ptr;
+	u->ctx_free = ctx.free;
+	return __dtfl_arranged_reduce_abelian(a, name, out_val, out_diff->cls,
+	    user_reduce_core_logic, u, user_reduce_core_free);
+}
+
+/* ------------------------------------------------------------------ */
 /* count: for each key, emit (key, summed_diff) with output diff one.   */
 /* ------------------------------------------------------------------ */
 
