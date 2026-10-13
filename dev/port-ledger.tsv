@@ -222,8 +222,8 @@ differential-dataflow	differential-dataflow/examples/stackoverflow.rs	124	exampl
 differential-dataflow	differential-dataflow/src/algorithms/graphs/bfs.rs	44	src/algo/bfs.c	P9	done	
 differential-dataflow	differential-dataflow/src/algorithms/graphs/bijkstra.rs	124	src/algo/bijkstra.c	P9	wip	ported, compiles; no end-to-end test on build
 differential-dataflow	differential-dataflow/src/algorithms/graphs/mod.rs	6	include/dtfl/algo.h	P9	done	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/propagate.rs	110	src/algo/propagate.c	P9	wip	ported; converges standalone, exercised via scc; no direct test yet
-differential-dataflow	differential-dataflow/src/algorithms/graphs/scc.rs	85	src/algo/scc.c	P9	wip	ported; nested label-propagation progress does not close for cycles >=3 nodes (engine hang in nested recursive scope); scc tests SKIP
+differential-dataflow	differential-dataflow/src/algorithms/graphs/propagate.rs	110	src/algo/propagate.c	P9	wip	ported; converges standalone and nested in a region (test_prop via test_nested_iterate body); diverges only when nested in an outer iterate (depth-3 Product), the engine nested-feedback bug tracked by test_nested_iterate
+differential-dataflow	differential-dataflow/src/algorithms/graphs/scc.rs	85	src/algo/scc.c	P9	wip	ported; blocked on the nested-iterate progress bug (test_nested_iterate): an inner feedback Variable nested in the outer scc iterate does not reach a fixed point on a cycle >=3 nodes; scc tests SKIP until that engine bug is fixed
 differential-dataflow	differential-dataflow/src/algorithms/graphs/sequential.rs	88	src/algo/sequential.c	P9	wip	ported, compiles; no end-to-end test on build
 differential-dataflow	differential-dataflow/src/algorithms/identifiers.rs	141	src/algo/identifiers.c	P9	done	
 differential-dataflow	differential-dataflow/src/algorithms/mod.rs	4	include/dtfl/algo.h	P9	done	

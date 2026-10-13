@@ -194,3 +194,9 @@ TESTS += tests/pbt/pbt_iterate
 tests_pbt_pbt_iterate_SOURCES = tests/pbt/pbt_iterate.c
 tests_pbt_pbt_iterate_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_iterate_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_nested_iterate
+TESTS += tests/unit/test_nested_iterate
+tests_unit_test_nested_iterate_SOURCES = tests/unit/test_nested_iterate.c
+tests_unit_test_nested_iterate_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_nested_iterate_LDADD = $(INTERNAL_LIBS)
