@@ -772,6 +772,10 @@ typedef struct cross_ctx {
 	unsigned to_depth;
 	size_t dw;
 	bool entering;			/* to_inner vs to_outer */
+	/* enter_at only: computes the initial inner time per record. */
+	dtfl_collection_enter_at_fn logic;
+	void *user;
+	void (*user_free)(void *);
 } cross_ctx;
 
 static bool
@@ -815,6 +819,15 @@ cross_logic(dtfl_op *op, void *vctx)
 			else
 				__dtfl_time_to_outer(c->from, c->to, src_buf,
 				    dst_buf);
+			/*
+			 * enter_at: the outer time refined by to_inner leaves the
+			 * inner coordinates at the minimum; replace them with the
+			 * logic's per-record initial inner time (Product::new(time,
+			 * initial(data))).
+			 */
+			if (c->logic != NULL)
+				c->logic(c->user, rec, rlen,
+				    dst_buf + c->from_depth);
 			if (to_tw != 0)
 				memcpy(dst + rlen, dst_buf, to_tw);
 			if (c->dw != 0)
@@ -833,6 +846,8 @@ cross_free(void *vctx)
 {
 	cross_ctx *c = vctx;
 
+	if (c->user_free != NULL)
+		c->user_free(c->user);
 	dtfl_time_class_free(c->from);
 	dtfl_time_class_free(c->to);
 	__dtfl_free(c);
@@ -840,7 +855,8 @@ cross_free(void *vctx)
 
 static dtfl_collection *
 cross_impl(dtfl_collection *c, dtfl_stream *crossed, dtfl_scope *to_scope,
-    bool entering, const char *name)
+    bool entering, const char *name, dtfl_collection_enter_at_fn logic,
+    dtfl_ctx ctx)
 {
 	const dtfl_time_class *to = dtfl_scope_time_class(to_scope);
 	const dtfl_time_class *from =
@@ -857,6 +873,9 @@ cross_impl(dtfl_collection *c, dtfl_stream *crossed, dtfl_scope *to_scope,
 	cc->to_depth = to_depth;
 	cc->dw = c->diff->cls->width;
 	cc->entering = entering;
+	cc->logic = logic;
+	cc->user = ctx.ptr;
+	cc->user_free = ctx.free;
 	ut = __dtfl_update_type(c->type, to_depth, cc->dw);
 	b = dtfl_op_builder_new(to_scope, name);
 	dtfl_op_builder_input(b, crossed, dtfl_pact_pipeline());
@@ -872,7 +891,22 @@ dtfl_collection_enter(dtfl_collection *c, dtfl_scope *child)
 {
 	dtfl_stream *inner = dtfl_stream_enter(c->stream, child);
 
-	return cross_impl(c, inner, child, true, "Enter");
+	return cross_impl(c, inner, child, true, "Enter", NULL, DTFL_NOCTX);
+}
+
+/*
+ * enter_at (Collection::enter_at): enter the child scope, then set each
+ * update's inner coordinate to the logic's per-record initial time, so
+ * the record appears at Product::new(outer_time, initial(data)) in the
+ * child.  The child must directly refine the collection's scope.
+ */
+dtfl_collection *
+dtfl_collection_enter_at(dtfl_collection *c, dtfl_scope *child,
+    dtfl_collection_enter_at_fn logic, dtfl_ctx ctx)
+{
+	dtfl_stream *inner = dtfl_stream_enter(c->stream, child);
+
+	return cross_impl(c, inner, child, true, "EnterAt", logic, ctx);
 }
 
 dtfl_collection *
@@ -882,7 +916,8 @@ dtfl_collection_leave(dtfl_collection *c)
 	    dtfl_scope_parent(dtfl_stream_scope(c->stream));
 	dtfl_stream *outer = dtfl_stream_leave(c->stream);
 
-	return cross_impl(c, outer, outer_scope, false, "Leave");
+	return cross_impl(c, outer, outer_scope, false, "Leave", NULL,
+	    DTFL_NOCTX);
 }
 
 /* ------------------------------------------------------------------ */
