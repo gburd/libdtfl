@@ -11,6 +11,7 @@
 
 #include "dtfl/ddir.h"
 #include "ddir/ddir_int.h"
+#include "ddir/parse_int.h"
 #include "base/base_int.h"
 
 #include <string.h>
@@ -151,12 +152,88 @@ DTFL_TEST(ddir__eval_proj)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Parser                                                              */
+/* ------------------------------------------------------------------ */
+
+/* A small pipe program parses to the expected statement shape. */
+DTFL_TEST(ddir__parse_pipe_basic)
+{
+	const char *src =
+	    "let edges = input 0 | key($0[0] ; $0[1]);\n"
+	    "export \"result\" = edges;\n";
+	dd_vec stmts = { 0 };
+	dd_parse_ctx pc;
+	dd_stmt *s0, *s1;
+
+	(void)params; (void)data;
+	assert_true(dd_parse_pipe(src, &stmts, &pc));
+	assert_size(stmts.len, ==, 2);
+	s0 = stmts.data[0];
+	s1 = stmts.data[1];
+	assert_int(s0->kind, ==, DD_S_LET);
+	assert_string_equal(s0->name, "edges");
+	/* edges = Map(Input 0, proj) */
+	assert_int(s0->expr->kind, ==, DD_E_MAP);
+	assert_int(s0->expr->u.map.e->kind, ==, DD_E_INPUT);
+	assert_int(s1->kind, ==, DD_S_EXPORT);
+	assert_string_equal(s1->name, "result");
+	__dtfl_free(stmts.data);
+	dd_arena_free_all(&pc);
+	return MUNIT_OK;
+}
+
+/* The same program in applicative syntax parses to the same shape. */
+DTFL_TEST(ddir__parse_applicative_basic)
+{
+	const char *src =
+	    "let edges = MAP(INPUT 0, ($0[0] ; $0[1]));\n"
+	    "export \"result\" = JOIN(edges, edges, ($1 ;));\n";
+	dd_vec stmts = { 0 };
+	dd_parse_ctx pc;
+	dd_stmt *s1;
+
+	(void)params; (void)data;
+	assert_true(dd_parse_applicative(src, &stmts, &pc));
+	assert_size(stmts.len, ==, 2);
+	s1 = stmts.data[1];
+	assert_int(s1->kind, ==, DD_S_EXPORT);
+	assert_int(s1->expr->kind, ==, DD_E_JOIN);
+	__dtfl_free(stmts.data);
+	dd_arena_free_all(&pc);
+	return MUNIT_OK;
+}
+
+/* A malformed program returns an error, not a crash, with a message. */
+DTFL_TEST(ddir__parse_error_no_crash)
+{
+	dd_vec stmts = { 0 };
+	dd_parse_ctx pc;
+
+	(void)params; (void)data;
+	/* missing semicolon / RHS */
+	assert_false(dd_parse_pipe("let x = ;", &stmts, &pc));
+	assert_true(pc.error);
+	assert_size(strlen(pc.msg), >, 0);
+	/* unknown builtin in a term */
+	assert_false(dd_parse_pipe("let x = input 0 | filter(bogus(1));",
+	    &stmts, &pc));
+	assert_true(pc.error);
+	/* unterminated string */
+	assert_false(dd_parse_pipe("export \"oops = input 0;", &stmts, &pc));
+	assert_true(pc.error);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ddir__value_cmp),
 	DTFL_T(ddir__value_clone_roundtrip),
 	DTFL_T(ddir__eval_arith),
 	DTFL_T(ddir__eval_if),
 	DTFL_T(ddir__eval_proj),
+	DTFL_T(ddir__parse_pipe_basic),
+	DTFL_T(ddir__parse_applicative_basic),
+	DTFL_T(ddir__parse_error_no_crash),
 	DTFL_T_END
 };
 

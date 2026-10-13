@@ -8,7 +8,11 @@
 
 ddir_sources = \
 	src/ddir/ddir_int.h \
-	src/ddir/ir.c
+	src/ddir/parse_int.h \
+	src/ddir/ir.c \
+	src/ddir/parse.c \
+	src/ddir/parse_pipe.c \
+	src/ddir/parse_applicative.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
 libdtfl_internal_la_SOURCES += $(ddir_sources)
