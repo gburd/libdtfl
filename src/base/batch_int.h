@@ -97,9 +97,29 @@ typedef struct __dtfl_batch {
 	__dtfl_vec diffs;	/* bytes; dw per record */
 	unsigned tw;
 	unsigned dw;
+	/*
+	 * Optional per-record ownership hooks for arenas whose records are
+	 * owning pointers (the batch-pointer streams, where each record is a
+	 * retained __dtfl_batch_ord *).  drop releases one reference to the
+	 * record's referent; retain adds one.  NULL for plain record arenas,
+	 * where records are inert bytes.  Set once at arena creation; a copy
+	 * (copy-on-write) carries them and retains each record so both arenas
+	 * own a reference.  release runs drop on every record before freeing,
+	 * so an arena that is never consumed still frees what its records own
+	 * (upstream's message is Vec<Rc<Batch>>, dropped with the message).
+	 */
+	void (*elem_drop)(void *rec);
+	void (*elem_retain)(void *rec);
 } __dtfl_batch;
 
 __dtfl_batch *__dtfl_batch_new(unsigned time_words, unsigned diff_bytes);
+/*
+ * Marks an arena as holding owning record pointers: release runs `drop`
+ * on each record (and clear/make_mut keep the invariant), `retain` is run
+ * on each record of a copy.  Both take a pointer to the record bytes.
+ */
+void __dtfl_batch_set_elem_hooks(__dtfl_batch *b, void (*drop)(void *rec),
+    void (*retain)(void *rec));
 __dtfl_batch *__dtfl_batch_retain(__dtfl_batch *b);
 void __dtfl_batch_release(__dtfl_batch *b);
 /* Returns b if uniquely held, otherwise releases b and returns a copy. */

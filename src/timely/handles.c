@@ -160,6 +160,9 @@ struct dtfl_session {
 	uint64_t time[DTFL_TIME_MAX];
 	__dtfl_batch *buffer;		/* records at `time`; owned */
 	size_t cap_bytes;		/* flush threshold */
+	/* Owning-record hooks propagated to every flushed buffer (NULL off). */
+	void (*elem_drop)(void *rec);
+	void (*elem_retain)(void *rec);
 };
 
 dtfl_session *
@@ -178,7 +181,25 @@ dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
 	__dtfl_time_copy(o->tc, s->time, dtfl_cap_time(cap));
 	s->buffer = __dtfl_batch_new(0, 0);
 	s->cap_bytes = DTFL_BUFFER_SIZE_BYTES;
+	s->elem_drop = NULL;
+	s->elem_retain = NULL;
 	return s;
+}
+
+/*
+ * Marks this session's output as carrying owning record pointers: every
+ * buffer the session flushes releases each record on free, so a batch
+ * pointer sent downstream owns a reference regardless of whether a
+ * consumer ever reads it (the batch-pointer streams; upstream's message is
+ * a Vec<Rc<Batch>> dropped with the message).
+ */
+void
+__dtfl_session_set_batch_ptr_hooks(dtfl_session *s, void (*drop)(void *rec),
+    void (*retain)(void *rec))
+{
+	s->elem_drop = drop;
+	s->elem_retain = retain;
+	__dtfl_batch_set_elem_hooks(s->buffer, drop, retain);
 }
 
 static void
@@ -188,6 +209,9 @@ session_flush(dtfl_session *s)
 		return;
 	__dtfl_output_give(s->out, s->time, s->buffer);	/* consumes buffer */
 	s->buffer = __dtfl_batch_new(0, 0);
+	if (s->elem_drop != NULL || s->elem_retain != NULL)
+		__dtfl_batch_set_elem_hooks(s->buffer, s->elem_drop,
+		    s->elem_retain);
 }
 
 void

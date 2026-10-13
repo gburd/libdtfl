@@ -171,6 +171,15 @@ void __dtfl_output_done(dtfl_output *o);
  */
 void *__dtfl_session_reserve(dtfl_session *s, size_t len);
 
+/*
+ * Mark this session's records as owning pointers (the batch-pointer
+ * streams): every buffer the session flushes runs `drop` on each record
+ * when it frees and `retain` on each record of a copy, so a batch sent
+ * downstream owns a reference whether or not a consumer reads it.
+ */
+void __dtfl_session_set_batch_ptr_hooks(dtfl_session *s,
+    void (*drop)(void *rec), void (*retain)(void *rec));
+
 /* ------------------------------------------------------------------ */
 /* Pact (channels/pact.rs)                                             */
 /* ------------------------------------------------------------------ */
