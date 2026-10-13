@@ -163,6 +163,40 @@ void __dtfl_worker_log_messages(__dtfl_worker *w, bool is_send, size_t channel,
 void __dtfl_worker_log_text(__dtfl_worker *w, const char *text);
 
 /*
+ * Communication event logging (src/comm/comm_log.c).  Each is a no-op
+ * when no "communication" logger is registered.  Events are encoded as
+ * bincode CommunicationEvent values (PLAN D9).  The data-plane loops do
+ * not call these yet (see comm_log.c); they are the encoder behind the
+ * subscriber API's "communication" stream.
+ */
+struct __dtfl_message_header;
+void __dtfl_worker_log_comm_message(__dtfl_worker *w, bool is_send,
+    const struct __dtfl_message_header *h);
+void __dtfl_worker_log_comm_state(__dtfl_worker *w, bool send, size_t process,
+    size_t remote, bool start);
+void __dtfl_worker_log_comm_setup(__dtfl_worker *w, bool sender, size_t process,
+    bool has_remote, size_t remote);
+
+/*
+ * Differential event logging (src/dd/dd_log.c).  Each is a no-op when no
+ * "differential/arrange" logger is registered.  Events are encoded as
+ * bincode DifferentialEvent values (PLAN D9).  The spine and batcher do
+ * not call these yet (see dd_log.c); they are the encoder behind the
+ * subscriber API's "differential/arrange" stream.
+ */
+void __dtfl_worker_log_dd_batch(__dtfl_worker *w, size_t op, size_t length);
+void __dtfl_worker_log_dd_merge(__dtfl_worker *w, size_t op, size_t scale,
+    size_t length1, size_t length2, bool has_complete, size_t complete);
+void __dtfl_worker_log_dd_drop(__dtfl_worker *w, size_t op, size_t length);
+void __dtfl_worker_log_dd_merge_shortfall(__dtfl_worker *w, size_t op,
+    size_t scale, size_t shortfall);
+void __dtfl_worker_log_dd_trace_share(__dtfl_worker *w, size_t op,
+    int64_t diff);
+void __dtfl_worker_log_dd_batcher(__dtfl_worker *w, size_t op,
+    int64_t records_diff, int64_t size_diff, int64_t capacity_diff,
+    int64_t allocations_diff);
+
+/*
  * Installs a built top-level operator as dataflow `index` (worker.rs
  * dataflow_core after func returns): logs OperatesEvent, initializes,
  * wraps, records the channels allocated since the last install.

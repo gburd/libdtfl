@@ -37,7 +37,8 @@ dd_sources = \
 	src/dd/trace/wrap_frontier.c \
 	src/dd/trace/wrap_enter.c \
 	src/dd/trace/wrap_enter_at.c \
-	src/dd/trace/trace.c
+	src/dd/trace/trace.c \
+	src/dd/dd_log.c
 
 libdtfl_la_SOURCES += $(dd_sources)
 libdtfl_internal_la_SOURCES += $(dd_sources)

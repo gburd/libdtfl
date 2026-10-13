@@ -14,6 +14,7 @@ comm_sources = \
 	src/comm/alloc_thread.c \
 	src/comm/allocator.c \
 	src/comm/buzzer.c \
+	src/comm/comm_log.c \
 	src/comm/config.c \
 	src/comm/initialize.c \
 	src/comm/queue.c
