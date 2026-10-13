@@ -361,7 +361,7 @@ differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	
 differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	todo	
 differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	todo	
 differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	todo	
-differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	todo	
+differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	wip	
 differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	todo	
 differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	todo	
 differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	todo	

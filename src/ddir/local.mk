@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+# src/ddir: the Differential Dataflow Intermediate Representation (DDIR).
+# A small language for building differential dataflows at runtime: a text
+# program parses to an AST, lowers to a scope-tree IR, and renders into a
+# live differential dataflow via the vec backend.  Ported from the
+# differential-dataflow `interactive` crate (P13 core: ir, parse, scope_ir,
+# lower, backend, public entry; server/explain/tool are a follow-up).
+
+ddir_sources = \
+	src/ddir/ddir_int.h \
+	src/ddir/ir.c
+
+libdtfl_la_SOURCES += $(ddir_sources)
+libdtfl_internal_la_SOURCES += $(ddir_sources)
+dtflinclude_HEADERS += include/dtfl/ddir.h
+EXTRA_DIST += src/ddir/exports.sym
+
+dist_man_MANS += man/man3/dtfl_ddir_parse.3
+
+check_PROGRAMS += tests/unit/test_ddir
+TESTS += tests/unit/test_ddir
+tests_unit_test_ddir_SOURCES = tests/unit/test_ddir.c
+tests_unit_test_ddir_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_ddir_LDADD = $(INTERNAL_LIBS)
