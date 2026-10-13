@@ -197,23 +197,32 @@ __dtfl_merger_ord_new(__dtfl_merger_ord *m, __dtfl_batch_ord *src1,
 	__dtfl_antichain lower, upper, since;
 	const __dtfl_antichain *s1 = __dtfl_description_since(&src1->description);
 	const __dtfl_antichain *s2 = __dtfl_description_since(&src2->description);
-	size_t i;
 
 	DTFL_ASSERT(__dtfl_antichain_eq(__dtfl_batch_ord_upper(src1),
 	    __dtfl_batch_ord_lower(src2)));
 
-	/* since = s1 join s2 join compaction_frontier. */
+	/*
+	 * since = s1.join(s2).join(compaction_frontier) (lattice.rs
+	 * Lattice::join for Antichain: the antichain of the pairwise joins of
+	 * every element of one with every element of the other, inserted so
+	 * the result stays an antichain).  Join against the whole
+	 * compaction_frontier at once; folding its elements in one at a time
+	 * would collapse a multi-element frontier to a single joined time
+	 * (e.g. {((0,0),3),((0,1),1)} would become {((0,1),3)}), advancing
+	 * edit times to the wrong place.
+	 */
 	__dtfl_antichain_init(&since, src1->tc);
-	__dtfl_antichain_join_into(src1->tc, __dtfl_antichain_at(s1, 0),
-	    __dtfl_antichain_len(s1), __dtfl_antichain_at(s2, 0),
+	__dtfl_antichain_join_into(src1->tc, __dtfl_ac_base(s1),
+	    __dtfl_antichain_len(s1), __dtfl_ac_base(s2),
 	    __dtfl_antichain_len(s2), &since);
-	for (i = 0; i < __dtfl_antichain_len(compaction_frontier); i++) {
+	{
 		__dtfl_antichain joined;
 
 		__dtfl_antichain_init(&joined, src1->tc);
-		__dtfl_antichain_join_into(src1->tc, __dtfl_antichain_at(&since,
-		    0), __dtfl_antichain_len(&since),
-		    __dtfl_antichain_at(compaction_frontier, i), 1, &joined);
+		__dtfl_antichain_join_into(src1->tc,
+		    __dtfl_ac_base(&since), __dtfl_antichain_len(&since),
+		    __dtfl_ac_base(compaction_frontier),
+		    __dtfl_antichain_len(compaction_frontier), &joined);
 		__dtfl_antichain_free(&since);
 		since = joined;
 	}
@@ -260,7 +269,7 @@ stash_updates(__dtfl_merger_ord *m, const __dtfl_ord_storage *src, size_t index)
 		if (tw != 0)
 			memcpy(t, __dtfl_upds_time(&src->upds, i),
 			    (size_t)tw * sizeof(uint64_t));
-		__dtfl_time_advance_by(m->tc, t, __dtfl_antichain_at(since, 0),
+		__dtfl_time_advance_by(m->tc, t, __dtfl_ac_base(since),
 		    __dtfl_antichain_len(since));
 		__dtfl_upds_builder_push(&m->staging, t,
 		    __dtfl_upds_diff(&src->upds, i));

@@ -5,7 +5,9 @@
 .Sh NAME
 .Nm dtfl_algo_bfs ,
 .Nm dtfl_algo_scc ,
+.Nm dtfl_algo_scc_at ,
 .Nm dtfl_algo_propagate ,
+.Nm dtfl_algo_propagate_at ,
 .Nm dtfl_algo_sequence ,
 .Nm dtfl_algo_bidijkstra ,
 .Nm dtfl_algo_identifiers ,
@@ -21,7 +23,11 @@ Timely and differential dataflow library
 .Ft dtfl_collection *
 .Fn dtfl_algo_scc "dtfl_collection *graph"
 .Ft dtfl_collection *
+.Fn dtfl_algo_scc_at "dtfl_collection *graph" "dtfl_algo_label_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
 .Fn dtfl_algo_propagate "dtfl_collection *edges" "dtfl_collection *nodes"
+.Ft dtfl_collection *
+.Fn dtfl_algo_propagate_at "dtfl_collection *edges" "dtfl_collection *nodes" "dtfl_algo_label_fn logic" "dtfl_ctx ctx"
 .Ft dtfl_collection *
 .Fn dtfl_algo_sequence "dtfl_collection *state" "dtfl_collection *edges" "dtfl_algo_sequence_fn logic" "dtfl_ctx ctx"
 .Ft dtfl_collection *
@@ -83,6 +89,25 @@ each round, once by forward label propagation and once on the transposed
 graph; an edge survives a trim when both endpoints carry the same minimum
 label.
 .Pp
+.Fn dtfl_algo_scc_at
+is the prioritized variant
+.Pq strongly_connected_at :
+.Fa logic
+maps a node to a priority bucket in
+.Bq 0 , 64 ,
+and node labels are introduced in log-bucketed rounds through
+.Xr dtfl_collection_enter_at 3 ,
+so smaller labels can finish propagating before larger ones are
+introduced.
+The result equals
+.Fn dtfl_algo_scc Ns 's ;
+the prioritization only reorders the work.
+A
+.Fa logic
+that returns zero for every node reproduces
+.Fn dtfl_algo_scc
+.Pq a zero delay is a plain enter .
+.Pp
 .Fn dtfl_algo_propagate
 assigns each node the minimum label reachable along directed edges.
 .Fa edges
@@ -96,6 +121,17 @@ records; the result has the same labelled-node layout.
 It builds a monotonic iteration variable seeded empty, concatenates the
 nodes, keeps the minimum label per node with a reduce, and flows labels
 forward along the edges until a fixed point.
+.Pp
+.Fn dtfl_algo_propagate_at
+is the prioritized variant
+.Pq propagate_at :
+.Fa logic
+maps a label to a priority bucket in
+.Bq 0 , 64 ,
+and labels enter the iteration in log-bucketed rounds through
+.Xr dtfl_collection_enter_at 3 .
+The result equals
+.Fn dtfl_algo_propagate Ns 's .
 .Pp
 .Fn dtfl_algo_sequence
 applies

@@ -206,25 +206,6 @@ DTFL_TEST(nested_iterate__three_cycle_terminates)
 
 	(void)params; (void)data;
 
-	/*
-	 * SKIP: a nested iterative subscope (an inner feedback Variable
-	 * inside an outer iterate) does not reach a fixed point on a
-	 * directed cycle of three or more nodes.  Standalone propagate and a
-	 * propagate nested in a region (same time depth) both converge; a
-	 * propagate nested in an outer iterate (which adds a loop coordinate,
-	 * giving a depth-3 Product<Product<outer, u64>, u64> time) does not.
-	 * The inner feedback loop coordinate climbs without bound at a fixed
-	 * outer-loop coordinate: the inner Reduce holds capabilities at
-	 * advancing innermost-coordinate times that never drain, so
-	 * dtfl_worker_step keeps returning true and the probe never reports
-	 * done.  The loop-step summary, results_in and to_inner are verified
-	 * correct at depth 3, so the fault is in the nested feedback's
-	 * progress/convergence, not the summary math.  This blocks scc
-	 * (scc__scc_* and scc__scc_at_*).  Remove this skip once the
-	 * nested-iterate progress closes; the body below is the regression.
-	 */
-	return MUNIT_SKIP;
-
 	w = dtfl_worker_new_standalone();
 	tc = dtfl_time_u64();
 	r = dtfl_diff_i64();
