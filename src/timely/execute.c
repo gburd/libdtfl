@@ -38,6 +38,7 @@ typedef struct worker_start {
 	dtfl_worker_fn fn;
 	void *ctx;
 	size_t index;
+	const dtfl_config *cfg;	/* borrowed; for log subscriptions */
 } worker_start;
 
 /*
@@ -53,6 +54,8 @@ run_worker(worker_start *ws)
 
 	pub.w = __dtfl_worker_new(a, ws->mode, true, NULL, NULL);
 	pub.standalone = false;
+	if (ws->cfg != NULL)
+		__dtfl_worker_install_log_subs(pub.w, ws->cfg);
 	ws->fn(&pub, ws->ctx);
 	while (pub.w->dataflows.len > 0)
 		(void)__dtfl_worker_step_or_park(pub.w, UINT64_MAX);
@@ -94,6 +97,7 @@ dtfl_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx,
 		g->starts[i].fn = fn;
 		g->starts[i].ctx = ctx;
 		g->starts[i].index = i;
+		g->starts[i].cfg = cfg;
 	}
 	__dtfl_free(builders);
 	if (n == 1 && dtfl_config_mode(cfg) == DTFL_COMM_THREAD && guards_out == NULL) {
@@ -267,6 +271,7 @@ __dtfl_sim_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx)
 		sim = __dtfl_sim_of(a);
 		ws[i].pub.w = __dtfl_worker_new(a, dtfl_config_progress_mode(cfg), true,
 		    sim_clock_fn, sim);
+		__dtfl_worker_install_log_subs(ws[i].pub.w, cfg);
 	}
 	__dtfl_free(b);
 	/*

@@ -151,7 +151,9 @@ timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	work
 timely-dataflow	timely/src/dataflow/stream.rs	134	src/timely/stream.c	P4	done	
 timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	todo	
 timely-dataflow	timely/src/lib.rs	177	include/dtfl/timely.h	P3	todo	
-timely-dataflow	timely/src/logging.rs	269	src/timely/timely_log.c	P3	todo	subgraph.rs needs the logger types
+timely-dataflow	timely/src/logging.rs	269	src/timely/timely_log.c	P3	done	TimelyEvent encoder (byte-identical to Rust bincode, tests/interop/test_log_stream.c) plus the fixint-LE readers behind the public subscriber decoder (src/timely/log.c).
+timely-dataflow	timely/src/logging.rs	269	include/dtfl/log.h	P11	done	public structured-logging subscriber API: dtfl_worker_log_subscribe / dtfl_config_log_subscribe and the dtfl_log_batch accessors (the C form of worker.log_register().insert_logger with decoded batches); covers TimelyEvent, DifferentialEvent and CommunicationEvent variants.
+timely-dataflow	timely/src/logging.rs	269	src/timely/log.c	P11	done	the subscriber glue and the fixint-LE decoder (inverse of timely_log.c / dd_log.c / comm_log.c); routes the worker's loggers to registered subscribers and decodes each record into dtfl_log_batch; prerequisite for P11 diagnostics.
 timely-dataflow	timely/src/order.rs	263	src/progress/time.c	P1	done	coordinate-vector times (D3)
 timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P3	todo	
 timely-dataflow	timely/src/progress/change_batch.rs	321	src/progress/change_batch.c	P1	done	

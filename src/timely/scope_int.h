@@ -43,6 +43,13 @@ void __dtfl_scope_add_edge(dtfl_scope *s, __dtfl_location source,
 int __dtfl_worker_dataflow(__dtfl_worker *w, dtfl_worker *pub, const char *name,
     const dtfl_time_class *tc, dtfl_build_fn build, void *ctx);
 
+/*
+ * Installs every subscriber recorded on cfg (dtfl_config_log_subscribe)
+ * onto a freshly started worker; a no-op if the worker has no registry
+ * or cfg has no subscriptions.  Defined in src/timely/log.c.
+ */
+void __dtfl_worker_install_log_subs(__dtfl_worker *w, const dtfl_config *cfg);
+
 /* The simulation runtime (execute.c). */
 int __dtfl_sim_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx);
 

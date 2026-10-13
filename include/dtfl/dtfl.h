@@ -9,6 +9,7 @@
 
 #include "dtfl/base.h"
 #include "dtfl/config.h"
+#include "dtfl/log.h"
 #include "dtfl/record.h"
 #include "dtfl/time.h"
 
