@@ -70,6 +70,8 @@ run dd compact compact.expected cat
 run dd stackoverflow stackoverflow.expected sort
 run dd hello hello.expected sort
 run dd accumulate accumulate.expected sort
+run dd interpreted interpreted.expected sort
+run dd itembased_cf itembased_cf.expected sort
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
 run dogs dogsdogsdogs dogsdogsdogs.expected sort
 
