@@ -925,12 +925,12 @@ DTFL_TEST(comm_initialize_modes)
 		dtfl_comm_mode mode;
 		size_t threads, want;
 		int rc;
+		bool rendezvous;	/* build blocks for peers (one thread) */
 	} cases[] = {
-		{ DTFL_COMM_THREAD, 4, 1, 0 },
-		{ DTFL_COMM_PROCESS, 3, 3, 0 },
-		{ DTFL_COMM_SIM, 5, 5, 0 },
-		{ DTFL_COMM_PROCESS_BINARY, 2, 0, DTFL_ENOTSUP },
-		{ DTFL_COMM_CLUSTER, 2, 0, DTFL_ENOTSUP },
+		{ DTFL_COMM_THREAD, 4, 1, 0, false },
+		{ DTFL_COMM_PROCESS, 3, 3, 0, false },
+		{ DTFL_COMM_SIM, 5, 5, 0, false },
+		{ DTFL_COMM_PROCESS_BINARY, 2, 2, 0, true },
 	};
 	size_t k;
 
@@ -946,6 +946,18 @@ DTFL_TEST(comm_initialize_modes)
 			continue;
 		}
 		assert_size(n, ==, cases[k].want);
+		if (cases[k].rendezvous) {
+			/*
+			 * ProcessBinary builders rendezvous during build, so
+			 * building them one at a time on this thread would
+			 * deadlock; the exchange tests build them on separate
+			 * threads.  Here just destroy them unbuilt.
+			 */
+			for (i = 0; i < n; i++)
+				b[i]->destroy(b[i]);
+			__dtfl_free(b);
+			continue;
+		}
 		for (i = 0; i < n; i++) {
 			__dtfl_allocator *a = __dtfl_allocator_build(b[i]);
 

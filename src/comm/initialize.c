@@ -17,6 +17,45 @@
 #include "comm/init_int.h"
 #include "comm/sim_int.h"
 
+/*
+ * Cluster { } (initialize.rs): -n > 1 with a host list.  Build one
+ * typed Process builder per local worker, resolve the mesh of sockets,
+ * and wrap them in TcpBuilders with the send/recv threads started.
+ * Intra-process peers stay on the Process allocator under the TCP
+ * layer.
+ */
+static int
+cluster_initialize(const dtfl_config *cfg, size_t threads,
+    __dtfl_allocator_builder ***builders, size_t *nbuilders,
+    __dtfl_comms_guard **guard)
+{
+	size_t processes = dtfl_config_processes(cfg);
+	size_t my_index = dtfl_config_process(cfg);
+	__dtfl_allocator_builder **inner;
+	char **addresses;
+	int *fds = NULL;
+	size_t i;
+	int rc;
+
+	/* The host list, as a plain array for create_sockets. */
+	addresses = __dtfl_calloc(processes, sizeof *addresses);
+	for (i = 0; i < processes; i++)
+		addresses[i] = (char *)dtfl_config_address(cfg, i);
+	rc = __dtfl_create_sockets(addresses, processes, my_index, &fds);
+	__dtfl_free(addresses);
+	if (rc != 0)
+		return rc;
+
+	inner = __dtfl_calloc(threads, sizeof *inner);
+	__dtfl_process_builders(threads, inner);
+	rc = __dtfl_tcp_initialize(inner, threads, my_index, processes, fds,
+	    builders, guard);
+	if (rc != 0)
+		return rc;
+	*nbuilders = threads;
+	return 0;
+}
+
 int
 __dtfl_comm_initialize(const dtfl_config *cfg,
     __dtfl_allocator_builder ***builders, size_t *nbuilders,
@@ -38,12 +77,17 @@ __dtfl_comm_initialize(const dtfl_config *cfg,
 		b = __dtfl_calloc(threads, sizeof *b);
 		__dtfl_process_builders(threads, b);
 		break;
+	case DTFL_COMM_PROCESS_BINARY:
+		b = __dtfl_calloc(threads, sizeof *b);
+		__dtfl_process_binary_builders(threads, b);
+		break;
 	case DTFL_COMM_SIM:
 		b = __dtfl_calloc(threads, sizeof *b);
 		__dtfl_sim_builders(threads, dtfl_config_seed(cfg), b);
 		break;
-	case DTFL_COMM_PROCESS_BINARY:
 	case DTFL_COMM_CLUSTER:
+		return cluster_initialize(cfg, threads, builders, nbuilders,
+		    guard);
 	default:
 		return __dtfl_err(DTFL_ENOTSUP, "communication mode %d is not "
 		    "implemented yet", (int)dtfl_config_mode(cfg));
@@ -51,11 +95,4 @@ __dtfl_comm_initialize(const dtfl_config *cfg,
 	*builders = b;
 	*nbuilders = threads;
 	return 0;
-}
-
-void
-__dtfl_comms_guard_join(__dtfl_comms_guard *guard)
-{
-	/* No mode builds network threads yet, so there is never a guard. */
-	DTFL_ASSERT(guard == NULL);
 }

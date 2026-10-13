@@ -164,6 +164,7 @@ __dtfl_zc_pusher_new(const __dtfl_message_header *header,
 
 typedef struct zc_puller {
 	__dtfl_pull base;
+	__dtfl_pull *inner;		/* process-local typed puller or NULL */
 	__dtfl_bytes_fifo *receiver;	/* one reference */
 	const __dtfl_msg_class *mc;
 	size_t index;			/* channel identifier */
@@ -174,8 +175,10 @@ typedef struct zc_puller {
 
 /*
  * Pull::pull: the next decoded message (owned by the caller) or NULL.
- * When the FIFO runs dry after delivering messages, the channel is
- * reported to the worker's events (counters.rs).
+ * A PullerInner (inner != NULL) pulls from the process-local typed
+ * puller first, and only falls back to the inter-process FIFO when it
+ * is empty.  When a pull comes back empty after delivering messages,
+ * the channel is reported to the worker's events (counters.rs).
  */
 static void *
 zc_puller_pull(__dtfl_pull *pp)
@@ -184,6 +187,13 @@ zc_puller_pull(__dtfl_pull *pp)
 	__dtfl_bytes b;
 	void *msg;
 
+	if (p->inner != NULL) {
+		msg = __dtfl_pull_recv(p->inner);
+		if (msg != NULL) {
+			p->count++;
+			return msg;
+		}
+	}
 	if (!__dtfl_bytes_fifo_pop(p->receiver, &b)) {
 		if (p->count != 0) {
 			__dtfl_events_push(p->events, p->index);
@@ -208,6 +218,8 @@ zc_puller_destroy(__dtfl_pull *pp)
 	zc_puller *p = (zc_puller *)pp;
 	__dtfl_zc_canaries *c = p->canaries;
 
+	if (p->inner != NULL)
+		__dtfl_pull_destroy(p->inner);
 	__dtfl_vec_push(&c->dropped, &p->index);
 	if (--c->rc == 0) {
 		__dtfl_vec_free(&c->dropped);
@@ -229,6 +241,30 @@ __dtfl_zc_puller_new(__dtfl_bytes_fifo *receiver, const __dtfl_msg_class *mc,
 	zc_puller *p = __dtfl_alloc(sizeof *p);
 
 	p->base.ops = &zc_puller_ops;
+	p->inner = NULL;
+	p->receiver = __dtfl_bytes_fifo_retain(receiver);
+	p->mc = mc;
+	p->index = identifier;
+	p->count = 0;
+	p->events = events;
+	canaries->rc++;
+	p->canaries = canaries;
+	return &p->base;
+}
+
+/*
+ * PullerInner::new wrapped in counters::Puller: takes ownership of
+ * `inner`, retains receiver and canaries.
+ */
+__dtfl_pull *
+__dtfl_zc_puller_inner_new(__dtfl_pull *inner, __dtfl_bytes_fifo *receiver,
+    const __dtfl_msg_class *mc, size_t identifier, __dtfl_events *events,
+    __dtfl_zc_canaries *canaries)
+{
+	zc_puller *p = __dtfl_alloc(sizeof *p);
+
+	p->base.ops = &zc_puller_ops;
+	p->inner = inner;
 	p->receiver = __dtfl_bytes_fifo_retain(receiver);
 	p->mc = mc;
 	p->index = identifier;
