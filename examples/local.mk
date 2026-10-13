@@ -221,3 +221,23 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/accumulate.expected \
 	examples/dd/interpreted.expected \
 	examples/dd/itembased_cf.expected
+
+# ----------------------------------------------------------------------
+# Diagnostics examples (P11).  smoke runs the full in-process path
+# (session + WebSocket server + Frame stream) over a map/probe
+# dataflow; scc-bench is a stub blocked on the scc ord_neu fix.
+# ----------------------------------------------------------------------
+DIAG_EXAMPLE_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+
+noinst_PROGRAMS += examples/diag/smoke examples/diag/scc-bench
+examples_diag_smoke_SOURCES = examples/diag/smoke.c
+examples_diag_smoke_CFLAGS = $(DIAG_EXAMPLE_CFLAGS)
+examples_diag_smoke_LDADD = libdtfl.la
+examples_diag_scc_bench_SOURCES = examples/diag/scc-bench.c
+examples_diag_scc_bench_CFLAGS = $(DIAG_EXAMPLE_CFLAGS)
+examples_diag_scc_bench_LDADD = libdtfl.la
+
+check_PROGRAMS += examples/diag/smoke
+dist_check_SCRIPTS += tests/dist/test_examples_diag.sh
+TESTS += tests/dist/test_examples_diag.sh
+EXTRA_DIST += examples/diag/smoke.expected

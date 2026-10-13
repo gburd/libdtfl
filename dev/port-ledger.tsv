@@ -191,8 +191,8 @@ differential-dataflow	advent_of_code_2017/src/bin/day_15.rs	46	-	-	excluded	not 
 differential-dataflow	advent_of_code_2017/src/bin/day_17.rs	42	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/lib.rs	0	-	-	excluded	not a workspace member upstream
 differential-dataflow	diagnostics/console/index.html	13	-	-	excluded	React frontend; works unmodified against the protocol-compatible server
-differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9)
-differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	todo	
+differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9), blocked on the scc ord_neu fix owned by another worker; examples/diag/scc-bench.c is a stub citing the blocker, the working diagnostics path is examples/diag/smoke.c.
+differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	done	ported: registers the diag session, starts the WebSocket server on worker 0 (127.0.0.1, D12), runs a bounded map/probe dataflow; runs under the smoke harness (tests/dist/test_examples_diag.sh).
 differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	done	shipped verbatim (ASCII, 3 em-dashes in comments converted); the C server speaks the same Frame protocol, consumed by applyBatch/rebuildState unmodified.
 differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	done	dtfl_diag_session_new/_free, dtfl_diag_server_start/_port/_stop, dtfl_diag_replay_fd/_fds; the session subscribes to the log streams and serves them, as lib.rs ties logging::register to server::Server::start.
 differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	done	the demux (construct_timely/construct_differential + update_to_json): decoded log batches reshaped into the live operator/channel/stat state and emitted as JsonUpdate diffs; the DD cross-join on client +1 is realized as a full-state snapshot replay on connect (src/diag/diag.c, ws_server.c).
