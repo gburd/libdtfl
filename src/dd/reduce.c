@@ -650,8 +650,9 @@ vh_replay_key(value_history *h, __dtfl_cursor_list *cl, const void *key,
 		size_t curklen;
 		const void *curkey = __dtfl_cursor_list_key(cl, &curklen);
 
-		/* Load only if the cursor landed exactly on `key`. */
-		if (curklen == klen && memcmp(curkey, key, klen) == 0) {
+		/* Load only if the cursor landed exactly on `key` (klen may be 0). */
+		if (curklen == klen && (klen == 0 ||
+		    memcmp(curkey, key, klen) == 0)) {
 			while (__dtfl_cursor_list_val_valid(cl)) {
 				size_t vlen;
 				const void *val = __dtfl_cursor_list_val(cl,
@@ -1209,7 +1210,8 @@ reduce_compute(replayer *r, const void *key, size_t klen, const timevec *times,
 							/* output_produced carries next_time. */
 							vtd_push(&r->output_produced, vi, next_time, d);
 							/* ship key || out_val into the capability buffer. */
-							memcpy(rec, key, klen);
+							if (klen != 0)
+								memcpy(rec, key, klen);
 							if (ovl != 0)
 								memcpy(rec + klen, ov, ovl);
 							__dtfl_slices_push(&outputs[idx].recs, rec, klen + ovl);
@@ -2433,7 +2435,8 @@ kv_concat(void *ctx, const void *key, size_t klen, const void *val,
 
 	(void)ctx;
 	rec = __dtfl_alloc(rl != 0 ? rl : 1);
-	memcpy(rec, key, klen);
+	if (klen != 0)
+		memcpy(rec, key, klen);
 	if (vlen != 0)
 		memcpy(rec + klen, val, vlen);
 	dtfl_arranged_emit_record(out, rec, rl);
