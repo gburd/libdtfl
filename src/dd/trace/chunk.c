@@ -169,6 +169,21 @@ batch_chunk(const __dtfl_chunk_batch *b, size_t i)
 	return *DTFL_VEC_AT(&b->chunks, __dtfl_chunk *, i);
 }
 
+bool
+__dtfl_chunk_is_graded_batch(const __dtfl_chunk_batch *b)
+{
+	size_t n = b->chunks.len, i;
+
+	for (i = 0; i < n; i++)
+		if (__dtfl_batch_len(batch_chunk(b, i)) > DTFL_CHUNK_TARGET)
+			return false;
+	for (i = 0; i + 1 < n; i++)
+		if (__dtfl_batch_len(batch_chunk(b, i)) +
+		    __dtfl_batch_len(batch_chunk(b, i + 1)) <= DTFL_CHUNK_TARGET)
+			return false;
+	return true;
+}
+
 /* ------------------------------------------------------------------ */
 /* ChunkBatchCursor (mod.rs).                                          */
 /* ------------------------------------------------------------------ */

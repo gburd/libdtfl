@@ -226,6 +226,9 @@ __dtfl_chunk_batch_is_empty(const __dtfl_chunk_batch *b)
 const __dtfl_antichain *__dtfl_chunk_batch_lower(const __dtfl_chunk_batch *b);
 const __dtfl_antichain *__dtfl_chunk_batch_upper(const __dtfl_chunk_batch *b);
 
+/* is_graded over a ChunkBatch's chunks (the same invariant, batch form). */
+bool __dtfl_chunk_is_graded_batch(const __dtfl_chunk_batch *b);
+
 /* ------------------------------------------------------------------ */
 /* ChunkBatchCursor: the straddle cursor over a ChunkBatch.             */
 /* ------------------------------------------------------------------ */
