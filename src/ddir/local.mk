@@ -21,15 +21,18 @@ ddir_sources = \
 	src/ddir/backend_vec.c \
 	src/ddir/explain.c \
 	src/ddir/explain_decouple.c \
+	src/ddir/server.c \
 	src/ddir/ddir.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
 libdtfl_internal_la_SOURCES += $(ddir_sources)
 dtflinclude_HEADERS += include/dtfl/ddir.h
+dtflinclude_HEADERS += include/dtfl/server.h
 EXTRA_DIST += src/ddir/exports.sym
 
 dist_man_MANS += man/man3/dtfl_ddir_parse.3
 dist_man_MANS += man/man3/dtfl_ddir_explain.3
+dist_man_MANS += man/man3/dtfl_ddir_server.3
 
 check_PROGRAMS += tests/unit/test_ddir
 TESTS += tests/unit/test_ddir

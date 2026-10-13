@@ -1,0 +1,145 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL_DDIR_SERVER 3
+.Os
+.Sh NAME
+.Nm dtfl_ddir_server_new ,
+.Nm dtfl_ddir_server_free ,
+.Nm dtfl_ddir_server_epoch ,
+.Nm dtfl_ddir_server_has_trace ,
+.Nm dtfl_ddir_server_install ,
+.Nm dtfl_ddir_server_feed ,
+.Nm dtfl_ddir_server_tick ,
+.Nm dtfl_ddir_server_drop ,
+.Nm dtfl_ddir_server_peek ,
+.Nm dtfl_ddir_server_list
+.Nd host interpreted DDIR programs that share results by name
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/server.h
+.Ft dtfl_ddir_server *
+.Fn dtfl_ddir_server_new "FILE *out"
+.Ft void
+.Fn dtfl_ddir_server_free "dtfl_ddir_server *s"
+.Ft uint64_t
+.Fn dtfl_ddir_server_epoch "const dtfl_ddir_server *s"
+.Ft bool
+.Fn dtfl_ddir_server_has_trace "const dtfl_ddir_server *s" "const char *name"
+.Ft int
+.Fn dtfl_ddir_server_install "dtfl_ddir_server *s" "const char *name" "const dtfl_ddir_program *program"
+.Ft int
+.Fn dtfl_ddir_server_feed "dtfl_ddir_server *s" "const char *prog" "size_t input" "const dtfl_ddir_value *key" "const dtfl_ddir_value *val" "bool has_time" "uint64_t time" "int64_t diff"
+.Ft void
+.Fn dtfl_ddir_server_tick "dtfl_ddir_server *s"
+.Ft int
+.Fn dtfl_ddir_server_drop "dtfl_ddir_server *s" "const char *name"
+.Ft int
+.Fn dtfl_ddir_server_peek "dtfl_ddir_server *s" "const char *trace" "const dtfl_ddir_value *key"
+.Ft void
+.Fn dtfl_ddir_server_list "const dtfl_ddir_server *s"
+.Sh DESCRIPTION
+A DDIR server hosts interpreted DDIR programs in one running computation
+and lets them share results by name.
+Programs are installed one at a time; each may import traces that other
+programs have exported, so a consumer maintains a computation
+incrementally over a producer's output.
+This is the interpreter-driven form of the old
+.Ql dd_server :
+.Dq install
+renders a DDIR program against a live registry, not a loaded shared
+object.
+.Pp
+.Fn dtfl_ddir_server_new
+creates a server with the host clock at epoch zero.
+The
+.Fn dtfl_ddir_server_peek
+and
+.Fn dtfl_ddir_server_list
+output and the command status lines are written to
+.Fa out ,
+or to standard output when
+.Fa out
+is
+.Dv NULL .
+.Fn dtfl_ddir_server_free
+releases the server and every program it holds.
+.Pp
+.Fn dtfl_ddir_server_install
+builds the dataflow of
+.Fa program
+under
+.Fa name ,
+wiring each root trace import to a registered trace and registering each
+export's trace for later imports.
+A trace import that names a recipe
+.Pq Ql random:nodes=N,edges=E , Ql iota:N , or Ql clock
+installs its generated source on demand; generated sources are
+content-addressed, so two importers of the same recipe share one source.
+The server keeps a private copy of
+.Fa program .
+.Pp
+.Fn dtfl_ddir_server_feed
+stages an update to positional input
+.Fa input
+of program
+.Fa prog :
+it adds
+.Fa key
+with value
+.Fa val
+.Pq or unit when Fa val No is Dv NULL
+at multiplicity
+.Fa diff ,
+at time
+.Fa time
+when
+.Fa has_time
+is set, otherwise at the current epoch.
+.Fn dtfl_ddir_server_tick
+closes the current epoch, advances every input, and runs to quiescence.
+.Fn dtfl_ddir_server_drop
+evicts a program, refusing (and changing nothing) if any trace it
+publishes still has a live importer.
+.Pp
+.Fn dtfl_ddir_server_peek
+prints the consolidated contents of a registered trace as of the current
+epoch, optionally restricted to one
+.Fa key .
+.Fn dtfl_ddir_server_list
+prints the registry: the epoch, the published traces with their importer
+counts, and the installed programs.
+.Sh RETURN VALUES
+.Fn dtfl_ddir_server_new
+returns a server, or
+.Dv NULL
+only through the panic hook on allocation failure.
+.Fn dtfl_ddir_server_install ,
+.Fn dtfl_ddir_server_feed ,
+.Fn dtfl_ddir_server_drop
+and
+.Fn dtfl_ddir_server_peek
+return zero on success or a
+.Dv DTFL_E Ns *
+code, with a message through
+.Xr dtfl_last_error_detail 3 .
+.Sh IMPLEMENTATION NOTES
+The upstream server is multi-worker, circulating commands to every worker
+through a timely
+.Vt Sequencer .
+This server runs a single in-process worker and dispatches every command
+on the calling thread, which replays the example sessions.
+It does not compact published traces
+.Pq the public trace handle has no compaction setter ,
+so a long run holds full history; results are unaffected.
+.Sh SEE ALSO
+.Xr dtfl-ddir 1 ,
+.Xr dtfl_ddir_parse 3
+.Sh STANDARDS
+Ported from the differential-dataflow
+.Ql interactive
+crate
+.Pq Pa interactive/src/server.rs
+at tag
+.Ql differential-dataflow-v0.25.1 .

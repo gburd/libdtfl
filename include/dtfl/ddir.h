@@ -79,6 +79,17 @@ DTFL_API int dtfl_ddir_value_cmp(const dtfl_ddir_value *a,
  */
 DTFL_API dtfl_ddir_value *dtfl_ddir_value_parse(const char *term);
 
+/*
+ * Render `v` in the upstream Value Debug form (Rust {:?}): Int(5),
+ * Tuple([Int(1), Int(2)]), Variant(2, Int(3)), List([]).  Writes a
+ * NUL-terminated string into `buf` of capacity `cap`, truncating if
+ * needed, and returns the number of bytes the full form would need
+ * (excluding the NUL), the way snprintf does.  `buf` may be NULL when
+ * `cap` is 0 to size a buffer first.
+ */
+DTFL_API size_t dtfl_ddir_value_format(const dtfl_ddir_value *v, char *buf,
+    size_t cap);
+
 /* ------------------------------------------------------------------ */
 /* Programs                                                            */
 /* ------------------------------------------------------------------ */

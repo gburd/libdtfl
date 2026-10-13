@@ -25,6 +25,15 @@
 int dd_render_program(const dtfl_ddir_program *p, dtfl_scope *scope,
     dtfl_collection *const *inputs, size_t n_inputs, dtfl_collection **exports);
 
+/* Render the program's root scope into `scope`, binding each root import to
+ * the matching entry of `import_cols` (one per root import, in order,
+ * already in `scope`).  Unlike dd_render_program this binds every import
+ * kind, so the server can wire Source::Trace imports to registry traces.
+ * Returns one output collection per export through `exports`.  0 or DTFL_E*. */
+int dd_render_program_bound(const dtfl_ddir_program *p, dtfl_scope *scope,
+    dtfl_collection *const *import_cols, size_t n_imports,
+    dtfl_collection **exports);
+
 /* Accumulated output rows for one export: consolidated net multiplicity. */
 typedef struct out_acc {
 	dd_value **keys; /* parallel arrays, owned */

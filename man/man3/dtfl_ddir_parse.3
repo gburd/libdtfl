@@ -20,7 +20,8 @@
 .Nm dtfl_ddir_value_clone ,
 .Nm dtfl_ddir_value_cmp ,
 .Nm dtfl_ddir_value_free ,
-.Nm dtfl_ddir_value_parse
+.Nm dtfl_ddir_value_parse ,
+.Nm dtfl_ddir_value_format
 .Nd parse and run Differential Dataflow IR programs
 .Sh LIBRARY
 Timely and differential dataflow library
@@ -63,6 +64,8 @@ Timely and differential dataflow library
 .Fn dtfl_ddir_value_free "dtfl_ddir_value *v"
 .Ft dtfl_ddir_value *
 .Fn dtfl_ddir_value_parse "const char *term"
+.Ft size_t
+.Fn dtfl_ddir_value_format "const dtfl_ddir_value *v" "char *buf" "size_t cap"
 .Sh DESCRIPTION
 DDIR is a small language for building differential dataflows at runtime.
 A program names positional input collections, defines derived collections
@@ -141,6 +144,21 @@ distinct their meaning.
 .Fn dtfl_ddir_value_parse
 parses one value from a closed scalar term string, such as
 .Ql tuple(1, 2) .
+.Fn dtfl_ddir_value_format
+renders
+.Fa v
+in the upstream
+.Vt Value
+Debug form
+.Pq Ql Int(5) , Ql Tuple([Int(1), Int(2)]) , Ql Variant(2, Int(3)) , Ql List([])
+into
+.Fa buf ,
+truncating to
+.Fa cap
+bytes and NUL-terminating, and returns the length the full form would
+need, the way
+.Xr snprintf 3
+does.
 .Sh RETURN VALUES
 .Fn dtfl_ddir_parse ,
 .Fn dtfl_ddir_build
@@ -157,6 +175,9 @@ constructors never return
 returns
 .Dv NULL
 on a malformed term.
+.Fn dtfl_ddir_value_format
+returns the number of bytes the full Debug form needs, excluding the
+terminating NUL.
 .Sh SEE ALSO
 .Xr dtfl_collection_iterate 3 ,
 .Xr dtfl_collection_join 3 ,

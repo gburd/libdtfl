@@ -368,7 +368,7 @@ differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_ap
 differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done	
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	
 differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
-differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	todo	
+differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	wip	registry + lifecycle (install/feed/tick/drop/peek/list); single in-process worker, commands on the calling thread; shared traces across installs; generated/iota/clock sources; multi-worker Sequencer deferred; no trace compaction (public handle lacks the setter)
 differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	todo	manual skeleton and menu
