@@ -37,6 +37,8 @@
  * is woken by the worker's Pusher buzzing the queue (the queue's buzz
  * callback unparks this thread's parker).
  */
+#define _GNU_SOURCE	/* MSG_NOSIGNAL */
+
 #include "comm/zc_int.h"
 #include "base/os_thread.h"
 

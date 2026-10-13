@@ -342,4 +342,22 @@ void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
  */
 void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources);
 
+/* ------------------------------------------------------------------ */
+/* allocator.rs: the TcpAllocator and its builders                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * new_vector: build `threads` TcpBuilders (one per local worker) and the
+ * mpsc handoff channels the network threads use.  `inner` holds the
+ * typed Process builders (one per local worker; ownership moves in).
+ * Fills builders[0 .. threads) and the two [processes-1][threads] grids
+ * net_promises (writers to each recv thread) and net_futures (writers
+ * from each send thread); the caller owns the grids and the references
+ * in them, one per (remote process, local worker).  Requires
+ * processes >= 1 and threads >= 1.
+ */
+void __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
+    size_t my_process, size_t processes, __dtfl_allocator_builder **builders,
+    __dtfl_mpsc ***net_promises, __dtfl_mpsc ***net_futures);
+
 #endif /* DTFL_ZC_INT_H */
