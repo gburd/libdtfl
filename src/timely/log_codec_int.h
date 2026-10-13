@@ -56,4 +56,23 @@ const char *__dtfl_bc_read_str(__dtfl_bc_reader *r, size_t *slen);
  */
 size_t __dtfl_bc_read_vec_len(__dtfl_bc_reader *r);
 
+/*
+ * Decodes a batch of raw event records and delivers it to a subscriber,
+ * the inverse of the per-stream encoders.  Used by both the in-process
+ * subscriber (src/timely/log.c) and the recorded-stream replay
+ * (src/diag/replay_shutdown.c).  Each record in `recs` is one event in
+ * the stream's own bincode encoding; `stream` selects the event enum
+ * ("timely", "differential/arrange", "communication").  `time_ns` is
+ * the batch's capability time and `worker` its worker index.  The
+ * subscriber is called once with the decoded batch, valid only for that
+ * call.  `scratch` is a dtfl_log_batch-sized workspace the caller owns
+ * (its three vectors initialized once and reused across calls).
+ */
+typedef struct __dtfl_log_event __dtfl_log_event;	/* base/log_int.h */
+void __dtfl_log_decode_and_deliver(void *scratch, const char *stream,
+    size_t worker, uint64_t time_ns, const __dtfl_log_event *recs, size_t n,
+    void (*fn)(const void *batch, void *ctx), void *ctx);
+void *__dtfl_log_scratch_new(void);
+void __dtfl_log_scratch_free(void *scratch);
+
 #endif /* DTFL_LOG_CODEC_INT_H */

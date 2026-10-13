@@ -279,25 +279,28 @@ decode_communication(dtfl_log_batch *b, __dtfl_bc_reader *r, decoded_event *ev)
 	}
 }
 
-/* The internal action: decode a batch of records, call the subscriber. */
+/*
+ * Decodes `n` raw records into the batch `b` (whose three pools are
+ * reused across calls) and resolves pooled offsets to pointers.  Shared
+ * by the in-process subscriber action and the recorded-stream replay.
+ */
 static void
-sub_action(void *ctx, uint64_t now_ns, const __dtfl_log_event *events, size_t n)
+decode_into(dtfl_log_batch *b, const char *stream, size_t worker,
+    uint64_t time_ns, const __dtfl_log_event *events, size_t n)
 {
-	sub_ctx *sc = ctx;
-	dtfl_log_batch *b = &sc->batch;
 	size_t i;
 	bool is_dd, is_comm;
 
 	__dtfl_vec_clear(&b->addrs);
 	__dtfl_vec_clear(&b->strpool);
 	__dtfl_vec_clear(&b->evbuf);
-	b->stream = sc->stream;
-	b->worker = sc->worker != NULL ? sc->worker->allocator->index : 0;
-	b->time_ns = now_ns;
+	b->stream = stream;
+	b->worker = worker;
+	b->time_ns = time_ns;
 	b->n = n;
 
-	is_dd = strcmp(sc->stream, "differential/arrange") == 0;
-	is_comm = strcmp(sc->stream, "communication") == 0;
+	is_dd = strcmp(stream, "differential/arrange") == 0;
+	is_comm = strcmp(stream, "communication") == 0;
 
 	for (i = 0; i < n; i++) {
 		decoded_event ev;
@@ -329,8 +332,56 @@ sub_action(void *ctx, uint64_t now_ns, const __dtfl_log_event *events, size_t n)
 		else
 			ev->str = NULL;
 	}
+}
 
-	sc->fn(b, sc->user_ctx);
+/* The internal action: decode a batch of records, call the subscriber. */
+static void
+sub_action(void *ctx, uint64_t now_ns, const __dtfl_log_event *events, size_t n)
+{
+	sub_ctx *sc = ctx;
+	size_t worker = sc->worker != NULL ? sc->worker->allocator->index : 0;
+
+	decode_into(&sc->batch, sc->stream, worker, now_ns, events, n);
+	sc->fn(&sc->batch, sc->user_ctx);
+}
+
+/* ------------------------------------------------------------------ */
+/* Recorded-stream replay entry points (used by src/diag)              */
+/* ------------------------------------------------------------------ */
+
+void *
+__dtfl_log_scratch_new(void)
+{
+	dtfl_log_batch *b = __dtfl_calloc(1, sizeof *b);
+
+	__dtfl_vec_init(&b->addrs, sizeof(size_t));
+	__dtfl_vec_init(&b->strpool, 1);
+	__dtfl_vec_init(&b->evbuf, sizeof(decoded_event));
+	return b;
+}
+
+void
+__dtfl_log_scratch_free(void *scratch)
+{
+	dtfl_log_batch *b = scratch;
+
+	if (b == NULL)
+		return;
+	__dtfl_vec_free(&b->addrs);
+	__dtfl_vec_free(&b->strpool);
+	__dtfl_vec_free(&b->evbuf);
+	__dtfl_free(b);
+}
+
+void
+__dtfl_log_decode_and_deliver(void *scratch, const char *stream, size_t worker,
+    uint64_t time_ns, const __dtfl_log_event *recs, size_t n,
+    void (*fn)(const void *batch, void *ctx), void *ctx)
+{
+	dtfl_log_batch *b = scratch;
+
+	decode_into(b, stream, worker, time_ns, recs, n);
+	fn(b, ctx);
 }
 
 static void
