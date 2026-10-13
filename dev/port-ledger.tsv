@@ -242,7 +242,7 @@ differential-dataflow	differential-dataflow/src/columnar/mod.rs	41	-	-	subsumed	
 differential-dataflow	differential-dataflow/src/columnar/trace/chunk.rs	907	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/trace/chunker.rs	137	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/trace/mod.rs	28	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
-differential-dataflow	differential-dataflow/src/columnar/trace/spill.rs	134	src/dd/trace/spill.c	P12	todo	ports the BytesStore/BytesSource policy onto chunk.c; its ColChunk/Updates plumbing is subsumed (D2)
+differential-dataflow	differential-dataflow/src/columnar/trace/spill.rs	134	src/dd/trace/spill.c	P12	done	ports the BytesStore/BytesSource policy onto chunk.c; its ColChunk/Updates plumbing is subsumed (D2); seal does the full serialize/store/load/decode round trip, lazy fetch-back on first touch (the footprint win) deferred
 differential-dataflow	differential-dataflow/src/columnar/trie_merger.rs	534	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/updates.rs	868	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/consolidation.rs	409	src/dd/consolidate.c	P5	done	
@@ -271,8 +271,8 @@ differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/joi
 differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	P6-trace: EditList/ValueHistory are consumer-side (populate_key default is in cursor.c); land with P7 arrange/reduce
 differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	done	
 differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	done	
-differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	todo	graded chunks are the pageable unit for trace spill
-differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	todo	
+differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	done	graded chunks are the pageable unit for trace spill
+differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	done	the one Chunk layout; the generic Chunk trait collapses to concrete functions (D2)
 differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/cursor/mod.rs	185	src/dd/trace/cursor.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/description.rs	108	src/dd/trace/description.c	P6	done	
