@@ -1,0 +1,4 @@
+# Public symbols defined in src/dogs.  One per line.
+dtfl_collection_delay_neu
+dtfl_collection_differentiate
+dtfl_collection_integrate

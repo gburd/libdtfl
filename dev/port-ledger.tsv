@@ -296,8 +296,8 @@ differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/del
 differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	todo	
 differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dogsdogsdogs.c	P9	todo	
 differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	todo	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
-differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
+differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	todo	
 differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	todo	
 differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	todo	
