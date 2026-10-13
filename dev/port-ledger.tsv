@@ -198,25 +198,25 @@ differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	tod
 differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	todo	VecChunk arm only; the ColChunk arm is subsumed (D2)
 differential-dataflow	differential-dataflow/benches/sort-bench.rs	135	-	-	excluded	entirely commented out upstream
 differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	done	fixed multiset once in place of the forever random-insert loop; same enter_at/consolidate/leave; inspects the accumulation
-differential-dataflow	differential-dataflow/examples/arrange.rs	177	examples/dd/arrange.c	P8	todo	
+differential-dataflow	differential-dataflow/examples/arrange.rs	177	examples/dd/arrange.c	P8	todo	needs a custom generic::source operator feeding an arrangement, trace import, and an unbounded query loop; the public API has no raw source primitive beyond to_stream/iterator_source
 differential-dataflow	differential-dataflow/examples/bfs.rs	110	examples/dd/bfs.c	P9	done	fixed graph in place of StdRng (deterministic output); same algo (dtfl_algo_bfs), args, computation
 differential-dataflow	differential-dataflow/examples/columnar/main.rs	195	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in
 differential-dataflow	differential-dataflow/examples/columnar_spill.rs	349	examples/dd/trace_spill.c	P12	todo	same flags and modes, over chunk.c spill; columnar types subsumed (D2)
 differential-dataflow	differential-dataflow/examples/compact.rs	73	examples/dd/compact.c	P8	done	faithful computation (distinct over a changing set); inspects live distinct count (upstream prints only timings); fixed sizes, exact output
-differential-dataflow	differential-dataflow/examples/cursors.rs	126	examples/dd/cursors.c	P8	todo	
+differential-dataflow	differential-dataflow/examples/cursors.rs	126	examples/dd/cursors.c	P8	todo	needs trace cursor enumeration (TraceReader::cursor / Cursor::to_vec) to dump the arrangement; the public trace API has no cursor walk
 differential-dataflow	differential-dataflow/examples/degrees.rs	179	examples/dd/degrees.c	P9	done	fixed graph in place of StdRng (deterministic output); same map/count_total computation
-differential-dataflow	differential-dataflow/examples/dynamic.rs	132	examples/dd/dynamic.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/graspan.rs	272	examples/dd/graspan.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/dynamic.rs	132	examples/dd/dynamic.c	P9	todo	needs an iterative scope with a PointStamp inner and a Variable built from a custom feedback_summary; the public dtfl_scope_iterative is Product<outer,u64> and dtfl_variable_new has no summary argument
+differential-dataflow	differential-dataflow/examples/graspan.rs	272	examples/dd/graspan.c	P9	todo	needs a rule-DSL parser over an input file and a VecVariable dynamic iterate over usize nodes; the dynamic Variable wiring is not on the public API
 differential-dataflow	differential-dataflow/examples/hello.rs	89	examples/dd/hello.c	P8	done	fixed graph in place of StdRng (deterministic output); same degree-distribution-of-degrees via count_total twice
-differential-dataflow	differential-dataflow/examples/interpreted.rs	101	examples/dd/interpreted.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/itembased_cf.rs	182	examples/dd/itembased_cf.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/interpreted.rs	101	examples/dd/interpreted.c	P9	todo	needs arrange_by_self/by_key and join_core over Vec<Node> variable-length records with map_in_place; the public arrange is by-self only, no public arrange_by_key
+differential-dataflow	differential-dataflow/examples/itembased_cf.rs	182	examples/dd/itembased_cf.c	P9	todo	needs f64 Jaccard-similarity records and rand sampling, plus arrange_by_key join_core; floats are not a built-in record type and arrange_by_key is not public
 differential-dataflow	differential-dataflow/examples/iterate_container.rs	83	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in
-differential-dataflow	differential-dataflow/examples/monoid-bfs.rs	157	examples/dd/monoid-bfs.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/multitemporal.rs	387	examples/dd/multitemporal.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/pagerank.rs	136	examples/dd/pagerank.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/progress.rs	229	examples/dd/progress.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/monoid-bfs.rs	157	examples/dd/monoid-bfs.c	P9	todo	needs a custom MinSum semigroup diff type; the public diff classes are the fixed built-ins (signed/unsigned/present), no user-defined Semigroup/Multiply
+differential-dataflow	differential-dataflow/examples/multitemporal.rs	387	examples/dd/multitemporal.c	P9	todo	needs trace cursor enumeration, the Pair<isize,isize> lex time as the dataflow timestamp, an unordered input, and interactive stdin; cursor walk is not on the public API
+differential-dataflow	differential-dataflow/examples/pagerank.rs	136	examples/dd/pagerank.c	P9	todo	needs an inner-timestamp filter to cap iterations (upstream filters on t.inner < iters) and a GraphMMap input; the public collection filter sees only the record, not the time, and Variable has the fixed step summary
+differential-dataflow	differential-dataflow/examples/progress.rs	229	examples/dd/progress.c	P9	todo	needs timestamp path summaries (results_in/followed_by) as record data and Location/Summary records; summaries are not a public record type
 differential-dataflow	differential-dataflow/examples/projekt.rs	172	examples/dd/projekt.c	P8	done	faithful; three upstream dataflows merged into one (C input session registers into one scope); exact output
-differential-dataflow	differential-dataflow/examples/scc.rs	96	examples/dd/scc.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/scc.rs	96	examples/dd/scc.c	P9	todo	blocked on scc, which is blocked on the nested-iterate progress bug (see tests/unit/test_nested_iterate.c); not ported
 differential-dataflow	differential-dataflow/examples/spines.rs	179	bench/spines.c	P12	todo	needs chunk spines; col mode subsumed (D2)
 differential-dataflow	differential-dataflow/examples/stackoverflow.rs	124	examples/dd/stackoverflow.c	P9	done	fixed temporal edge list in place of the SNAP file; same bfs over time, exact distance histogram
 differential-dataflow	differential-dataflow/src/algorithms/graphs/bfs.rs	44	src/algo/bfs.c	P9	done	
