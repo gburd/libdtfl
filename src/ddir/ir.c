@@ -213,6 +213,30 @@ dd_hash_u64(uint64_t index)
 	return x ^ (x >> 31);
 }
 
+/*
+ * gen_row_seeded (lib.rs): one deterministic row, a key Tuple of `arity`
+ * hash-derived Ints (each < nodes) and an empty-tuple value.  seed == 0
+ * reproduces gen_row.  Writes the owned key through *key, the unit value
+ * through *val.
+ */
+void
+dd_gen_row(uint64_t seed, uint64_t edge_index, uint64_t nodes, size_t arity,
+    dd_value **key, dd_value **val)
+{
+	dd_value **fields = arity ? __dtfl_alloc(arity * sizeof(dd_value *))
+	    : NULL;
+	uint64_t base = edge_index * 31 + seed * UINT64_C(0x9e3779b97f4a7c15);
+	size_t col;
+
+	for (col = 0; col < arity; col++) {
+		uint64_t h = dd_hash_u64(base + (uint64_t)col);
+
+		fields[col] = dd_value_int((int64_t)(h % nodes));
+	}
+	*key = dd_value_tuple(fields, arity);
+	*val = dd_value_unit();
+}
+
 /* ------------------------------------------------------------------ */
 /* Term constructors / clone / free                                    */
 /* ------------------------------------------------------------------ */

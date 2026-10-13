@@ -359,8 +359,8 @@ differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/d
 differential-dataflow	interactive/src/backend/col.rs	259	-	-	excluded	disabled upstream
 differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	done	render_tree walk; nested { } renders as a region at depth + 1, leave_dynamic pops its PointStamp coordinate
 differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	done	whole program in one iterative dynamic scope; time is literally Product<u64,PointStamp<u64>>; render_linear is one faithful operator with enter_at and lift_iter
-differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	todo	
-differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	todo	
+differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	done	the reverse rules over the dd_df backend; one Val row model (the trait's second test-only model is not ported)
+differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	done	clone_into/clone_identity, resolve/site_shapes, Val row model, the reverse walk, explain
 differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	
 differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	done	parse/build/evaluate entry ported; time class is Product<u64,PointStamp<u64>>; survey_sources subsumed by the lowered import count; gen_row/load_program land with the explain tests
 differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	

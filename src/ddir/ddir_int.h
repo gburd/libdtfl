@@ -414,6 +414,12 @@ int64_t dd_value_as_int(const dd_value *v); /* panics if not Int */
 /* splitmix64 helpers (lib.rs hash_u64). */
 uint64_t dd_hash_u64(uint64_t index);
 
+/* gen_row_seeded (lib.rs): one deterministic (key, val) row, key a Tuple of
+ * `arity` hash-derived Ints each < nodes, val the empty tuple.  seed == 0
+ * reproduces gen_row. */
+void dd_gen_row(uint64_t seed, uint64_t edge_index, uint64_t nodes,
+    size_t arity, dd_value **key, dd_value **val);
+
 /*
  * Evaluate a scalar Term against the environment stack `env` (an array of
  * owned dd_value* with `len` entries, capacity `cap`).  Returns a freshly
