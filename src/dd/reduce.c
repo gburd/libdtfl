@@ -1623,18 +1623,23 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 	    pend_pos < pending_len(&c->pend)) {
 		const void *key1 = NULL, *key2 = NULL, *key;
 		size_t klen1 = 0, klen2 = 0, klen;
+		bool have1, have2;
 		size_t prior_pos;
 		timevec itimes;		/* interesting times */
 
-		if (pend_pos < pending_len(&c->pend))
+		/* A 0-byte (unit) key is a valid key with a NULL pointer, so
+		 * use the explicit validity flags, not pointer-NULL tests. */
+		have1 = pend_pos < pending_len(&c->pend);
+		have2 = __dtfl_cursor_list_key_valid(&batch_cl);
+		if (have1)
 			key1 = __dtfl_slices_get(&c->pend.keys, pend_pos, &klen1);
-		if (__dtfl_cursor_list_key_valid(&batch_cl))
+		if (have2)
 			key2 = __dtfl_cursor_list_key(&batch_cl, &klen2);
-		if (key1 != NULL && key2 != NULL) {
+		if (have1 && have2) {
 			int r = dtfl_type_cmp(c->ikt, key1, klen1, key2, klen2);
 			if (r <= 0) { key = key1; klen = klen1; }
 			else { key = key2; klen = klen2; }
-		} else if (key1 != NULL) { key = key1; klen = klen1; }
+		} else if (have1) { key = key1; klen = klen1; }
 		else { key = key2; klen = klen2; }
 
 		/* Gather interesting times for `key` not beyond upper. */
@@ -1644,7 +1649,8 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 			size_t pk;
 			const void *k = __dtfl_slices_get(&c->pend.keys,
 			    pend_pos, &pk);
-			if (!(pk == klen && memcmp(k, key, klen) == 0))
+			if (!(pk == klen && (klen == 0 ||
+			    memcmp(k, key, klen) == 0)))
 				break;
 			{
 				const uint64_t *t = tv_at(&c->pend.times,
@@ -1658,8 +1664,8 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 		tv_sort_dedup(&itimes);
 
 		{
-			bool batch_here = key2 != NULL && klen2 == klen &&
-			    memcmp(key2, key, klen) == 0;
+			bool batch_here = have2 && klen2 == klen &&
+			    (klen == 0 || memcmp(key2, key, klen) == 0);
 
 			if (batch_here || tv_len(&itimes) != 0) {
 				timevec new_times;

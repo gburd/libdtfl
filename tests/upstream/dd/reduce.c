@@ -240,9 +240,78 @@ DTFL_TEST(reduce__reduce_scaling)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* distinct_unit_key: distinct over unit (0-byte) key records.          */
+/* A valid cursor at a 0-byte key returns a NULL pointer; the reduce    */
+/* key-marching loop must not read that as an exhausted cursor, or it   */
+/* never advances the batch cursor and loops forever (regression).      */
+/* ------------------------------------------------------------------ */
+
+static void
+build_distinct_unit(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_diff *od = dtfl_diff_i64();
+	dtfl_collection *dist = dtfl_collection_distinct(base, od);
+	dtfl_collection *ins = dtfl_collection_inspect(dist, inspect_sink,
+	    DTFL_CTX(c->out, NULL));
+	dtfl_collection *probed = dtfl_collection_probe_with(ins, c->probe);
+
+	dtfl_collection_free(probed);
+	dtfl_collection_free(ins);
+	dtfl_collection_free(dist);
+	dtfl_diff_free(od);
+	dtfl_collection_free(base);
+}
+
+DTFL_TEST(reduce__distinct_unit_key)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	collected out;
+	uint64_t next = 1;
+	int steps;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	c.in = dtfl_input_session_new(dtfl_type_unit(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.scaling = false;
+	assert_int(dtfl_worker_dataflow(w, "du", tc, build_distinct_unit, &c),
+	    ==, 0);
+
+	/* Two copies of the unit record () distinct to one. */
+	dtfl_input_session_insert(c.in, NULL, 0);
+	dtfl_input_session_insert(c.in, NULL, 0);
+	dtfl_input_session_advance_to(c.in, &next);
+	dtfl_input_session_flush(c.in);
+	{ probe_cond pc = { c.probe, next };
+	  dtfl_worker_step_while(w, probe_behind, &pc); }
+	dtfl_input_session_close(c.in);
+	for (steps = 0; steps < 100000 && dtfl_worker_step(w); steps++)
+		;
+	assert_int(steps, <, 100000);
+	assert_true(dtfl_probe_done(c.probe));
+
+	/* One unit key present with a diff of one. */
+	assert_size(out.n, ==, 1);
+	assert_int64(out.u[0].diff, ==, 1);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(reduce__reduce),
 	DTFL_T(reduce__reduce_scaling),
+	DTFL_T(reduce__distinct_unit_key),
 	DTFL_T_END
 };
 
