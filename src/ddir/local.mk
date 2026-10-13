@@ -29,6 +29,7 @@ dtflinclude_HEADERS += include/dtfl/ddir.h
 EXTRA_DIST += src/ddir/exports.sym
 
 dist_man_MANS += man/man3/dtfl_ddir_parse.3
+dist_man_MANS += man/man3/dtfl_ddir_explain.3
 
 check_PROGRAMS += tests/unit/test_ddir
 TESTS += tests/unit/test_ddir
@@ -59,3 +60,9 @@ TESTS += tests/unit/test_explain_decouple
 tests_unit_test_explain_decouple_SOURCES = tests/unit/test_explain_decouple.c
 tests_unit_test_explain_decouple_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_explain_decouple_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/ddir/explain
+TESTS += tests/upstream/ddir/explain
+tests_upstream_ddir_explain_SOURCES = tests/upstream/ddir/explain.c
+tests_upstream_ddir_explain_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_ddir_explain_LDADD = $(INTERNAL_LIBS)

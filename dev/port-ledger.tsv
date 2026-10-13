@@ -369,7 +369,7 @@ differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	
 differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	todo	
-differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	todo	
+differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	todo	manual skeleton and menu
 differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C

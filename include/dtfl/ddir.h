@@ -115,6 +115,45 @@ DTFL_API const char *dtfl_ddir_program_export_name(const dtfl_ddir_program *p,
     size_t i);
 
 /* ------------------------------------------------------------------ */
+/* The explanation rewrite                                             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A (k, v) column-count shape: the number of key and value fields of one
+ * of the program's positional inputs, which dtfl_ddir_explain needs to
+ * place the loop-iteration chain in the demand envelope.
+ */
+typedef struct dtfl_ddir_shape {
+	size_t k;
+	size_t v;
+} dtfl_ddir_shape;
+
+/*
+ * Rewrite `program` into one whose execution produces, for a query against
+ * `program`'s first export, the per-source demand-set explanations: the
+ * input rows that regenerate the queried output row.  `shapes` gives the
+ * (k, v) shape of each of the program's root imports, in order, and
+ * `n_shapes` must equal dtfl_ddir_program_input_count.  The rewritten
+ * program takes one extra positional input after the originals (the query
+ * rows, each a flat demand envelope) and exports one "demand:inputN"
+ * collection per source.  Returns the rewritten program through `out` and
+ * 0 on success, or a DTFL_E* code (and leaves *out NULL) on a bad
+ * argument.  Free the result with dtfl_ddir_program_free.
+ */
+DTFL_API int dtfl_ddir_explain(const dtfl_ddir_program *program,
+    const dtfl_ddir_shape *shapes, size_t n_shapes, dtfl_ddir_program **out);
+
+/*
+ * Clone `program` into an equivalent program (the identity transform the
+ * explanation rewrite is built on): it computes the same named exports,
+ * with each nested scope additionally exporting a host-visible lifted form
+ * of its internal collections.  Returns the clone through `out` and 0, or a
+ * DTFL_E* code.  Free the result with dtfl_ddir_program_free.
+ */
+DTFL_API int dtfl_ddir_clone_identity(const dtfl_ddir_program *program,
+    dtfl_ddir_program **out);
+
+/* ------------------------------------------------------------------ */
 /* Building a program into a live dataflow                             */
 /* ------------------------------------------------------------------ */
 
