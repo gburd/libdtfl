@@ -350,10 +350,10 @@ resolve_binder(pparser *p, const char *name)
 /* ---- scalar term grammar ---- */
 
 /*
- * ponytail: the `case`/pattern scratch vecs (tags, tagged, names) are
- * freed on the normal path and on the handled error paths; a longjmp out
- * of parse_term mid-arm leaks their small backing arrays.  Bounded to
- * malformed `case` input; track them in the arena if it ever matters.
+ * The case/pattern scratch vecs (tags, tagged, names) are freed on the
+ * normal path and on the handled error paths; a longjmp out of
+ * parse_term mid-arm leaks their small backing arrays.  Bounded to
+ * malformed case input; track them in the arena if it ever matters.
  */
 static dd_term *
 parse_pattern_case(pparser *p)
