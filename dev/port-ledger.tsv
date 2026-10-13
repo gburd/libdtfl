@@ -193,10 +193,10 @@ differential-dataflow	advent_of_code_2017/src/lib.rs	0	-	-	excluded	not a worksp
 differential-dataflow	diagnostics/console/index.html	13	-	-	excluded	React frontend; works unmodified against the protocol-compatible server
 differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9)
 differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	todo	
-differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	todo	shipped verbatim; the C server speaks the same protocol
-differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	todo	
-differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	todo	
-differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	todo	divergence: binds 127.0.0.1 by default where upstream binds 0.0.0.0, ADR D12
+differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	done	shipped verbatim (ASCII, 3 em-dashes in comments converted); the C server speaks the same Frame protocol, consumed by applyBatch/rebuildState unmodified.
+differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	done	dtfl_diag_session_new/_free, dtfl_diag_server_start/_port/_stop, dtfl_diag_replay_fd/_fds; the session subscribes to the log streams and serves them, as lib.rs ties logging::register to server::Server::start.
+differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	done	the demux (construct_timely/construct_differential + update_to_json): decoded log batches reshaped into the live operator/channel/stat state and emitted as JsonUpdate diffs; the DD cross-join on client +1 is realized as a full-state snapshot replay on connect (src/diag/diag.c, ws_server.c).
+differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	done	the WebSocket serve loop: binds 127.0.0.1 by default where upstream binds 0.0.0.0 (ADR D12); RFC 6455 handshake and unmasked text framing with built-in SHA-1/base64 (src/diag/ws_frame.c); one Frame per closed timestamp.  The server thread uses __dtfl_thread_spawn.
 differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	todo	VecChunk arm only; the ColChunk arm is subsumed (D2)
 differential-dataflow	differential-dataflow/benches/sort-bench.rs	135	-	-	excluded	entirely commented out upstream
 differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	done	fixed multiset once in place of the forever random-insert loop; same enter_at/consolidate/leave; inspects the accumulation
@@ -455,10 +455,10 @@ differential-dataflow	tpchlike/src/types.rs	310	-	-	excluded	not a workspace mem
 dataflow-diag	connect/src/lib.rs	16	tools/dtfl-diag/connect.c	P11	todo	
 dataflow-diag	connect/src/receive/connect.rs	104	tools/dtfl-diag/connect.c	P11	todo	
 dataflow-diag	connect/src/receive/mod.rs	5	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	todo	
+dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	done	dtfl_diag_replay_fd/_fds: reads the EventWriter log-stream framing (D9), decodes each inner record with the shared log decoder, delivers dtfl_log_batches; replay-with-shutdown is the read-to-EOF loop.
 dataflow-diag	tdiag/src/commands/arrangements.rs	133	tools/dtfl-diag/arrangements.c	P11	todo	
 dataflow-diag	tdiag/src/commands/graph.rs	256	tools/dtfl-diag/graph.c	P11	todo	
-dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	todo	shipped verbatim; generated script must escape operator names
+dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	done	shipped verbatim (ASCII); the generated script escapes operator names (write_json_escaped).
 dataflow-diag	tdiag/src/commands/mod.rs	9	tools/dtfl-diag/main.c	P11	todo	
 dataflow-diag	tdiag/src/commands/profile.rs	170	tools/dtfl-diag/profile.c	P11	todo	
 dataflow-diag	tdiag/src/lib.rs	25	tools/dtfl-diag/main.c	P11	todo	reads the current bincode stream, not the 0.11 abomonation stream (D9)

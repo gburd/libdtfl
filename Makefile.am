@@ -74,7 +74,9 @@ include src/timely/local.mk
 include src/dd/local.mk
 include src/algo/local.mk
 include src/dogs/local.mk
+include src/diag/local.mk
 include tests/interop/local.mk
+
 
 # Examples (noinst): included after the src fragments so the library and
 # its public headers exist to link against (AGENTS.md section 11).

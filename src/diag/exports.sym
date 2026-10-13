@@ -1,0 +1,8 @@
+# Public symbols defined in src/diag.  One per line.
+dtfl_diag_session_new
+dtfl_diag_session_free
+dtfl_diag_server_start
+dtfl_diag_server_port
+dtfl_diag_server_stop
+dtfl_diag_replay_fd
+dtfl_diag_replay_fds
