@@ -41,6 +41,28 @@ int __dtfl_comm_initialize(const dtfl_config *cfg,
 void __dtfl_comms_guard_join(__dtfl_comms_guard *guard);
 
 /*
+ * create_sockets (networking.rs): build the full TCP mesh among
+ * `processes` processes.  On success fills *fds_out, a newly allocated
+ * array of `processes` fds with my_index == -1 and a connected socket
+ * elsewhere (__dtfl_free it after passing to __dtfl_tcp_initialize),
+ * and returns 0; else DTFL_EIO or DTFL_EINVAL with detail.
+ */
+int __dtfl_create_sockets(char *const *addresses, size_t processes,
+    size_t my_index, int **fds_out);
+
+/*
+ * initialize_networking_from_sockets (zero_copy/initialize.rs): wrap the
+ * `threads` typed Process builders in TcpBuilders and start the network
+ * threads over `fds`.  Takes ownership of `inner` (the array is freed)
+ * and of `fds` (closed by the guard).  On success stores the builders
+ * array (threads entries; free it after handing out every builder) and
+ * the guard, and returns 0.
+ */
+int __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
+    size_t my_index, size_t processes, int *fds,
+    __dtfl_allocator_builder ***builders, __dtfl_comms_guard **guard);
+
+/*
  * Cluster { zerocopy }: -z was given with -n > 1, so intra-process
  * peers use ProcessBinary under the TCP allocator.  Not public yet; the
  * cluster allocator is its only reader.
