@@ -106,13 +106,22 @@ dtfl_time_class *
 dtfl_ddir_time_class(void)
 {
 	/*
-	 * The nested-Product rendering runs the program body in a plain
-	 * (u64) dataflow scope and nests an iterative Product scope per
-	 * iterating DDIR scope.  The faithful Product<u64, PointStamp<u64>>
-	 * dynamic-scope rendering is pending (see backend_vec.c); until then
-	 * the build scope's time class is u64.
+	 * DDIR's time is Product<u64, PointStamp<u64>> (ir.rs:9): a u64 outer
+	 * (host time) and a PointStamp inner that holds the per-depth
+	 * iteration coordinates.  The whole program renders in one iterative
+	 * dynamic scope of this class, so iterate pushes coordinates without
+	 * changing the timestamp type.  The PointStamp is padded to a fixed
+	 * maximum nesting depth (DD_POINTSTAMP_MAX).
 	 */
-	return dtfl_time_u64();
+	dtfl_coord u64c = { DTFL_COORD_UNSIGNED, 64 };
+	const dtfl_time_class *outer = dtfl_time_u64();
+	const dtfl_time_class *inner = dtfl_time_pointstamp(u64c,
+	    DD_POINTSTAMP_MAX);
+	dtfl_time_class *tc = dtfl_time_product(outer, inner);
+
+	dtfl_time_class_free(outer);
+	dtfl_time_class_free(inner);
+	return tc;
 }
 
 int

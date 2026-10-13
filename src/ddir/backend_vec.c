@@ -14,13 +14,25 @@
  * The leaf operators (linear, join, reduce, arrange, concat, inspect) are
  * built from the collection/arrange/reduce/iterate C API with the
  * tree-walking Term interpreter (dd_eval) as the scalar engine.  The
- * scope-tree walk renders items in order; an iterating scope (one with
- * vars) becomes a nested iterative subscope, a plain scope a region.
+ * scope-tree walk renders items in order; the whole program runs in one
+ * iterative dynamic scope whose time is Product<u64, PointStamp<u64>>
+ * (dynamic/mod.rs), a nested { } rendering as a region at the next
+ * PointStamp coordinate, exactly as backend/vec.rs does.
+ *
+ * The Linear chain is one operator over the raw (record, time, diff)
+ * updates: it runs the op sequence per update and emits each result at
+ * time join(t_in, t_delta), where t_delta is the minimum except for
+ * EnterAt (which delays the PointStamp coordinate at the op's level) and
+ * the value gain of LiftIter (which folds that coordinate into the value).
  */
 #include "ddir_int.h"
 #include "backend_int.h"
 
 #include "../base/base_int.h"
+
+#include "dd/collection_int.h"
+#include "progress/time_int.h"
+#include "timely/timely_int.h"
 
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
@@ -31,6 +43,19 @@
 #include "dtfl/timely.h"
 
 #include <string.h>
+
+/* The word offset of PointStamp coordinate 0 inside a time class: the outer
+ * depth for a Product<outer, PointStamp>, or 0 for a bare PointStamp. */
+static unsigned
+dd_pointstamp_word(const dtfl_time_class *tc)
+{
+	if (tc->shape == DTFL_SHAPE_PRODUCT && tc->b != NULL &&
+	    tc->b->shape == DTFL_SHAPE_POINTSTAMP)
+		return tc->a->depth;
+	if (tc->shape == DTFL_SHAPE_POINTSTAMP)
+		return 0;
+	__dtfl_panic("dd_render_linear: not a PointStamp scope");
+}
 
 /* ------------------------------------------------------------------ */
 /* Value serialization                                                 */
@@ -312,7 +337,7 @@ decode_pair(const void *rec, size_t len, dd_value **k, dd_value **v)
 }
 
 /* ------------------------------------------------------------------ */
-/* Scalar operator callbacks (dd_eval over decoded (key, val) rows)    */
+/* The faithful Linear operator (backend/vec.rs render_linear)         */
 /* ------------------------------------------------------------------ */
 
 /* Evaluate `term` against env {key, val} (and possibly more). */
@@ -330,82 +355,312 @@ eval1(const dd_term *term, dd_value **env0, size_t n)
 	return r;
 }
 
-/* Project: (key, val) -> (new_key, new_val) via the projection terms. */
-void
-project_fn(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
+/* append_iter: extend a Tuple with Int(iter), or wrap any other value as
+ * (value, iter) (backend/vec.rs append_iter). */
+static dd_value *
+append_iter(dd_value *val, int64_t iter)
 {
-	const dd_projection *proj = ctx;
-	dd_value *k, *v, *env[2], *nk, *nv;
-	uint8_t *buf;
-	size_t blen;
+	dd_value **items;
+	size_t n;
 
-	decode_pair(rec, len, &k, &v);
-	env[0] = k;
-	env[1] = v;
-	nk = eval1(proj->key, env, 2);
-	nv = eval1(proj->val, env, 2);
-	buf = encode_pair(nk, nv, &blen);
-	dtfl_collection_emit_record(out, buf, blen);
-	__dtfl_free(buf);
-	dd_value_free(nk);
-	dd_value_free(nv);
-	dd_value_free(k);
-	dd_value_free(v);
-}
-
-/* Filter: keep rows where the term is truthy. */
-bool
-filter_fn(void *ctx, const void *rec, size_t len)
-{
-	const dd_term *term = ctx;
-	dd_value *k, *v, *env[2], *r;
-	bool keep;
-
-	decode_pair(rec, len, &k, &v);
-	env[0] = k;
-	env[1] = v;
-	r = eval1(term, env, 2);
-	keep = dd_value_truthy(r);
-	dd_value_free(r);
-	dd_value_free(k);
-	dd_value_free(v);
-	return keep;
-}
-
-/* FlatMap: explode a List-valued term into one row per element,
- * value tuple(pos, element), keyed as the input. */
-void
-flatmap_fn(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
-{
-	const dd_term *term = ctx;
-	dd_value *k, *v, *env[2], *list;
-	size_t i;
-
-	decode_pair(rec, len, &k, &v);
-	env[0] = k;
-	env[1] = v;
-	list = eval1(term, env, 2);
-	if (list->kind != DD_V_LIST)
-		__dtfl_panic("flatmap: expected a List");
-	for (i = 0; i < list->u.seq.len; i++) {
-		dd_value **items = __dtfl_alloc(2 * sizeof(dd_value *));
-		dd_value *pair_val, *out_k;
-		uint8_t *buf;
-		size_t blen;
-
-		items[0] = dd_value_int((int64_t)i);
-		items[1] = dd_value_clone(list->u.seq.items[i]);
-		pair_val = dd_value_tuple(items, 2);
-		out_k = dd_value_clone(k);
-		buf = encode_pair(out_k, pair_val, &blen);
-		dtfl_collection_emit_record(out, buf, blen);
-		__dtfl_free(buf);
-		dd_value_free(out_k);
-		dd_value_free(pair_val);
+	if (val->kind == DD_V_TUPLE) {
+		n = val->u.seq.len;
+		items = __dtfl_alloc((n + 1) * sizeof(dd_value *));
+		memcpy(items, val->u.seq.items, n * sizeof(dd_value *));
+		items[n] = dd_value_int(iter);
+		/* reuse val's children; free the shell only. */
+		__dtfl_free(val->u.seq.items);
+		__dtfl_free(val);
+		return dd_value_tuple(items, n + 1);
 	}
-	dd_value_free(list);
-	dd_value_free(k);
-	dd_value_free(v);
+	items = __dtfl_alloc(2 * sizeof(dd_value *));
+	items[0] = val;
+	items[1] = dd_value_int(iter);
+	return dd_value_tuple(items, 2);
+}
+
+/* One intermediate (key, val, t_delta, diff) during the op chain. */
+typedef struct lin_row {
+	dd_value *k;
+	dd_value *v;
+	uint64_t tdelta[DTFL_TIME_MAX]; /* time delta words, minimum = all 0 */
+	int64_t d;
+} lin_row;
+
+typedef struct lin_vec {
+	lin_row *data;
+	size_t len, cap;
+} lin_vec;
+
+static void
+lin_push(lin_vec *v, lin_row r)
+{
+	if (v->len == v->cap) {
+		v->cap = v->cap ? v->cap * 2 : 4;
+		v->data = __dtfl_realloc(v->data, v->cap * sizeof(lin_row));
+	}
+	v->data[v->len++] = r;
+}
+
+/* The Linear operator context: the op chain and the scope depth (level). */
+typedef struct linear_ctx {
+	const dtfl_time_class *tc; /* retained */
+	unsigned depth;		   /* time words per update */
+	size_t dw;		   /* diff width (always 8: i64) */
+	unsigned ps_word;	   /* word offset of PointStamp coord 0 */
+	size_t level;		   /* the op's scope depth */
+	const dd_linear_op *const *ops;
+	size_t n_ops;
+} linear_ctx;
+
+/* Apply the op chain to one input row at embedded time `t_in`.  Returns the
+ * resulting rows in `out` (fresh, caller frees k/v). */
+static void
+linear_apply(const linear_ctx *c, const dd_value *k0, const dd_value *v0,
+    const uint64_t *t_in, lin_vec *out)
+{
+	lin_vec cur = { 0 };
+	size_t oi, i;
+	int64_t iter_at_level = 0;
+	lin_row seed;
+
+	/* iter_at_level = t_in.inner.get(level - 1), or 0.  PointStamp coord
+	 * (level - 1) sits at word ps_word + (level - 1). */
+	if (c->level >= 1)
+		iter_at_level =
+		    (int64_t)t_in[c->ps_word + (c->level - 1)];
+
+	seed.k = dd_value_clone(k0);
+	seed.v = dd_value_clone(v0);
+	memset(seed.tdelta, 0, sizeof seed.tdelta);
+	seed.d = 1;
+	lin_push(&cur, seed);
+
+	for (oi = 0; oi < c->n_ops; oi++) {
+		const dd_linear_op *op = c->ops[oi];
+		lin_vec next = { 0 };
+
+		for (i = 0; i < cur.len; i++) {
+			lin_row row = cur.data[i];
+			dd_value *env[2];
+
+			env[0] = row.k;
+			env[1] = row.v;
+			switch (op->kind) {
+			case DD_LIN_PROJECT: {
+				lin_row nr = row;
+
+				nr.k = eval1(op->proj.key, env, 2);
+				nr.v = eval1(op->proj.val, env, 2);
+				dd_value_free(row.k);
+				dd_value_free(row.v);
+				lin_push(&next, nr);
+				break;
+			}
+			case DD_LIN_FILTER: {
+				dd_value *r = eval1(op->term, env, 2);
+				bool keep = dd_value_truthy(r);
+
+				dd_value_free(r);
+				if (keep) {
+					lin_push(&next, row);
+				} else {
+					dd_value_free(row.k);
+					dd_value_free(row.v);
+				}
+				break;
+			}
+			case DD_LIN_NEGATE: {
+				lin_row nr = row;
+
+				nr.d = -row.d;
+				lin_push(&next, nr);
+				break;
+			}
+			case DD_LIN_ENTER_AT: {
+				dd_value *raw = eval1(op->term, env, 2);
+				int64_t rv = dd_value_as_int(raw);
+				uint64_t urv = (uint64_t)rv;
+				uint64_t delay;
+				unsigned lz, used;
+				lin_row nr = row;
+
+				dd_value_free(raw);
+				/* 256 * (64 - leading_zeros(raw)). */
+				lz = urv == 0 ? 64u
+				    : (unsigned)__builtin_clzll(urv);
+				used = 64u - lz;
+				delay = (uint64_t)256 * used;
+				/* t_delta = Product(0, PointStamp(coords)) where
+				 * coord (level - 1) = delay (saturating). */
+				memset(nr.tdelta, 0, sizeof nr.tdelta);
+				{
+					size_t coord = c->level >= 1
+					    ? c->level - 1 : 0;
+					nr.tdelta[c->ps_word + coord] = delay;
+				}
+				lin_push(&next, nr);
+				break;
+			}
+			case DD_LIN_LIFT_ITER: {
+				lin_row nr = row;
+
+				nr.v = append_iter(row.v, iter_at_level);
+				lin_push(&next, nr);
+				break;
+			}
+			case DD_LIN_FLATMAP: {
+				dd_value *list = eval1(op->term, env, 2);
+				size_t j;
+
+				if (list->kind != DD_V_LIST)
+					__dtfl_panic("flatmap: expected a "
+					    "List");
+				for (j = 0; j < list->u.seq.len; j++) {
+					dd_value **it =
+					    __dtfl_alloc(2 * sizeof(dd_value *));
+					lin_row nr = row;
+
+					it[0] = dd_value_int((int64_t)j);
+					it[1] = dd_value_clone(
+					    list->u.seq.items[j]);
+					nr.k = dd_value_clone(row.k);
+					nr.v = dd_value_tuple(it, 2);
+					lin_push(&next, nr);
+				}
+				dd_value_free(list);
+				dd_value_free(row.k);
+				dd_value_free(row.v);
+				break;
+			}
+			}
+		}
+		__dtfl_free(cur.data);
+		cur = next;
+	}
+	for (i = 0; i < cur.len; i++)
+		lin_push(out, cur.data[i]);
+	__dtfl_free(cur.data);
+}
+
+static bool
+linear_logic(dtfl_op *op, void *vctx)
+{
+	linear_ctx *c = vctx;
+	dtfl_message *m;
+	size_t tw = (size_t)c->depth * sizeof(uint64_t);
+
+	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
+		dtfl_session *s = dtfl_op_session(op, 0, cap);
+		size_t i, n = dtfl_message_len(m);
+
+		for (i = 0; i < n; i++) {
+			size_t len;
+			const void *rec = dtfl_message_record(m, i, &len);
+			uint64_t etbuf[DTFL_TIME_MAX];
+			const uint64_t *et = __dtfl_update_time_copy(rec,
+			    c->depth, c->dw, len, etbuf);
+			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw,
+			    len);
+			int64_t d_in;
+			dd_value *k, *v;
+			lin_vec rows = { 0 };
+			size_t r;
+
+			memcpy(&d_in, __dtfl_update_diff(rec, c->dw, len),
+			    sizeof d_in);
+			decode_pair(rec, rlen, &k, &v);
+			linear_apply(c, k, v, et, &rows);
+			dd_value_free(k);
+			dd_value_free(v);
+			for (r = 0; r < rows.len; r++) {
+				lin_row *lr = &rows.data[r];
+				uint64_t out_time[DTFL_TIME_MAX];
+				uint8_t *buf;
+				size_t blen;
+				unsigned char *dst;
+				int64_t d_out = d_in * lr->d;
+
+				/* out_time = join(t_in, t_delta).  The embedded
+				 * time rides in the record; it needs no
+				 * capability of its own unless EnterAt advanced it
+				 * past the message capability (t_delta nonzero),
+				 * when a delayed capability covers it. */
+				dtfl_time_join(c->tc, et, lr->tdelta, out_time);
+				buf = encode_pair(lr->k, lr->v, &blen);
+				if (dtfl_time_cmp(c->tc, out_time, et) == 0) {
+					dst = __dtfl_session_reserve(s,
+					    blen + tw + c->dw);
+					memcpy(dst, buf, blen);
+					memcpy(dst + blen, out_time, tw);
+					memcpy(dst + blen + tw, &d_out, c->dw);
+				} else {
+					dtfl_cap *dc =
+					    dtfl_op_input_cap_delayed(op, 0,
+					    0, out_time);
+					dtfl_session *ds =
+					    dtfl_op_session(op, 0, dc);
+
+					dst = __dtfl_session_reserve(ds,
+					    blen + tw + c->dw);
+					memcpy(dst, buf, blen);
+					memcpy(dst + blen, out_time, tw);
+					memcpy(dst + blen + tw, &d_out, c->dw);
+					dtfl_session_close(ds);
+					dtfl_cap_drop(dc);
+				}
+				__dtfl_free(buf);
+				dd_value_free(lr->k);
+				dd_value_free(lr->v);
+			}
+			__dtfl_free(rows.data);
+		}
+		dtfl_session_close(s);
+		dtfl_cap_drop(cap);
+	}
+	return false;
+}
+
+static void
+linear_free(void *vctx)
+{
+	linear_ctx *c = vctx;
+
+	dtfl_time_class_free(c->tc);
+	__dtfl_free(c);
+}
+
+/* Render a Linear chain `ops` over `in` at scope depth `level`. */
+dtfl_collection *
+dd_render_linear(dtfl_collection *in, const dd_vec *ops, size_t level)
+{
+	dtfl_scope *scope = dtfl_stream_scope(in->stream);
+	const dtfl_time_class *tc = dtfl_scope_time_class(scope);
+	unsigned depth = in->depth;
+	linear_ctx *c = __dtfl_alloc(sizeof *c);
+	const dtfl_type *ut;
+	dtfl_op_builder *b;
+	dtfl_stream *st;
+
+	/* Product<u64, PointStamp<u64>> has the u64 outer at word 0, so the
+	 * PointStamp coordinates start at the outer depth. */
+	c->tc = dtfl_time_class_retain(tc);
+	c->depth = depth;
+	c->dw = sizeof(int64_t);
+	c->ps_word = dd_pointstamp_word(tc);
+	c->level = level;
+	c->ops = (const dd_linear_op *const *)ops->data;
+	c->n_ops = ops->len;
+	ut = __dtfl_update_type(dd_pair_type(), depth, c->dw);
+	b = dtfl_op_builder_new(scope, "Linear");
+	dtfl_op_builder_input(b, in->stream, dtfl_pact_pipeline());
+	st = dtfl_op_builder_output(b, ut);
+	dtfl_op_builder_build(b, linear_logic, c, linear_free);
+	dtfl_type_free(ut);
+	return __dtfl_as_collection(st, dd_pair_type(),
+	    dtfl_diff_retain(in->diff), depth);
 }
 
 /* ------------------------------------------------------------------ */
@@ -589,13 +844,63 @@ typedef struct eval_build {
 	int err;
 } eval_build;
 
+/* The iterative subscope build: enter the outer (u64) input collections into
+ * the Product<u64, PointStamp<u64>> scope, render the program there, and leave
+ * each export back out to the outer scope (backend/vec.rs evaluate). */
+typedef struct iter_build {
+	eval_build *eb;
+	dtfl_collection *const *outer_cols; /* one per input (outer scope) */
+	dtfl_collection **leaving;	    /* exports left to the outer (owned) */
+	size_t n_exports;
+	int err;
+} iter_build;
+
+static void
+eval_iter_fn(dtfl_scope *inner, void *arg)
+{
+	iter_build *ib = arg;
+	eval_build *eb = ib->eb;
+	size_t ne = eb->program->root.exports.len;
+	dtfl_collection **entered;
+	dtfl_collection **exports;
+	size_t i;
+
+	entered = eb->n_inputs
+	    ? __dtfl_alloc(eb->n_inputs * sizeof(dtfl_collection *)) : NULL;
+	for (i = 0; i < eb->n_inputs; i++)
+		entered[i] = dtfl_collection_enter(
+		    (dtfl_collection *)ib->outer_cols[i], inner);
+	exports = ne ? __dtfl_alloc(ne * sizeof(dtfl_collection *)) : NULL;
+	ib->err = dd_render_program(eb->program, inner, entered, eb->n_inputs,
+	    exports);
+	ib->n_exports = ne;
+	ib->leaving = ne ? __dtfl_alloc(ne * sizeof(dtfl_collection *)) : NULL;
+	if (ib->err == 0) {
+		for (i = 0; i < ne; i++) {
+			ib->leaving[i] = dtfl_collection_leave(exports[i]);
+			dtfl_collection_free(exports[i]);
+		}
+	} else {
+		for (i = 0; i < ne; i++) {
+			if (exports[i] != NULL)
+				dtfl_collection_free(exports[i]);
+			ib->leaving[i] = NULL;
+		}
+	}
+	for (i = 0; i < eb->n_inputs; i++)
+		dtfl_collection_free(entered[i]);
+	__dtfl_free(entered);
+	__dtfl_free(exports);
+}
+
 static void
 eval_build_fn(dtfl_scope *scope, void *arg)
 {
 	eval_build *eb = arg;
 	size_t ne = eb->program->root.exports.len;
 	dtfl_collection **input_cols;
-	dtfl_collection **exports;
+	dtfl_time_class *inner_tc = dtfl_ddir_time_class();
+	iter_build ib;
 	size_t i;
 
 	input_cols = eb->n_inputs
@@ -603,30 +908,35 @@ eval_build_fn(dtfl_scope *scope, void *arg)
 	for (i = 0; i < eb->n_inputs; i++)
 		input_cols[i] = dtfl_input_session_to_collection(
 		    eb->sessions[i], scope);
-	exports = ne ? __dtfl_alloc(ne * sizeof(dtfl_collection *)) : NULL;
-	eb->err = dd_render_program(eb->program, scope, input_cols,
-	    eb->n_inputs, exports);
+
+	memset(&ib, 0, sizeof ib);
+	ib.eb = eb;
+	ib.outer_cols = input_cols;
+	/* The one iterative dynamic scope: Product<u64, PointStamp<u64>>. */
+	dtfl_scope_scoped(scope, "iterate", inner_tc, eval_iter_fn, &ib);
+	eb->err = ib.err;
 	if (eb->err == 0) {
 		for (i = 0; i < ne; i++) {
 			dtfl_collection *ins = dtfl_collection_inspect(
-			    exports[i], eval_sink,
+			    ib.leaving[i], eval_sink,
 			    DTFL_CTX(&eb->accs[i], NULL));
 			dtfl_collection *probed = dtfl_collection_probe_with(ins,
 			    eb->probe);
 
 			dtfl_collection_free(probed);
 			dtfl_collection_free(ins);
-			dtfl_collection_free(exports[i]);
+			dtfl_collection_free(ib.leaving[i]);
 		}
 	} else {
 		for (i = 0; i < ne; i++)
-			if (exports[i] != NULL)
-				dtfl_collection_free(exports[i]);
+			if (ib.leaving != NULL && ib.leaving[i] != NULL)
+				dtfl_collection_free(ib.leaving[i]);
 	}
+	__dtfl_free(ib.leaving);
 	for (i = 0; i < eb->n_inputs; i++)
 		dtfl_collection_free(input_cols[i]);
 	__dtfl_free(input_cols);
-	__dtfl_free(exports);
+	dtfl_time_class_free(inner_tc);
 }
 
 /*

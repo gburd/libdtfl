@@ -22,6 +22,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The maximum DDIR scope nesting depth: the PointStamp inner time is padded
+ * to this many coordinates (PLAN D3).  The deepest pinned program (scc) nests
+ * three levels (root, outer, fwd/bwd), using coordinates 0 and 1; 8 leaves
+ * generous headroom and keeps the time at 1 + 8 = 9 words, well under
+ * DTFL_TIME_MAX. */
+#define DD_POINTSTAMP_MAX 8
+
 /* ------------------------------------------------------------------ */
 /* A small growable pointer vector, used throughout the IR.            */
 /* ------------------------------------------------------------------ */

@@ -7,21 +7,20 @@
  *
  * src/ddir/backend.c: the scope-tree render walk.
  *
- * render_tree walks a scope: it creates the feedback variables first (so
- * items can refer to them), renders items in dependency order, closes the
- * loops with the binds, and surrenders the exports.  An item resolves its
- * input Refs to already-rendered collections, variable collections or
- * entered imports.  A child scope that iterates (has vars) renders inside
- * a nested iterative subscope (one loop coordinate); a plain child renders
- * inside a region.
+ * render_tree walks a scope at a given depth (root = 0): it creates the
+ * feedback variables first (so items can refer to them), renders items in
+ * dependency order, closes the loops with the binds, and surrenders the
+ * exports.  An item resolves its input Refs to already-rendered
+ * collections, variable collections or entered imports.  A nested { } is a
+ * real timely region (same timestamp type) rendered at depth + 1; its
+ * exports leave the region and then pop the child's PointStamp coordinate
+ * with leave_dynamic(depth + 1).  Temporally, a scope that iterates (has
+ * vars) advances its own PointStamp coordinate: dtfl_variable_new_at builds
+ * a Variable whose feedback summary is feedback_summary(depth, 1) at that
+ * coordinate.
  *
- * Rendering differs from upstream in one structural way: upstream places
- * the whole program in a single iterative<PointStamp<u64>> scope and uses
- * per-depth dynamic coordinates, whereas this renders each iterating scope
- * as its own nested Product scope.  The fixpoint results are identical;
- * the literal Product<u64, PointStamp<u64>> dynamic-scope rendering (needed
- * for explain's exact time model) is pending.  See the port-ledger note on
- * backend_vec.c.
+ * The whole program runs in one iterative dynamic scope (backend/vec.rs),
+ * so the live dataflow's time is literally Product<u64, PointStamp<u64>>.
  */
 #include "ddir_int.h"
 #include "backend_int.h"
@@ -55,6 +54,7 @@ typedef struct ritem {
 typedef struct render_ctx {
 	const dd_scope *s;
 	dtfl_scope *scope;
+	size_t depth;			/* this scope's nesting depth (root 0) */
 	dtfl_collection **imports;	/* one per import, entered (owned) */
 	dtfl_collection **var_cols;	/* one per var (owned handles) */
 	dtfl_variable **var_handles;	/* one per var (owned until set) */
@@ -62,7 +62,7 @@ typedef struct render_ctx {
 	int err;
 } render_ctx;
 
-static dtfl_collection *render_scope(const dd_scope *s, dtfl_scope *scope,
+static void render_scope(const dd_scope *s, dtfl_scope *scope, size_t depth,
     dtfl_collection *const *imports, dtfl_collection ***exports_out,
     size_t *n_exports_out, int *err);
 
@@ -107,52 +107,14 @@ copy_collection(dtfl_collection *c)
 	return dtfl_collection_filter(c, keep_all, DTFL_NOCTX);
 }
 
-/* Apply a single linear op to a collection, returning a new one.  project/
- * filter/flatmap transform records; negate flips the diff.  enter_at and
- * lift_iter are dynamic-time features not supported by this (nested-Product)
- * rendering yet. */
-static dtfl_collection *
-apply_linear_op(render_ctx *rc, dtfl_collection *c, const dd_linear_op *op)
-{
-	switch (op->kind) {
-	case DD_LIN_PROJECT:
-		return dtfl_collection_map(c, dd_pair_type(), project_fn,
-		    DTFL_CTX((void *)&op->proj, NULL));
-	case DD_LIN_FILTER:
-		return dtfl_collection_filter(c, filter_fn,
-		    DTFL_CTX((void *)op->term, NULL));
-	case DD_LIN_FLATMAP:
-		return dtfl_collection_flat_map(c, dd_pair_type(), flatmap_fn,
-		    DTFL_CTX((void *)op->term, NULL));
-	case DD_LIN_NEGATE:
-		return dtfl_collection_negate(c);
-	case DD_LIN_ENTER_AT:
-	case DD_LIN_LIFT_ITER:
-		rc->err = DTFL_ENOTSUP;
-		__dtfl_err(DTFL_ENOTSUP, "DDIR backend: enter_at/lift_iter not "
-		    "supported in the nested-Product rendering yet");
-		return NULL;
-	}
-	__dtfl_panic("apply_linear_op: bad op kind");
-}
-
-/* Render a Linear node: apply its ops in sequence over the input. */
+/* Render a Linear node: the whole op chain as one faithful operator at this
+ * scope's depth (backend/vec.rs render_linear). */
 static dtfl_collection *
 render_linear(render_ctx *rc, const dd_node *n)
 {
 	dtfl_collection *in = resolve(rc, &n->input);
-	dtfl_collection *cur = copy_collection(in); /* owned */
-	size_t i;
 
-	for (i = 0; i < n->ops.len; i++) {
-		dtfl_collection *next = apply_linear_op(rc, cur, n->ops.data[i]);
-
-		dtfl_collection_free(cur);
-		if (next == NULL)
-			return NULL;
-		cur = next;
-	}
-	return cur;
+	return dd_render_linear(in, &n->ops, rc->depth);
 }
 
 static dtfl_collection *
@@ -234,11 +196,14 @@ render_node(render_ctx *rc, const dd_node *n)
 	__dtfl_panic("render_node: bad node kind");
 }
 
-/* The build callback for a child scope (iterative or region): enter the
- * parent collections into the child scope, render the child, and leave its
- * exports back to the parent. */
+/* The build callback for a child scope: a real timely region (same timestamp
+ * type).  Enter the parent collections, render the child at depth + 1, and
+ * leave its exports back to the parent.  Popping the child's PointStamp
+ * coordinate (leave_dynamic(depth + 1)) is done by the caller after the
+ * region closes. */
 typedef struct child_build {
 	const dd_scope *child;
+	size_t child_depth;
 	dtfl_collection *const *parent_cols; /* one per import (parent scope) */
 	size_t n_imports;
 	dtfl_collection **leaving;	/* exports, left to the parent (owned) */
@@ -258,7 +223,8 @@ child_build_enter(dtfl_scope *inner, void *arg)
 	for (i = 0; i < cb->n_imports; i++)
 		entered[i] = dtfl_collection_enter(
 		    (dtfl_collection *)cb->parent_cols[i], inner);
-	(void)render_scope(cb->child, inner, entered, &exports, &n, &cb->err);
+	render_scope(cb->child, inner, cb->child_depth, entered, &exports, &n,
+	    &cb->err);
 	cb->n_exports = n;
 	cb->leaving = n ? __dtfl_alloc(n * sizeof(dtfl_collection *)) : NULL;
 	for (i = 0; i < n; i++) {
@@ -275,8 +241,8 @@ child_build_enter(dtfl_scope *inner, void *arg)
 /* render_scope: the core walk                                         */
 /* ------------------------------------------------------------------ */
 
-static dtfl_collection *
-render_scope(const dd_scope *s, dtfl_scope *scope,
+static void
+render_scope(const dd_scope *s, dtfl_scope *scope, size_t depth,
     dtfl_collection *const *imports, dtfl_collection ***exports_out,
     size_t *n_exports_out, int *err)
 {
@@ -287,19 +253,22 @@ render_scope(const dd_scope *s, dtfl_scope *scope,
 	memset(&rc, 0, sizeof rc);
 	rc.s = s;
 	rc.scope = scope;
+	rc.depth = depth;
 	rc.imports = (dtfl_collection **)imports;
 	rc.err = 0;
 	rc.items = s->items.len
 	    ? __dtfl_calloc(s->items.len, sizeof(ritem)) : NULL;
 
-	/* Create feedback variables first. */
+	/* Create feedback variables first.  Each advances the PointStamp
+	 * coordinate at this scope's depth: feedback_summary(depth, 1), which
+	 * dtfl_variable_new_at builds at 1-based level = depth. */
 	if (s->vars.len) {
 		rc.var_cols = __dtfl_calloc(s->vars.len, sizeof(dtfl_collection *));
 		rc.var_handles = __dtfl_calloc(s->vars.len,
 		    sizeof(dtfl_variable *));
 		for (i = 0; i < s->vars.len; i++)
-			rc.var_handles[i] = dtfl_variable_new(scope,
-			    dd_pair_type(), i64, &rc.var_cols[i]);
+			rc.var_handles[i] = dtfl_variable_new_at(scope,
+			    dd_pair_type(), i64, depth, &rc.var_cols[i]);
 	}
 
 	/* Render items in order. */
@@ -331,21 +300,34 @@ render_scope(const dd_scope *s, dtfl_scope *scope,
 			}
 			cb.parent_cols = parent_cols;
 			cb.n_imports = child->imports.len;
+			cb.child_depth = depth + 1;
 			cb.err = 0;
-			/* An iterating scope (has vars) nests as iterative; a
-			 * plain scope as a region.  child_build_enter enters
-			 * imports and leaves exports. */
-			if (child->vars.len)
-				dtfl_scope_iterative(scope, child->name,
-				    child_build_enter, &cb);
-			else
-				dtfl_scope_region(scope, child->name,
-				    child_build_enter, &cb);
+			/* Every { } is a timely region (same timestamp type).
+			 * child_build_enter enters imports and leaves exports;
+			 * popping the child's PointStamp coordinate is below. */
+			dtfl_scope_region(scope, child->name,
+			    child_build_enter, &cb);
 			if (cb.err != 0)
 				rc.err = cb.err;
 			rc.items[i].is_sub = true;
-			rc.items[i].exports = cb.leaving;
 			rc.items[i].n_exports = cb.n_exports;
+			/* leave_dynamic(depth + 1): strip the child's iteration
+			 * coordinate from each export's embedded time. */
+			if (cb.n_exports) {
+				dtfl_collection **lifted = __dtfl_alloc(
+				    cb.n_exports * sizeof(dtfl_collection *));
+				size_t e;
+
+				for (e = 0; e < cb.n_exports; e++) {
+					lifted[e] = dtfl_collection_leave_dynamic(
+					    cb.leaving[e], depth + 1);
+					dtfl_collection_free(cb.leaving[e]);
+				}
+				__dtfl_free(cb.leaving);
+				rc.items[i].exports = lifted;
+			} else {
+				rc.items[i].exports = cb.leaving;
+			}
 			__dtfl_free(parent_cols);
 		}
 	}
@@ -398,7 +380,6 @@ render_scope(const dd_scope *s, dtfl_scope *scope,
 	__dtfl_free(rc.var_handles);
 	dtfl_diff_free(i64);
 	/* render_scope returns via the out params; no single collection. */
-	return NULL;
 }
 
 int
@@ -427,7 +408,7 @@ dd_render_program(const dtfl_ddir_program *p, dtfl_scope *scope,
 		import_cols[i] = (dtfl_collection *)inputs[imp->from.u.input];
 	}
 
-	(void)render_scope(root, scope, import_cols, &out, &n_out, &err);
+	render_scope(root, scope, 0, import_cols, &out, &n_out, &err);
 	__dtfl_free(import_cols);
 	if (err != 0) {
 		for (i = 0; i < n_out; i++)
