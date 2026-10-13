@@ -27,6 +27,8 @@
 #include "dtfl/reduce.h"
 #include "dtfl/time.h"
 
+#include "base/base_int.h"
+
 #include <string.h>
 
 /* The (u64 node, u64 label) record type. */
@@ -72,8 +74,49 @@ typedef struct prop_ctx {
 	dtfl_collection *edges;	/* (src, dst) edges, outer scope */
 	dtfl_collection *nodes;	/* (node, label) seeds, outer scope */
 	const dtfl_type *nl;	/* (u64, u64) record type */
+	dtfl_algo_label_fn logic;	/* label -> priority bucket, or NULL */
+	void *logic_ctx;
 	dtfl_collection *result;	/* labels, left into the outer scope */
 } prop_ctx;
+
+/*
+ * enter_at logic (propagate_core): the nodes enter the inner scope at
+ * initial inner time 256 * (64 - leading_zeros(logic(label))), so smaller
+ * priority buckets are introduced in earlier rounds.  The record is
+ * (node, label); the label is its second u64 field.  leading_zeros(0) is
+ * 64, so a zero bucket yields a zero delay (a plain enter).
+ *
+ * The context is heap-owned by the enter_at operator (freed with
+ * __dtfl_free), because the enter_at callback fires during execution,
+ * after the building prop_ctx has gone out of scope.
+ */
+typedef struct enter_ctx {
+	dtfl_algo_label_fn logic;
+	void *logic_ctx;
+} enter_ctx;
+
+static void
+enter_at_round(void *vctx, const void *rec, size_t len, uint64_t *inner_out)
+{
+	enter_ctx *c = vctx;
+	uint64_t label, bucket, lz;
+
+	(void)len;
+	label = dtfl_get_u64((const unsigned char *)rec + 8);
+	bucket = c->logic(c->logic_ctx, label);
+	lz = (bucket == 0) ? 64 : (uint64_t)__builtin_clzll(bucket);
+	inner_out[0] = 256 * (64 - lz);
+}
+
+static enter_ctx *
+enter_ctx_new(dtfl_algo_label_fn logic, void *logic_ctx)
+{
+	enter_ctx *c = __dtfl_alloc(sizeof *c);
+
+	c->logic = logic;
+	c->logic_ctx = logic_ctx;
+	return c;
+}
 
 /*
  * The Propagate subscope: a monotonic Variable seeded empty, concatenated
@@ -86,7 +129,10 @@ prop_build(dtfl_scope *inner, void *arg)
 {
 	prop_ctx *c = arg;
 	dtfl_collection *edges = dtfl_collection_enter(c->edges, inner);
-	dtfl_collection *nodes = dtfl_collection_enter(c->nodes, inner);
+	dtfl_collection *nodes = c->logic == NULL ?
+	    dtfl_collection_enter(c->nodes, inner) :
+	    dtfl_collection_enter_at(c->nodes, inner, enter_at_round,
+		DTFL_CTX(enter_ctx_new(c->logic, c->logic_ctx), __dtfl_free));
 	dtfl_diff *i64 = dtfl_diff_i64();
 	dtfl_collection *proposals;
 	dtfl_variable *var = dtfl_variable_new(inner, c->nl, i64, &proposals);
@@ -118,6 +164,27 @@ dtfl_algo_propagate(dtfl_collection *edges, dtfl_collection *nodes)
 	c.edges = edges;
 	c.nodes = nodes;
 	c.nl = nl;
+	c.logic = NULL;
+	c.logic_ctx = NULL;
+	c.result = NULL;
+	dtfl_scope_iterative(scope, "Propagate", prop_build, &c);
+	dtfl_type_free(nl);
+	return c.result;
+}
+
+dtfl_collection *
+dtfl_algo_propagate_at(dtfl_collection *edges, dtfl_collection *nodes,
+    dtfl_algo_label_fn logic, dtfl_ctx ctx)
+{
+	const dtfl_type *nl = node_label_type();
+	dtfl_scope *scope = dtfl_collection_scope(nodes);
+	prop_ctx c;
+
+	c.edges = edges;
+	c.nodes = nodes;
+	c.nl = nl;
+	c.logic = logic;
+	c.logic_ctx = ctx.ptr;
 	c.result = NULL;
 	dtfl_scope_iterative(scope, "Propagate", prop_build, &c);
 	dtfl_type_free(nl);
