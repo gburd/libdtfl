@@ -218,14 +218,20 @@ arrange_logic(dtfl_op *op, void *vctx)
 
 			batch = seal_batch(c, &upper);
 			/*
-			 * The writer takes this reference into the trace (and
-			 * retains its own for each listener queue).  The stream
-			 * record is a borrow of the trace-owned batch, valid while
-			 * the trace holds it; the consumer does not release it.
+			 * writer.insert(batch.clone(), ...) then
+			 * output.give(batch): the writer takes one reference
+			 * into the trace, and the stream record owns a second
+			 * (retained here, released when the stream message frees).
+			 * Upstream moves an owning Rc<Batch> into the message; the
+			 * message outlives the cursor, so the batch survives even
+			 * when the shared spine merges and drops the trace's own
+			 * reference.
 			 */
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
+			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
+			__dtfl_session_set_batch_ptr(s);
 			{
 				unsigned char *dst = __dtfl_session_reserve(s,
 				    DTFL_BATCH_PTR_SIZE);
@@ -605,9 +611,11 @@ ascoll_logic(dtfl_op *op, void *vctx)
 				__dtfl_cursor_step_key(&cur, batch);
 			}
 			/*
-			 * The batch pointer record is a borrow of a batch owned by
-			 * the trace (or a listener queue for an import); it is not
-			 * released here.
+			 * The record is a borrow; the stream message owns the
+			 * batch reference (the producer put an owning reference
+			 * into the batch-pointer arena, released when the message
+			 * frees).  This matches upstream borrowing the batch from
+			 * the Vec<Rc<Batch>> the message owns.
 			 */
 		}
 		dtfl_session_close(s);
@@ -666,7 +674,6 @@ typedef enum cross_kind {
 typedef struct cross_ctx {
 	cross_kind kind;
 	const dtfl_time_class *inner;	/* CROSS_ENTER target class */
-	__dtfl_vec owned;		/* fresh entered batches, freed at teardown */
 } cross_ctx;
 
 static bool
@@ -681,6 +688,7 @@ cross_batch_logic(dtfl_op *op, void *vctx)
 		dtfl_session *s = dtfl_op_session(op, 0, cap);
 		size_t i, n = dtfl_message_len(m);
 
+		__dtfl_session_set_batch_ptr(s);
 		for (i = 0; i < n; i++) {
 			size_t len;
 			const void *recp = dtfl_message_record(m, i, &len);
@@ -689,17 +697,16 @@ cross_batch_logic(dtfl_op *op, void *vctx)
 
 			memcpy(&in, recp, sizeof in);
 			/*
-			 * The incoming record is a borrow (owned by the source
-			 * trace).  A region passes the same borrow through; an
-			 * enter builds a fresh batch with lifted times, which this
-			 * operator owns and frees at teardown, keeping the emitted
-			 * record a borrow like every other batch-pointer record.
+			 * The incoming record is a borrow (the input stream
+			 * message owns the batch reference).  Each emitted record
+			 * must own its own reference, released when the output
+			 * message frees: a region retains the same batch, an enter
+			 * builds a fresh batch with lifted times (already owning).
 			 */
 			if (c->kind == CROSS_ENTER) {
 				out = __dtfl_batch_enter(in, c->inner);
-				__dtfl_vec_push(&c->owned, &out);
 			} else {
-				out = in;
+				out = __dtfl_batch_ord_retain(in);
 			}
 			dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 			memcpy(dst, &out, sizeof out);
@@ -714,12 +721,7 @@ static void
 cross_free(void *vctx)
 {
 	cross_ctx *c = vctx;
-	size_t i;
 
-	for (i = 0; i < c->owned.len; i++)
-		__dtfl_batch_ord_release(*DTFL_VEC_AT(&c->owned,
-		    __dtfl_batch_ord *, i));
-	__dtfl_vec_free(&c->owned);
 	__dtfl_free(c);
 }
 
@@ -734,7 +736,6 @@ cross_impl(dtfl_arranged *a, dtfl_stream *crossed, dtfl_scope *to_scope,
 
 	cc->kind = kind;
 	cc->inner = to;
-	__dtfl_vec_init(&cc->owned, sizeof(__dtfl_batch_ord *));
 	b = dtfl_op_builder_new(to_scope, name);
 	dtfl_op_builder_input(b, crossed, dtfl_pact_pipeline());
 	out->stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
@@ -844,7 +845,6 @@ typedef struct import_ctx {
 	__dtfl_replay_queue *queue;	/* retained (strong reference) */
 	dtfl_cap *cap;			/* persistent output capability */
 	bool activator_set;
-	__dtfl_vec owned;		/* emitted batches, freed at teardown */
 	const dtfl_time_class *tc;
 	unsigned depth;
 } import_ctx;
@@ -897,15 +897,15 @@ import_logic(dtfl_op *op, void *vctx)
 			dtfl_cap *d = dtfl_cap_delayed(c->cap, in->hint_time);
 			dtfl_session *s = dtfl_op_session(op, 0, d);
 			__dtfl_batch_ord *b = __dtfl_batch_ord_retain(in->batch);
-			unsigned char *dst = __dtfl_session_reserve(s,
-			    DTFL_BATCH_PTR_SIZE);
+			unsigned char *dst;
 
+			__dtfl_session_set_batch_ptr(s);
+			dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 			/*
-			 * The emitted record is a borrow; this operator owns the
-			 * batch until teardown, outliving any later consumer read,
-			 * so the batch survives the queue drain below.
+			 * The emitted record owns this retained reference (as
+			 * upstream moves an owning Rc<Batch> into the stream);
+			 * the stream message releases it on free.
 			 */
-			__dtfl_vec_push(&c->owned, &b);
 			memcpy(dst, &b, sizeof b);
 			dtfl_session_close(s);
 			dtfl_cap_drop(d);
@@ -937,14 +937,9 @@ static void
 import_free(void *vctx)
 {
 	import_ctx *c = vctx;
-	size_t i;
 
 	if (c->cap != NULL)
 		dtfl_cap_drop(c->cap);
-	for (i = 0; i < c->owned.len; i++)
-		__dtfl_batch_ord_release(*DTFL_VEC_AT(&c->owned,
-		    __dtfl_batch_ord *, i));
-	__dtfl_vec_free(&c->owned);
 	/* Mark the queue dropped so the writer prunes it, then release. */
 	c->queue->dropped = true;
 	__dtfl_replay_queue_release(c->queue);
@@ -967,7 +962,6 @@ dtfl_trace_import(dtfl_trace *t, dtfl_scope *scope, const char *name)
 	a->stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
 	c->cap = NULL;
 	c->activator_set = false;
-	__dtfl_vec_init(&c->owned, sizeof(__dtfl_batch_ord *));
 	c->tc = t->agent.tc;
 	c->depth = t->depth;
 	/*

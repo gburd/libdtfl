@@ -163,6 +163,12 @@ tests_unit_test_arrange_by_key_SOURCES = tests/unit/test_arrange_by_key.c
 tests_unit_test_arrange_by_key_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_arrange_by_key_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_arrange_lifetime
+TESTS += tests/unit/test_arrange_lifetime
+tests_unit_test_arrange_lifetime_SOURCES = tests/unit/test_arrange_lifetime.c
+tests_unit_test_arrange_lifetime_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_arrange_lifetime_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_iterate
 TESTS += tests/unit/test_iterate
 tests_unit_test_iterate_SOURCES = tests/unit/test_iterate.c

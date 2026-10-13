@@ -77,27 +77,32 @@ Not started or partial -- MUST be finished before the project is done
         enter_at and lift_iter), and the explain rewrite + reverse rules
         are DONE (feat/p13-explain): the explain suite passes for reach,
         transitive closure, count, flatmap, collect, demand-subset and
-        clone_identity.  Remaining: the scc sufficiency sub-tests are
-        SKIP, blocked on the trace batch-lifetime UAF below (not an
-        explain bug), and the server + dtfl-ddir tool.  Exit: the explain
-        suite; upstream .ddp/.ddir programs give the same results.
-[ ] trace batch-lifetime use-after-free: a reduce-built batch
-        (reduce.c:1516 rd_build_batches -> ord_neu.c:121
-        __dtfl_builder_ord_done) is freed by the spine's fuelled merge
-        (spine_fueled.c:115 ms_work -> cursor.c:71
-        __dtfl_batch_ord_release) while ArrangeToCollection still cursors
-        it (arrangement.c:574 ascoll_logic -> cursor.c:129
-        __dtfl_cursor_init -> trace_int.h:93 __dtfl_slices_len reads freed
-        storage.vals).  Surfaces on large reduce+arrange+shared-trace
-        programs: the scc explain program at 50/55 nodes (result rows 3,
-        9, 10), and under ASan even on row 0.  Small graphs and
-        clone_identity do not trigger it.  3 explain scc tests
-        (scc_row_explanations_sufficient_small / _100,
-        two_simultaneous_queries, demand_is_a_subset) and the scc fuzz
-        sweep SKIP until fixed (DTFL_EXPLAIN_HEAVY forces them).  FINISH:
-        retain the batch across the arrange->collection batch-ptr edge,
-        or keep the fuelled merge from reclaiming a batch still
-        referenced by a downstream operator; then drop the SKIP guards.
+        clone_identity.  The scc sufficiency sub-tests now pass too (the
+        trace batch-lifetime UAF below is fixed); remaining is the server
+        + dtfl-ddir tool.  Exit: the explain suite; upstream .ddp/.ddir
+        programs give the same results.
+[x] trace batch-lifetime use-after-free: a reduce-built batch
+        (reduce.c rd_build_batches -> ord_neu.c __dtfl_builder_ord_done)
+        was freed by the spine's fuelled merge (spine_fueled.c ms_work ->
+        cursor.c __dtfl_batch_ord_release) while ArrangeToCollection still
+        cursored it (arrangement.c ascoll_logic -> trace_int.h
+        __dtfl_slices_len read freed storage.vals).  FIXED on
+        feat/trace-uaf: the batch-pointer stream record now owns a
+        reference (the arena carries elem drop/retain hooks set per
+        batch-pointer session; the producer retains one reference into the
+        record and the stream message releases it on free), matching
+        upstream's Vec<Rc<Batch>> message that keeps a batch alive for the
+        message's lifetime whether or not a consumer reads it.  The 3
+        explain scc sufficiency tests (scc_row_explanations_sufficient_small,
+        two_simultaneous_queries_sufficient, demand_is_a_subset_of_the_input)
+        are un-SKIPped and pass under ASan + LSan.
+[ ] reduce interesting-time assertion: rd_retire's output-tag match
+        asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
+        DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
+        Distinct from the batch-lifetime UAF above (it was previously
+        masked by that UAF crashing first); the heavy fuzz sweep stays
+        SKIP until the reduce output-tag logic is fixed.  scc_100 remains
+        a time-gated heavy sweep, not blocked on this.
 [ ] P14 plugin server + its four example plugins.  Exit: the dd_server
         session scripts replay.
 [ ] P15 release: the three experiments/ benchmarks, the performance

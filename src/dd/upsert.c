@@ -341,16 +341,18 @@ process_interval(upsert_ctx *c, dtfl_op *op, dtfl_cap *cap,
 		    __dtfl_antichain_at(upper, j));
 
 	/*
-	 * Publish the batch to the trace, which takes the reference; the stream
-	 * record is a borrow of the trace-owned batch, not released by the
-	 * consumer.
+	 * writer.insert(batch.clone()) then output.give(batch): the writer
+	 * takes one reference into the trace and the stream record owns a
+	 * second (released by the consumer when it is done cursoring).
 	 */
 	__dtfl_trace_writer_insert(&c->writer, batch, dtfl_cap_time(cap));
+	__dtfl_batch_ord_retain(batch);
 	{
 		dtfl_session *s = dtfl_op_session(op, 0, cap);
-		unsigned char *dst = __dtfl_session_reserve(s,
-		    DTFL_BATCH_PTR_SIZE);
+		unsigned char *dst;
 
+		__dtfl_session_set_batch_ptr(s);
+		dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 		memcpy(dst, &batch, sizeof batch);
 		dtfl_session_close(s);
 	}
