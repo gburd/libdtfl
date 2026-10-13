@@ -792,6 +792,25 @@ dtfl_arranged_trace(const dtfl_arranged *a)
 	return t;
 }
 
+/*
+ * A second independent handle onto the same shared trace: clones the agent
+ * (so the clone carries its own compaction holds) and retains the type and
+ * diff.  Used where one trace must be shared by several owners, such as a
+ * CollectionIndex handing a copy to each extender it builds.
+ */
+dtfl_trace *
+__dtfl_trace_clone(const dtfl_trace *src)
+{
+	dtfl_trace *t = __dtfl_alloc(sizeof *t);
+
+	__dtfl_trace_agent_clone(&src->agent, &t->agent);
+	t->type = dtfl_type_retain(src->type);
+	t->diff = dtfl_diff_retain(src->diff);
+	t->depth = src->depth;
+	t->keyed = src->keyed;
+	return t;
+}
+
 void
 dtfl_trace_free(dtfl_trace *t)
 {

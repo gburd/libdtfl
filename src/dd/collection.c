@@ -687,12 +687,22 @@ delay_map_logic(dtfl_op *op, void *vctx)
 			const void *rec = dtfl_message_record(m, i, &len);
 			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw, len);
 			unsigned char *dst = __dtfl_session_reserve(s, len);
-			uint64_t *et = (uint64_t *)(void *)(dst + rlen);
-			const uint64_t *src_et = __dtfl_update_time(rec, c->depth,
-			    c->dw, len);
+			size_t tw = (size_t)c->depth * sizeof(uint64_t);
+			/*
+			 * The embedded time at offset rlen may be unaligned when
+			 * rlen is not a multiple of 8; stage it in aligned buffers
+			 * for the re-timer.
+			 */
+			uint64_t src_buf[DTFL_TIME_MAX];
+			uint64_t dst_buf[DTFL_TIME_MAX];
 
 			memcpy(dst, rec, len);
-			c->fn(c->user, src_et, et);
+			if (tw != 0) {
+				memcpy(src_buf,
+				    (const unsigned char *)rec + rlen, tw);
+				c->fn(c->user, src_buf, dst_buf);
+				memcpy(dst + rlen, dst_buf, tw);
+			}
 		}
 		dtfl_session_close(s);
 		dtfl_cap_drop(cap);
@@ -779,17 +789,28 @@ cross_logic(dtfl_op *op, void *vctx)
 			    len);
 			size_t out_len = rlen + to_tw + c->dw;
 			unsigned char *dst = __dtfl_session_reserve(s, out_len);
-			const uint64_t *src_et = (const uint64_t *)(const void *)
-			    ((const unsigned char *)rec + rlen);
-			uint64_t *dst_et = (uint64_t *)(void *)(dst + rlen);
+			/*
+			 * The embedded time sits at offset rlen, which need not
+			 * be 8-aligned for a record whose length is not a
+			 * multiple of 8 (a tuple of u32s, say).  Stage both the
+			 * source and destination times in aligned buffers so the
+			 * refinement reads and writes aligned words.
+			 */
+			uint64_t src_buf[DTFL_TIME_MAX];
+			uint64_t dst_buf[DTFL_TIME_MAX];
 
 			memcpy(dst, rec, rlen);
+			if (from_tw != 0)
+				memcpy(src_buf,
+				    (const unsigned char *)rec + rlen, from_tw);
 			if (c->entering)
-				__dtfl_time_to_inner(c->to, c->from, src_et,
-				    dst_et);
+				__dtfl_time_to_inner(c->to, c->from, src_buf,
+				    dst_buf);
 			else
-				__dtfl_time_to_outer(c->from, c->to, src_et,
-				    dst_et);
+				__dtfl_time_to_outer(c->from, c->to, src_buf,
+				    dst_buf);
+			if (to_tw != 0)
+				memcpy(dst + rlen, dst_buf, to_tw);
 			if (c->dw != 0)
 				memcpy(dst + rlen + to_tw,
 				    (const unsigned char *)rec + rlen + from_tw,

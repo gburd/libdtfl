@@ -37,6 +37,8 @@
 
 /* dtfl_arranged is the opaque handle from dtfl/arrange.h (defined there). */
 typedef struct dtfl_arranged dtfl_arranged;
+/* dtfl_trace is the opaque handle from dtfl/arrange.h (defined in arrangement.c). */
+typedef struct dtfl_trace dtfl_trace;
 
 /* ------------------------------------------------------------------ */
 /* Batch pointer records on the arrange output stream.                 */
@@ -355,5 +357,14 @@ dtfl_arranged *__dtfl_arranged_from_agent(dtfl_stream *stream,
  */
 dtfl_arranged *__dtfl_collection_arrange_by_key(dtfl_collection *c,
     const dtfl_type *kt, const dtfl_type *vt, const char *name);
+
+/*
+ * __dtfl_trace_clone: a second independent handle onto the same shared
+ * trace (clones the agent, retains the type and diff).  Used where one
+ * trace is shared by several owners, as a CollectionIndex shares each of
+ * its traces with every extender it builds.  The caller frees it with
+ * dtfl_trace_free.
+ */
+dtfl_trace *__dtfl_trace_clone(const dtfl_trace *src);
 
 #endif /* DTFL_ARRANGE_INT_H */
