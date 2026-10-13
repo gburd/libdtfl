@@ -69,7 +69,7 @@ typedef struct arrange_ctx {
 	__dtfl_trace_writer writer;
 	__dtfl_vec caps;		/* dtfl_cap *, lower envelope of batcher */
 	__dtfl_antichain prev_frontier;
-	const dtfl_type *rt;		/* record (whole) type; not retained */
+	const dtfl_type *rt;		/* record (whole) type; retained */
 	const dtfl_type *kt;		/* key type for the builder split */
 	const dtfl_type *vt;		/* value type (unit for key batches) */
 	const dtfl_time_class *tc;
@@ -329,6 +329,7 @@ arrange_free(void *vctx)
 	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
+	dtfl_type_free(c->rt);
 	if (c->route != NULL)
 		__dtfl_free(c->route);
 	__dtfl_free(c);
@@ -389,7 +390,7 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 
 	trace = __dtfl_trace_new(keyed, kt, vt, tc, dc);
 
-	ac->rt = c->type;
+	ac->rt = dtfl_type_retain(c->type);
 	ac->kt = kt;
 	ac->vt = vt;
 	ac->tc = tc;
