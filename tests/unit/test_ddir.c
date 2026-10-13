@@ -13,6 +13,8 @@
 #include "ddir/ddir_int.h"
 #include "ddir/parse_int.h"
 #include "base/base_int.h"
+#include "progress/time_int.h"
+#include "dtfl/time.h"
 
 #include <string.h>
 
@@ -400,6 +402,93 @@ DTFL_TEST(ddir__build_transitive_closure)
 	return MUNIT_OK;
 }
 
+/*
+ * The live DDIR dataflow's time is literally Product<u64, PointStamp<u64>>
+ * (ir.rs:9, PLAN D3): a u64 outer and a PointStamp inner.  Inspect the
+ * class dtfl_ddir_time_class hands the renderer.
+ */
+DTFL_TEST(ddir__time_is_product_pointstamp)
+{
+	dtfl_time_class *tc = dtfl_ddir_time_class();
+
+	(void)params; (void)data;
+	assert_not_null(tc);
+	/* Product<outer, inner>. */
+	assert_int(tc->shape, ==, DTFL_SHAPE_PRODUCT);
+	/* outer = u64 (one TOTAL coordinate). */
+	assert_int(tc->a->shape, ==, DTFL_SHAPE_TOTAL);
+	assert_int(tc->a->depth, ==, 1);
+	/* inner = PointStamp<u64>, padded to DD_POINTSTAMP_MAX coordinates. */
+	assert_int(tc->b->shape, ==, DTFL_SHAPE_POINTSTAMP);
+	assert_int(tc->b->depth, ==, DD_POINTSTAMP_MAX);
+	/* The whole time is 1 + DD_POINTSTAMP_MAX words. */
+	assert_uint(dtfl_time_depth(tc), ==, 1u + DD_POINTSTAMP_MAX);
+	/* The product order is partial, not total. */
+	assert_false(dtfl_time_is_total(tc));
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
+/*
+ * enter_at places each record at a per-record inner coordinate (the
+ * 256 * (64 - leading_zeros(field)) delay of backend/vec.rs render_linear)
+ * yet still reaches the same fixed point.  A min-label flood over a small
+ * chain, with the seed labels entered at a delay derived from the label,
+ * must still settle to every node carrying the component's minimum label.
+ * The delay only changes WHEN a proposal enters the loop, not the fixpoint,
+ * so a wrong enter_at (missing, or the wrong coordinate) either diverges
+ * (caught by the step bound) or settles to the wrong labels.
+ */
+DTFL_TEST(ddir__build_enter_at_label_flood)
+{
+	const char *src =
+	    "let edges = input 0 | key($0[0] ; $0[1]);\n"
+	    "let trans = edges | key($1 ; $0);\n"
+	    "let sym = edges + trans;\n"
+	    "flood: {\n"
+	    "    let nodes = sym | key($0 ; $0) | enter_at($1[0]);\n"
+	    "    let labels = proposals + nodes | min;\n"
+	    "    var proposals = labels | join(sym, ($2 ; $1));\n"
+	    "}\n"
+	    "export \"labels\" = flood::labels;\n";
+	dtfl_ddir_program *p = NULL;
+	dtfl_ddir_row edges[3];
+	const dtfl_ddir_row *inputs[1];
+	size_t input_lens[1];
+	dtfl_ddir_output *out = NULL;
+	size_t n_out = 0, i;
+
+	(void)params; (void)data;
+	assert_int(dtfl_ddir_parse(src, DTFL_DDIR_PIPE, &p), ==, 0);
+	/* A 3-node chain 1-2-3 (undirected via sym): one component, min label
+	 * is 1, so every node settles to label 1. */
+	edges[0] = row_edge(1, 2);
+	edges[1] = row_edge(2, 3);
+	edges[2] = row_edge(1, 3);
+	inputs[0] = edges;
+	input_lens[0] = 3;
+	assert_int(dtfl_ddir_evaluate(p, inputs, input_lens, 1, &out, &n_out),
+	    ==, 0);
+	assert_size(n_out, ==, 1);
+	assert_string_equal(out[0].name, "labels");
+	/* labels is keyed by node; its value is the min label (= 1 for all).
+	 * Three nodes, each converged (net multiplicity 1) to the min label.
+	 * The exact fixpoint (every node reaches label 1) confirms enter_at
+	 * only reorders loop entry, it does not change the result. */
+	assert_size(out[0].n, ==, 3);
+	for (i = 0; i < out[0].n; i++) {
+		const dtfl_ddir_row *r = &out[0].rows[i];
+		int64_t label = tup1(r->val);
+
+		assert_int64(r->diff, ==, 1);
+		assert_int64(label, ==, 1); /* the component minimum */
+	}
+	free_rows(edges, 3);
+	dtfl_ddir_outputs_free(out, n_out);
+	dtfl_ddir_program_free(p);
+	return MUNIT_OK;
+}
+
 /* value_parse of a closed term yields the constant value. */
 DTFL_TEST(ddir__value_parse)
 {
@@ -431,6 +520,8 @@ static MunitTest tests[] = {
 	DTFL_T(ddir__parse_error_no_crash),
 	DTFL_T(ddir__build_join),
 	DTFL_T(ddir__build_transitive_closure),
+	DTFL_T(ddir__time_is_product_pointstamp),
+	DTFL_T(ddir__build_enter_at_label_flood),
 	DTFL_T(ddir__value_parse),
 	DTFL_T_END
 };

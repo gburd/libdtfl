@@ -10,6 +10,7 @@ ddir_sources = \
 	src/ddir/ddir_int.h \
 	src/ddir/parse_int.h \
 	src/ddir/backend_int.h \
+	src/ddir/explain_int.h \
 	src/ddir/ir.c \
 	src/ddir/parse.c \
 	src/ddir/parse_pipe.c \
@@ -18,6 +19,8 @@ ddir_sources = \
 	src/ddir/lower.c \
 	src/ddir/backend.c \
 	src/ddir/backend_vec.c \
+	src/ddir/explain.c \
+	src/ddir/explain_decouple.c \
 	src/ddir/ddir.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
@@ -26,6 +29,7 @@ dtflinclude_HEADERS += include/dtfl/ddir.h
 EXTRA_DIST += src/ddir/exports.sym
 
 dist_man_MANS += man/man3/dtfl_ddir_parse.3
+dist_man_MANS += man/man3/dtfl_ddir_explain.3
 
 check_PROGRAMS += tests/unit/test_ddir
 TESTS += tests/unit/test_ddir
@@ -44,3 +48,21 @@ TESTS += tests/unit/test_lower
 tests_unit_test_lower_SOURCES = tests/unit/test_lower.c
 tests_unit_test_lower_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_lower_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_explain
+TESTS += tests/unit/test_explain
+tests_unit_test_explain_SOURCES = tests/unit/test_explain.c
+tests_unit_test_explain_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_explain_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_explain_decouple
+TESTS += tests/unit/test_explain_decouple
+tests_unit_test_explain_decouple_SOURCES = tests/unit/test_explain_decouple.c
+tests_unit_test_explain_decouple_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_explain_decouple_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/ddir/explain
+TESTS += tests/upstream/ddir/explain
+tests_upstream_ddir_explain_SOURCES = tests/upstream/ddir/explain.c
+tests_upstream_ddir_explain_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_ddir_explain_LDADD = $(INTERNAL_LIBS)

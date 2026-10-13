@@ -44,12 +44,13 @@ int dd_evaluate(const dtfl_ddir_program *program,
     const dtfl_ddir_row *const *inputs, const size_t *input_lens,
     size_t n_inputs, out_acc *accs);
 
-/* Scalar operator callbacks, defined in backend_vec.c, used by backend.c. */
-void project_fn(void *ctx, const void *rec, size_t len,
-    dtfl_collection_emit *out);
-bool filter_fn(void *ctx, const void *rec, size_t len);
-void flatmap_fn(void *ctx, const void *rec, size_t len,
-    dtfl_collection_emit *out);
+/* Render a Linear chain `ops` over `in` at scope depth `level`, as the single
+ * flat_map of backend/vec.rs render_linear: project/filter/negate rewrite the
+ * records, enter_at delays the PointStamp coordinate at `level`, and lift_iter
+ * folds that coordinate into the value.  Returns a new collection; frees `in`
+ * is the caller's job. */
+dtfl_collection *dd_render_linear(dtfl_collection *in, const dd_vec *ops,
+    size_t level);
 void join_fn(void *ctx, const void *key, size_t klen, const void *v1,
     size_t v1len, const void *v2, size_t v2len, dtfl_join_emit *out);
 void reduce_min_fn(void *ctx, const void *key, size_t klen, size_t n,

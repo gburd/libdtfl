@@ -13,6 +13,8 @@ dtfl_ddir_program_free
 dtfl_ddir_program_input_count
 dtfl_ddir_program_export_count
 dtfl_ddir_program_export_name
+dtfl_ddir_explain
+dtfl_ddir_clone_identity
 dtfl_ddir_build
 dtfl_ddir_time_class
 dtfl_ddir_evaluate

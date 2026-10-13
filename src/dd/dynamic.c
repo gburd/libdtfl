@@ -155,10 +155,12 @@ dtfl_collection_leave_dynamic(dtfl_collection *c, size_t level)
 	const dtfl_time_class *tc =
 	    dtfl_scope_time_class(dtfl_stream_scope(c->stream));
 	leave_dynamic_ctx *lc;
-	unsigned off, k;
+	unsigned off, k, soff, sw;
 	const dtfl_type *ut;
 	dtfl_op_builder *b;
 	dtfl_stream *st;
+	uint64_t retain_sum[DTFL_TIME_MAX];
+	const uint64_t *summaries[1];
 
 	if (level < 1 || !pointstamp_span(tc, &off, &k))
 		__dtfl_panic("Collection::leave_dynamic: not a PointStamp scope");
@@ -171,8 +173,20 @@ dtfl_collection_leave_dynamic(dtfl_collection *c, size_t level)
 	lc->keep = (unsigned)(level - 1) < k ? (unsigned)(level - 1) : k;
 	ut = __dtfl_update_type(c->type, c->depth, lc->dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(c->stream), "LeaveDynamic");
-	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
+	/* The output comes first so the input connection can carry the
+	 * path summary PointStampSummary { retain: Some(level - 1) }
+	 * (dynamic/mod.rs): the capability is truncated to the first level - 1
+	 * coordinates, which is exactly what leave_dynamic_logic delays to.
+	 * Without this summary the delayed capability (a smaller time than the
+	 * message time) is rejected by the input-output summary check. */
 	st = dtfl_op_builder_output(b, ut);
+	sw = DTFL_MAX(dtfl_summary_depth(tc), 1u);
+	soff = pointstamp_summary_off(tc);
+	memset(retain_sum, 0, (size_t)sw * sizeof(uint64_t));
+	retain_sum[soff] = (uint64_t)(level - 1); /* retain: Some(level - 1) */
+	summaries[0] = retain_sum;
+	dtfl_op_builder_input_connection(b, c->stream, dtfl_pact_pipeline(),
+	    summaries);
 	dtfl_op_builder_build(b, leave_dynamic_logic, lc, leave_dynamic_free);
 	dtfl_type_free(ut);
 	return __dtfl_as_collection(st, c->type, dtfl_diff_retain(c->diff),

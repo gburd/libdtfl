@@ -22,6 +22,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The maximum DDIR scope nesting depth: the PointStamp inner time is padded
+ * to this many coordinates (PLAN D3).  The deepest pinned program (scc) nests
+ * three levels (root, outer, fwd/bwd), using coordinates 0 and 1; 8 leaves
+ * generous headroom and keeps the time at 1 + 8 = 9 words, well under
+ * DTFL_TIME_MAX. */
+#define DD_POINTSTAMP_MAX 8
+
 /* ------------------------------------------------------------------ */
 /* A small growable pointer vector, used throughout the IR.            */
 /* ------------------------------------------------------------------ */
@@ -406,6 +413,12 @@ int64_t dd_value_as_int(const dd_value *v); /* panics if not Int */
 
 /* splitmix64 helpers (lib.rs hash_u64). */
 uint64_t dd_hash_u64(uint64_t index);
+
+/* gen_row_seeded (lib.rs): one deterministic (key, val) row, key a Tuple of
+ * `arity` hash-derived Ints each < nodes, val the empty tuple.  seed == 0
+ * reproduces gen_row. */
+void dd_gen_row(uint64_t seed, uint64_t edge_index, uint64_t nodes,
+    size_t arity, dd_value **key, dd_value **val);
 
 /*
  * Evaluate a scalar Term against the environment stack `env` (an array of

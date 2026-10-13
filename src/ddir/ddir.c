@@ -19,6 +19,7 @@
 #include "ddir_int.h"
 #include "parse_int.h"
 #include "backend_int.h"
+#include "explain_int.h"
 
 #include "../base/base_int.h"
 
@@ -99,6 +100,48 @@ dtfl_ddir_program_export_name(const dtfl_ddir_program *p, size_t i)
 }
 
 /* ------------------------------------------------------------------ */
+/* Explain                                                             */
+/* ------------------------------------------------------------------ */
+
+int
+dtfl_ddir_explain(const dtfl_ddir_program *program,
+    const dtfl_ddir_shape *shapes, size_t n_shapes, dtfl_ddir_program **out)
+{
+	size_t (*raw)[2];
+	size_t i;
+
+	if (program == NULL || out == NULL || (n_shapes != 0 && shapes == NULL))
+		return __dtfl_err(DTFL_EINVAL, "dtfl_ddir_explain: NULL argument");
+	*out = NULL;
+	if (n_shapes != dtfl_ddir_program_input_count(program))
+		return __dtfl_err(DTFL_EINVAL, "dtfl_ddir_explain: expected %zu "
+		    "shapes, got %zu",
+		    dtfl_ddir_program_input_count(program), n_shapes);
+	if (program->root.exports.len == 0)
+		return __dtfl_err(DTFL_EINVAL,
+		    "dtfl_ddir_explain: program has no export");
+	raw = n_shapes ? __dtfl_alloc(n_shapes * sizeof(*raw)) : NULL;
+	for (i = 0; i < n_shapes; i++) {
+		raw[i][0] = shapes[i].k;
+		raw[i][1] = shapes[i].v;
+	}
+	*out = dd_explain(program, (const size_t (*)[2])raw, n_shapes);
+	__dtfl_free(raw);
+	return 0;
+}
+
+int
+dtfl_ddir_clone_identity(const dtfl_ddir_program *program,
+    dtfl_ddir_program **out)
+{
+	if (program == NULL || out == NULL)
+		return __dtfl_err(DTFL_EINVAL,
+		    "dtfl_ddir_clone_identity: NULL argument");
+	*out = dd_clone_identity(program);
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Build and time class                                                */
 /* ------------------------------------------------------------------ */
 
@@ -106,13 +149,22 @@ dtfl_time_class *
 dtfl_ddir_time_class(void)
 {
 	/*
-	 * The nested-Product rendering runs the program body in a plain
-	 * (u64) dataflow scope and nests an iterative Product scope per
-	 * iterating DDIR scope.  The faithful Product<u64, PointStamp<u64>>
-	 * dynamic-scope rendering is pending (see backend_vec.c); until then
-	 * the build scope's time class is u64.
+	 * DDIR's time is Product<u64, PointStamp<u64>> (ir.rs:9): a u64 outer
+	 * (host time) and a PointStamp inner that holds the per-depth
+	 * iteration coordinates.  The whole program renders in one iterative
+	 * dynamic scope of this class, so iterate pushes coordinates without
+	 * changing the timestamp type.  The PointStamp is padded to a fixed
+	 * maximum nesting depth (DD_POINTSTAMP_MAX).
 	 */
-	return dtfl_time_u64();
+	dtfl_coord u64c = { DTFL_COORD_UNSIGNED, 64 };
+	const dtfl_time_class *outer = dtfl_time_u64();
+	const dtfl_time_class *inner = dtfl_time_pointstamp(u64c,
+	    DD_POINTSTAMP_MAX);
+	dtfl_time_class *tc = dtfl_time_product(outer, inner);
+
+	dtfl_time_class_free(outer);
+	dtfl_time_class_free(inner);
+	return tc;
 }
 
 int
