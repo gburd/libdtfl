@@ -761,3 +761,16 @@ dd_program_free(dtfl_ddir_program *p)
 	dd_scope_free_fields(&p->root);
 	__dtfl_free(p);
 }
+
+dtfl_ddir_program *
+dd_program_clone(const dtfl_ddir_program *p)
+{
+	dtfl_ddir_program *out = __dtfl_calloc(1, sizeof *out);
+	dd_scope *root = dd_scope_clone(&p->root);
+
+	/* Move the cloned root's fields into the embedded root, then free
+	 * the now-empty clone shell (not its fields). */
+	out->root = *root;
+	__dtfl_free(root);
+	return out;
+}

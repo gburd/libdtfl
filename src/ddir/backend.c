@@ -389,11 +389,12 @@ dd_render_program(const dtfl_ddir_program *p, dtfl_scope *scope,
 {
 	const dd_scope *root = &p->root;
 	dtfl_collection **import_cols;
-	dtfl_collection **out = NULL;
-	size_t n_out = 0, i;
-	int err = 0;
+	size_t i;
+	int rc;
 
-	/* Bind the root imports: Source::Input(n) -> inputs[n]. */
+	/* Bind the root imports: Source::Input(n) -> inputs[n].  Any other
+	 * source (a named trace) has no binding here; the server uses
+	 * dd_render_program_bound to supply one per import. */
 	import_cols = root->imports.len
 	    ? __dtfl_alloc(root->imports.len * sizeof(dtfl_collection *)) : NULL;
 	for (i = 0; i < root->imports.len; i++) {
@@ -408,8 +409,27 @@ dd_render_program(const dtfl_ddir_program *p, dtfl_scope *scope,
 		import_cols[i] = (dtfl_collection *)inputs[imp->from.u.input];
 	}
 
-	render_scope(root, scope, 0, import_cols, &out, &n_out, &err);
+	rc = dd_render_program_bound(p, scope, import_cols,
+	    root->imports.len, exports);
 	__dtfl_free(import_cols);
+	return rc;
+}
+
+int
+dd_render_program_bound(const dtfl_ddir_program *p, dtfl_scope *scope,
+    dtfl_collection *const *import_cols, size_t n_imports,
+    dtfl_collection **exports)
+{
+	const dd_scope *root = &p->root;
+	dtfl_collection **out = NULL;
+	size_t n_out = 0, i;
+	int err = 0;
+
+	if (n_imports != root->imports.len)
+		return __dtfl_err(DTFL_EINVAL, "DDIR build: expected %zu "
+		    "import bindings, got %zu", root->imports.len, n_imports);
+
+	render_scope(root, scope, 0, import_cols, &out, &n_out, &err);
 	if (err != 0) {
 		for (i = 0; i < n_out; i++)
 			dtfl_collection_free(out[i]);

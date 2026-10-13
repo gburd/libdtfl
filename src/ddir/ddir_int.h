@@ -372,6 +372,9 @@ void dd_program_optimize(dtfl_ddir_program *p);
 dtfl_ddir_program *dd_lower_tree(const dd_vec *stmts);
 /* Free a program and its scope tree. */
 void dd_program_free(dtfl_ddir_program *p);
+/* Deep-clone a program (the whole scope tree).  Caller frees with
+ * dd_program_free. */
+dtfl_ddir_program *dd_program_clone(const dtfl_ddir_program *p);
 
 /* ------------------------------------------------------------------ */
 /* Value data model and the Term interpreter (ir.rs)                   */

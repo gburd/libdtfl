@@ -21,15 +21,18 @@ ddir_sources = \
 	src/ddir/backend_vec.c \
 	src/ddir/explain.c \
 	src/ddir/explain_decouple.c \
+	src/ddir/server.c \
 	src/ddir/ddir.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
 libdtfl_internal_la_SOURCES += $(ddir_sources)
 dtflinclude_HEADERS += include/dtfl/ddir.h
+dtflinclude_HEADERS += include/dtfl/server.h
 EXTRA_DIST += src/ddir/exports.sym
 
 dist_man_MANS += man/man3/dtfl_ddir_parse.3
 dist_man_MANS += man/man3/dtfl_ddir_explain.3
+dist_man_MANS += man/man3/dtfl_ddir_server.3
 
 check_PROGRAMS += tests/unit/test_ddir
 TESTS += tests/unit/test_ddir
@@ -66,3 +69,13 @@ TESTS += tests/upstream/ddir/explain
 tests_upstream_ddir_explain_SOURCES = tests/upstream/ddir/explain.c
 tests_upstream_ddir_explain_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_ddir_explain_LDADD = $(INTERNAL_LIBS)
+
+# The example batch programs run through the public evaluate and match the
+# hand-computed result (the P13 exit criterion).  PROG_DIR is an absolute
+# path into the source tree so the test runs from any build directory.
+check_PROGRAMS += tests/upstream/ddir/programs
+TESTS += tests/upstream/ddir/programs
+tests_upstream_ddir_programs_SOURCES = tests/upstream/ddir/programs.c
+tests_upstream_ddir_programs_CFLAGS = $(TEST_CFLAGS) \
+	-DPROG_DIR='"$(abs_top_srcdir)/tools/dtfl-ddir/programs/"'
+tests_upstream_ddir_programs_LDADD = $(INTERNAL_LIBS)

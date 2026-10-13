@@ -1,0 +1,132 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL-DDIR 1
+.Os
+.Sh NAME
+.Nm dtfl-ddir
+.Nd build and run Differential Dataflow IR programs
+.Sh SYNOPSIS
+.Nm
+.Cm run
+.Ar program
+.Op Ar rows-file
+.Nm
+.Cm server
+.Op Ar session-file
+.Nm
+.Cm explain
+.Ar program
+.Op Ar arity
+.Sh DESCRIPTION
+.Nm
+builds and runs programs written in the Differential Dataflow IR (DDIR),
+a small language for defining differential dataflows at runtime.
+A program names positional input collections, defines derived collections
+by expressions
+.Pq map, filter, equijoin, reduce, concat, and iterate for recursion ,
+and declares named outputs.
+A
+.Pa .ddp
+program uses the pipe syntax
+.Pq Ql expr | op | op ;
+anything else uses the applicative syntax
+.Pq Ql MAP(e, proj), JOIN(e1, e2, proj) .
+.Pp
+The three subcommands follow the three upstream example programs.
+.Bl -tag -width Ds
+.It Cm run Ar program Op Ar rows-file
+Evaluate
+.Ar program
+on explicit input rows and print each export's consolidated contents.
+Rows come from
+.Ar rows-file ,
+or standard input: one row per line, whitespace-separated integers
+becoming a tuple of integers, inserted at multiplicity
+.Li +1
+into the current positional input.
+The current input starts at 0; a line
+.Ql @ Ns Ar N
+selects positional input
+.Ar N .
+Blank lines and lines starting with
+.Ql #
+are skipped.
+The output rows are sorted, so a program's result is a stable transcript.
+.It Cm server Op Ar session-file
+Run the live DDIR server on a command session read from
+.Ar session-file ,
+or standard input.
+Each line is a command:
+.Ic install Ar name file ,
+.Ic feed Ar prog in# value Oo Ic val Ns = Ns Ar value Oc Oo Ic time Ns = Ns Ar t Oc Oo Ic diff Ns = Ns Ar int Oc ,
+.Ic tick ,
+.Ic drop Ar name ,
+.Ic peek Ar trace Op Ar key ,
+.Ic list ,
+.Ic help ,
+or
+.Ic exit .
+A line beginning with
+.Ql #
+or
+.Ql --
+is a comment.
+A
+.Ar value
+is a comma-separated integer row
+.Pq Ql 1,2 No a tuple; Ql _ No or empty, unit ,
+or any closed scalar term written without spaces
+.Pq Ql tuple(1,2) , Ql list(1,2,3) , Ql inject(2,tuple(3,4)) .
+Programs may share results by name: a program's
+.Ic export
+publishes a trace that a later program's
+.Ic import
+reads, maintaining a computation incrementally over the producer's output.
+Malformed programs and values are reported and the session continues.
+.It Cm explain Ar program Op Ar arity
+Report
+.Ar program
+and its explanation rewrite by input and export shape.
+The rewrite reports, for a query against a program's output, which input
+rows regenerate it.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ${datadir}/dtfl/ddir/programs/
+The example batch programs
+.Pq Pa reach , scc , kcore , stable , adt , binders , unnest .
+.It Pa ${datadir}/dtfl/ddir/server/programs/
+The example server programs
+.Pq producer, consumers, generated-source demos .
+.It Pa ${datadir}/dtfl/ddir/server/sessions/
+The example server sessions, replayable with
+.Nm Cm server .
+.El
+.Sh EXAMPLES
+Run reachability over a three-edge graph with one root
+.Pq input 0 is edges, input 1 is roots :
+.Bd -literal -offset indent
+printf '1 2\\n2 3\\n3 4\\n@1\\n1\\n' | dtfl-ddir run reach.ddir
+.Ed
+.Pp
+Replay the shared-trace session:
+.Bd -literal -offset indent
+dtfl-ddir server shared_trace.txt
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_ddir_parse 3 ,
+.Xr dtfl_ddir_server 3
+.Sh STANDARDS
+Ported from the differential-dataflow
+.Ql interactive
+crate at tag
+.Ql differential-dataflow-v0.25.1 .
+.Nm Cm run
+is
+.Pa examples/ddir_vec.rs ,
+.Nm Cm server
+is
+.Pa examples/ddir_server.rs ,
+.Nm Cm explain
+is
+.Pa examples/dump_explain.rs .

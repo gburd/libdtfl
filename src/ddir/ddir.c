@@ -25,6 +25,7 @@
 
 #include "dtfl/time.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* ------------------------------------------------------------------ */
@@ -293,4 +294,84 @@ dtfl_ddir_value_parse(const char *term)
 	__dtfl_free(env);
 	dd_arena_free_all(&pc);
 	return v;
+}
+
+/* ------------------------------------------------------------------ */
+/* Value Debug form (Rust {:?})                                        */
+/* ------------------------------------------------------------------ */
+
+/* Append `s` to the growable string *buf (len = used, cap = capacity),
+ * keeping it NUL-terminated.  Grows via __dtfl_realloc (never NULL). */
+static void
+dd_sb_puts(char **buf, size_t *len, size_t *cap, const char *s)
+{
+	size_t add = strlen(s);
+
+	if (*len + add + 1 > *cap) {
+		size_t want = *cap ? *cap * 2 : 64;
+
+		while (want < *len + add + 1)
+			want *= 2;
+		*buf = __dtfl_realloc(*buf, want);
+		*cap = want;
+	}
+	memcpy(*buf + *len, s, add + 1);
+	*len += add;
+}
+
+/* Append the Debug form of `v` to the growable buffer *buf (len/cap). */
+static void
+dd_value_debug(const dd_value *v, char **buf, size_t *len, size_t *cap)
+{
+	char num[32];
+	size_t i;
+
+	switch (v->kind) {
+	case DD_V_INT:
+		snprintf(num, sizeof num, "Int(%lld)",
+		    (long long)v->u.int_v);
+		dd_sb_puts(buf, len, cap, num);
+		break;
+	case DD_V_TUPLE:
+	case DD_V_LIST:
+		dd_sb_puts(buf, len, cap,
+		    v->kind == DD_V_TUPLE ? "Tuple([" : "List([");
+		for (i = 0; i < v->u.seq.len; i++) {
+			if (i)
+				dd_sb_puts(buf, len, cap, ", ");
+			dd_value_debug(v->u.seq.items[i], buf, len, cap);
+		}
+		dd_sb_puts(buf, len, cap, "])");
+		break;
+	case DD_V_VARIANT:
+		snprintf(num, sizeof num, "Variant(%lu, ",
+		    (unsigned long)v->u.variant.tag);
+		dd_sb_puts(buf, len, cap, num);
+		dd_value_debug(v->u.variant.payload, buf, len, cap);
+		dd_sb_puts(buf, len, cap, ")");
+		break;
+	}
+}
+
+size_t
+dtfl_ddir_value_format(const dtfl_ddir_value *v, char *buf, size_t cap)
+{
+	char *sb = NULL;
+	size_t len = 0, sbcap = 0, n;
+
+	if (v == NULL) {
+		if (cap)
+			buf[0] = '\0';
+		return 0;
+	}
+	dd_value_debug(v, &sb, &len, &sbcap);
+	n = len; /* the Debug form length, excluding the NUL */
+	if (cap) {
+		size_t copy = len < cap - 1 ? len : cap - 1;
+
+		memcpy(buf, sb, copy);
+		buf[copy] = '\0';
+	}
+	__dtfl_free(sb);
+	return n;
 }
