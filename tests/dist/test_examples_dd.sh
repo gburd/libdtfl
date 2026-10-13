@@ -68,6 +68,8 @@ run dd bfs bfs.expected sort
 run dd projekt projekt.expected sort
 run dd compact compact.expected cat
 run dd stackoverflow stackoverflow.expected sort
+run dd hello hello.expected sort
+run dd accumulate accumulate.expected sort
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
 run dogs dogsdogsdogs dogsdogsdogs.expected sort
 

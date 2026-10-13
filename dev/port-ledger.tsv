@@ -197,7 +197,7 @@ differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	tod
 differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	todo	divergence: binds 127.0.0.1 by default where upstream binds 0.0.0.0, ADR D12
 differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	todo	VecChunk arm only; the ColChunk arm is subsumed (D2)
 differential-dataflow	differential-dataflow/benches/sort-bench.rs	135	-	-	excluded	entirely commented out upstream
-differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	todo	
+differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	done	fixed multiset once in place of the forever random-insert loop; same enter_at/consolidate/leave; inspects the accumulation
 differential-dataflow	differential-dataflow/examples/arrange.rs	177	examples/dd/arrange.c	P8	todo	
 differential-dataflow	differential-dataflow/examples/bfs.rs	110	examples/dd/bfs.c	P9	done	fixed graph in place of StdRng (deterministic output); same algo (dtfl_algo_bfs), args, computation
 differential-dataflow	differential-dataflow/examples/columnar/main.rs	195	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in
@@ -207,7 +207,7 @@ differential-dataflow	differential-dataflow/examples/cursors.rs	126	examples/dd/
 differential-dataflow	differential-dataflow/examples/degrees.rs	179	examples/dd/degrees.c	P9	done	fixed graph in place of StdRng (deterministic output); same map/count_total computation
 differential-dataflow	differential-dataflow/examples/dynamic.rs	132	examples/dd/dynamic.c	P9	todo	
 differential-dataflow	differential-dataflow/examples/graspan.rs	272	examples/dd/graspan.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/hello.rs	89	examples/dd/hello.c	P8	todo	
+differential-dataflow	differential-dataflow/examples/hello.rs	89	examples/dd/hello.c	P8	done	fixed graph in place of StdRng (deterministic output); same degree-distribution-of-degrees via count_total twice
 differential-dataflow	differential-dataflow/examples/interpreted.rs	101	examples/dd/interpreted.c	P9	todo	
 differential-dataflow	differential-dataflow/examples/itembased_cf.rs	182	examples/dd/itembased_cf.c	P9	todo	
 differential-dataflow	differential-dataflow/examples/iterate_container.rs	83	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in

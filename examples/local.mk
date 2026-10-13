@@ -115,7 +115,9 @@ noinst_PROGRAMS += \
 	examples/dd/bfs \
 	examples/dd/projekt \
 	examples/dd/compact \
-	examples/dd/stackoverflow
+	examples/dd/stackoverflow \
+	examples/dd/hello \
+	examples/dd/accumulate
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -136,6 +138,14 @@ examples_dd_compact_LDADD = $(EXAMPLE_LDADD)
 examples_dd_stackoverflow_SOURCES = examples/dd/stackoverflow.c
 examples_dd_stackoverflow_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_stackoverflow_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_hello_SOURCES = examples/dd/hello.c
+examples_dd_hello_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_hello_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_accumulate_SOURCES = examples/dd/accumulate.c
+examples_dd_accumulate_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_accumulate_LDADD = $(EXAMPLE_LDADD)
 
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
@@ -172,7 +182,9 @@ check_PROGRAMS += \
 	examples/dd/compact \
 	examples/dd/stackoverflow \
 	examples/dogs/delta_query_wcoj \
-	examples/dogs/dogsdogsdogs
+	examples/dogs/dogsdogsdogs \
+	examples/dd/hello \
+	examples/dd/accumulate
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
@@ -192,4 +204,6 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/compact.expected \
 	examples/dd/stackoverflow.expected \
 	examples/dogs/delta_query_wcoj.expected \
-	examples/dogs/dogsdogsdogs.expected
+	examples/dogs/dogsdogsdogs.expected \
+	examples/dd/hello.expected \
+	examples/dd/accumulate.expected
