@@ -366,7 +366,9 @@ append_iter(dd_value *val, int64_t iter)
 	if (val->kind == DD_V_TUPLE) {
 		n = val->u.seq.len;
 		items = __dtfl_alloc((n + 1) * sizeof(dd_value *));
-		memcpy(items, val->u.seq.items, n * sizeof(dd_value *));
+		if (n > 0)
+			memcpy(items, val->u.seq.items,
+			    n * sizeof(dd_value *));
 		items[n] = dd_value_int(iter);
 		/* reuse val's children; free the shell only. */
 		__dtfl_free(val->u.seq.items);

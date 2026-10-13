@@ -877,11 +877,11 @@ dd_sb_reduce(dd_sb *b, dd_ref input, dd_reducer reducer)
 }
 
 dd_ref
-dd_sb_variable(dd_sb *b, const char *name)
+dd_sb_variable(dd_sb *b, char *name)
 {
 	dd_var *v = __dtfl_alloc(sizeof *v);
 
-	v->name = __dtfl_strdup(name);
+	v->name = name; /* takes ownership */
 	dd_vec_push(&b->s.vars, v);
 	return ref_var(b->s.vars.len - 1);
 }

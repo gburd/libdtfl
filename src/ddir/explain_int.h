@@ -89,7 +89,7 @@ dd_ref dd_sb_filter(dd_sb *b, dd_ref input, dd_term *cond);
 dd_ref dd_sb_concat(dd_sb *b, dd_ref *refs, size_t n);
 dd_ref dd_sb_join(dd_sb *b, dd_ref l, dd_ref r, dd_projection p);
 dd_ref dd_sb_reduce(dd_sb *b, dd_ref input, dd_reducer reducer);
-dd_ref dd_sb_variable(dd_sb *b, const char *name);
+dd_ref dd_sb_variable(dd_sb *b, char *name);		  /* owns name */
 void dd_sb_bind(dd_sb *b, dd_ref var, dd_ref value);
 dd_ref dd_sb_import(dd_sb *b, char *name, dd_source from); /* owns name */
 size_t dd_sb_export(dd_sb *b, char *name, dd_ref value);   /* owns name */
