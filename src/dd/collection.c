@@ -235,7 +235,9 @@ emit_tail(dtfl_collection_emit *e, const void *rec, size_t len,
 	size_t tw = (size_t)e->to_depth * sizeof(uint64_t);
 	unsigned char *dst = __dtfl_session_reserve(e->s, len + tw + e->out_dw);
 
-	memcpy(dst, rec, len);
+	/* A unit (0-byte) record has a NULL rec pointer; skip the copy. */
+	if (len != 0)
+		memcpy(dst, rec, len);
 	if (tw != 0)
 		memcpy(dst + len, e->time, tw);
 	if (e->out_dw != 0)
@@ -1066,7 +1068,9 @@ consolidate_logic(dtfl_op *op, void *vctx)
 				unsigned char *dst = __dtfl_session_reserve(s,
 				    rlen + tw + c->dw);
 
-				memcpy(dst, rec, rlen);
+				/* A unit record has rlen 0 and a NULL pointer. */
+				if (rlen != 0)
+					memcpy(dst, rec, rlen);
 				if (tw != 0)
 					memcpy(dst + rlen,
 					    __dtfl_batch_time(b, j), tw);

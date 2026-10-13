@@ -495,7 +495,8 @@ emit_update(dtfl_session *s, const void *rec, size_t rlen, const uint64_t *time,
 	size_t tw = (size_t)depth * sizeof(uint64_t);
 	unsigned char *dst = __dtfl_session_reserve(s, rlen + tw + dw);
 
-	memcpy(dst, rec, rlen);
+	if (rlen != 0)
+		memcpy(dst, rec, rlen);
 	if (tw != 0)
 		memcpy(dst + rlen, time, tw);
 	if (dw != 0)
