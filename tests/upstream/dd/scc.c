@@ -18,9 +18,10 @@
  * runtime cannot reproduce that stream, so this test uses its own
  * deterministic generator and feeds the identical edge list to the
  * differential program and the oracle.  The scc_at tests exercise the
- * prioritized variant (strongly_connected_at); that variant is not on
- * build (its per-record enter_at delay is a feature the public surface
- * does not expose), so those rows remain todo (see the report).
+ * prioritized variant (dtfl_algo_scc_at / strongly_connected_at), which
+ * introduces node labels in log-bucketed enter_at rounds; it produces the
+ * same intra-component edge set as the unprioritized variant, so both are
+ * checked against the same oracle.
  */
 #include "dtfl_test.h"
 
@@ -169,7 +170,17 @@ typedef struct build_ctx {
 	dtfl_input_session *edges;
 	dtfl_probe *probe;
 	elog *out;
+	bool prioritized;
 } build_ctx;
+
+/* The scc_at prioritization logic: a node labels into a log-bucketed
+ * round by its own id (upstream |x| *x as u64). */
+static uint64_t
+scc_at_logic(void *ctx, uint64_t node)
+{
+	(void)ctx;
+	return node;
+}
 
 static void
 build_scc(dtfl_scope *scope, void *arg)
@@ -177,7 +188,9 @@ build_scc(dtfl_scope *scope, void *arg)
 	build_ctx *c = arg;
 	dtfl_collection *edges = dtfl_input_session_to_collection(c->edges,
 	    scope);
-	dtfl_collection *scc = dtfl_algo_scc(edges);
+	dtfl_collection *scc = c->prioritized ?
+	    dtfl_algo_scc_at(edges, scc_at_logic, DTFL_NOCTX) :
+	    dtfl_algo_scc(edges);
 	dtfl_collection *con = dtfl_collection_consolidate(scc);
 	dtfl_collection *ins = dtfl_collection_inspect(con, sink,
 	    DTFL_CTX(c->out, NULL));
@@ -191,7 +204,7 @@ build_scc(dtfl_scope *scope, void *arg)
 }
 
 static MunitResult
-run_case(size_t nodes, size_t nedges, uint64_t seed)
+run_case(size_t nodes, size_t nedges, uint64_t seed, bool prioritized)
 {
 	rng r = { seed };
 	edge edges[MAXE];
@@ -216,6 +229,7 @@ run_case(size_t nodes, size_t nedges, uint64_t seed)
 	c.edges = dtfl_input_session_new(pair, rdiff);
 	c.probe = dtfl_probe_new();
 	c.out = &out;
+	c.prioritized = prioritized;
 	assert_int(dtfl_worker_dataflow(w, "scc", tc, build_scc, &c), ==, 0);
 
 	for (i = 0; i < nedges; i++) {
@@ -272,38 +286,47 @@ run_case(size_t nodes, size_t nedges, uint64_t seed)
 
 DTFL_TEST(scc__scc_10_20_1000)
 {
-	(void)params; (void)data; (void)run_case;
-	/*
-	 * strongly_connected nests label propagation (an inner iterative
-	 * subscope with its own feedback Variable) inside the scc feedback
-	 * loop.  The library and its oracle agree on acyclic graphs and on a
-	 * single 2-cycle, but on a graph with a directed cycle of three or
-	 * more nodes the nested-scope progress does not close: a single
-	 * worker step spins without advancing the frontier (a capability in
-	 * the inner scope is never dropped).  This is an engine-level issue
-	 * in deeply nested recursive scopes, not in the scc wiring, which is
-	 * validated on the convergent cases.  The row stays todo until the
-	 * nested-iterate progress closes.
-	 */
-	return MUNIT_SKIP;
+	(void)params; (void)data;
+	return run_case(10, 20, 1, false);
 }
 
 DTFL_TEST(scc__scc_100_200_10)
 {
 	(void)params; (void)data;
-	return MUNIT_SKIP;
+	return run_case(100, 200, 2, false);
 }
 
 DTFL_TEST(scc__scc_100_2000_1)
 {
 	(void)params; (void)data;
-	return MUNIT_SKIP;
+	return run_case(100, 2000, 3, false);
+}
+
+DTFL_TEST(scc__scc_at_10_20_1000)
+{
+	(void)params; (void)data;
+	return run_case(10, 20, 1, true);
+}
+
+DTFL_TEST(scc__scc_at_100_200_10)
+{
+	(void)params; (void)data;
+	return run_case(100, 200, 2, true);
+}
+
+DTFL_TEST(scc__scc_at_100_2000_1)
+{
+	(void)params; (void)data;
+	return run_case(100, 2000, 3, true);
 }
 
 static MunitTest tests[] = {
 	DTFL_T(scc__scc_10_20_1000),
 	DTFL_T(scc__scc_100_200_10),
 	DTFL_T(scc__scc_100_2000_1),
+	DTFL_T(scc__scc_at_10_20_1000),
+	DTFL_T(scc__scc_at_100_200_10),
+	DTFL_T(scc__scc_at_100_2000_1),
 	DTFL_T_END
 };
 

@@ -124,16 +124,22 @@ emit_reversed(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
  * trim_edges(cycle, edges): keep the edges of `edges` whose endpoints
  * carry equal labels under forward propagation over `cycle`, returning
  * the surviving edges reversed.  Both inputs live in the same scope.
+ * When `logic` is non-NULL, labels propagate with log-bucketed enter_at
+ * rounds (propagate_at); otherwise plain propagate.
  */
 static dtfl_collection *
-trim_edges(dtfl_collection *cycle, dtfl_collection *edges)
+trim_edges(dtfl_collection *cycle, dtfl_collection *edges,
+    dtfl_algo_label_fn logic, void *logic_ctx)
 {
 	const dtfl_type *pr = pair_type();
 	const dtfl_type *trip;
 	dtfl_collection *nodes_raw = dtfl_collection_map(edges, pr, node_self,
 	    DTFL_NOCTX);
 	dtfl_collection *nodes = dtfl_collection_consolidate(nodes_raw);
-	dtfl_collection *labels = dtfl_algo_propagate(cycle, nodes);
+	dtfl_collection *labels = logic == NULL ?
+	    dtfl_algo_propagate(cycle, nodes) :
+	    dtfl_algo_propagate_at(cycle, nodes, logic,
+		DTFL_CTX(logic_ctx, NULL));
 	dtfl_collection *j1, *j2, *filt, *result;
 
 	/* First join: edges (dst key) with labels (node key) by dst. */
@@ -170,6 +176,8 @@ trim_edges(dtfl_collection *cycle, dtfl_collection *edges)
 
 typedef struct scc_ctx {
 	dtfl_collection *graph;	/* original edges, outer scope */
+	dtfl_algo_label_fn logic;	/* node -> priority bucket, or NULL */
+	void *logic_ctx;
 } scc_ctx;
 
 static dtfl_collection *
@@ -180,8 +188,9 @@ scc_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
 	dtfl_collection *edges = dtfl_collection_enter(c->graph, inner);
 	dtfl_collection *trans = dtfl_collection_map(edges, pr, transpose,
 	    DTFL_NOCTX);
-	dtfl_collection *trim1 = trim_edges(var, edges);
-	dtfl_collection *trim2 = trim_edges(trim1, trans);
+	dtfl_collection *trim1 = trim_edges(var, edges, c->logic, c->logic_ctx);
+	dtfl_collection *trim2 = trim_edges(trim1, trans, c->logic,
+	    c->logic_ctx);
 
 	dtfl_collection_free(trim1);
 	dtfl_collection_free(trans);
@@ -193,7 +202,16 @@ scc_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
 dtfl_collection *
 dtfl_algo_scc(dtfl_collection *graph)
 {
-	scc_ctx c = { graph };
+	scc_ctx c = { graph, NULL, NULL };
+
+	return dtfl_collection_iterate(graph, scc_logic, DTFL_CTX(&c, NULL));
+}
+
+dtfl_collection *
+dtfl_algo_scc_at(dtfl_collection *graph, dtfl_algo_label_fn logic,
+    dtfl_ctx ctx)
+{
+	scc_ctx c = { graph, logic, ctx.ptr };
 
 	return dtfl_collection_iterate(graph, scc_logic, DTFL_CTX(&c, NULL));
 }

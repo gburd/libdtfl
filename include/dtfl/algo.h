@@ -75,6 +75,18 @@ DTFL_API dtfl_collection *dtfl_algo_bfs(dtfl_collection *edges,
 DTFL_API dtfl_collection *dtfl_algo_scc(dtfl_collection *graph);
 
 /*
+ * strongly_connected_at (scc.rs): like dtfl_algo_scc, but `logic` maps a
+ * node (u64) to a priority bucket in [0,64], used to introduce node
+ * labels in log-bucketed rounds (small labels can complete their
+ * propagation before larger labels are introduced).  The result equals
+ * dtfl_algo_scc's; the prioritization only reorders the work.  Passing a
+ * logic that returns 0 for every node reproduces dtfl_algo_scc.
+ */
+typedef uint64_t (*dtfl_algo_label_fn)(void *ctx, uint64_t label);
+DTFL_API dtfl_collection *dtfl_algo_scc_at(dtfl_collection *graph,
+    dtfl_algo_label_fn logic, dtfl_ctx ctx);
+
+/*
  * propagate (propagate.rs): directed label reachability.  `edges` is a
  * collection of (u64 src, u64 dst) edge records; `nodes` is a collection
  * of (u64 node, u64 label) records.  The result assigns each node the
@@ -84,6 +96,16 @@ DTFL_API dtfl_collection *dtfl_algo_scc(dtfl_collection *graph);
  */
 DTFL_API dtfl_collection *dtfl_algo_propagate(dtfl_collection *edges,
     dtfl_collection *nodes);
+
+/*
+ * propagate_at (propagate.rs): like dtfl_algo_propagate, but `logic` maps
+ * a label (u64) to a priority bucket in [0,64], used to introduce labels
+ * in log-bucketed rounds via enter_at.  The result equals
+ * dtfl_algo_propagate's; a logic returning 0 for every label reproduces
+ * it (a zero delay is a plain enter).
+ */
+DTFL_API dtfl_collection *dtfl_algo_propagate_at(dtfl_collection *edges,
+    dtfl_collection *nodes, dtfl_algo_label_fn logic, dtfl_ctx ctx);
 
 /*
  * sequence (sequential.rs): apply `logic` to nodes sequentially, in
