@@ -110,6 +110,15 @@ epoch, optionally restricted to one
 .Fn dtfl_ddir_server_list
 prints the registry: the epoch, the published traces with their importer
 counts, and the installed programs.
+.Sh IMPLEMENTATION NOTES
+The upstream server is multi-worker, circulating commands to every worker
+through a timely
+.Vt Sequencer .
+This server runs a single in-process worker and dispatches every command
+on the calling thread, which replays the example sessions.
+It does not compact published traces
+.Pq the public trace handle has no compaction setter ,
+so a long run holds full history; results are unaffected.
 .Sh RETURN VALUES
 .Fn dtfl_ddir_server_new
 returns a server, or
@@ -124,15 +133,6 @@ return zero on success or a
 .Dv DTFL_E Ns *
 code, with a message through
 .Xr dtfl_last_error_detail 3 .
-.Sh IMPLEMENTATION NOTES
-The upstream server is multi-worker, circulating commands to every worker
-through a timely
-.Vt Sequencer .
-This server runs a single in-process worker and dispatches every command
-on the calling thread, which replays the example sessions.
-It does not compact published traces
-.Pq the public trace handle has no compaction setter ,
-so a long run holds full history; results are unaffected.
 .Sh SEE ALSO
 .Xr dtfl-ddir 1 ,
 .Xr dtfl_ddir_parse 3

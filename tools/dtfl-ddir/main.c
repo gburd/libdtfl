@@ -23,11 +23,10 @@
  *   explain <program> [arity]   dump_explain: report the program and the
  *                               explanation rewrite (input and export shape).
  *
- * A tool uses only the public dtfl_* API and may use getopt/getenv (it is a
- * program, not library code).  .ddp files parse as pipe syntax, anything
+ * A tool uses only the public dtfl_* API (it is a program, not library
+ * code), so it may use getopt/getenv.  .ddp files parse as pipe syntax,
  * else as applicative.
  */
-#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

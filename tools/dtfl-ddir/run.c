@@ -18,7 +18,6 @@
  * The output is deterministic (rows sorted by (key, val) Debug form) so a
  * program's result can be checked against a committed transcript.
  */
-#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +92,7 @@ parse_row(const char *line, dtfl_ddir_value **key, dtfl_ddir_value **val)
 	}
 	*key = dtfl_ddir_value_tuple(fields, nf);
 	*val = dtfl_ddir_value_unit();
+	free(fields); /* the builder copies the array; we own ours */
 	return true;
 }
 

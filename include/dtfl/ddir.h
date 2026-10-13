@@ -60,11 +60,10 @@ typedef struct dd_value dtfl_ddir_value;
 DTFL_API dtfl_ddir_value *dtfl_ddir_value_int(int64_t n);
 DTFL_API dtfl_ddir_value *dtfl_ddir_value_unit(void); /* the empty tuple */
 /*
- * Tuple/List take ownership of the `items` array (which must be heap
- * allocated with the library allocator, i.e. returned by another
- * dtfl_ddir_value_* call or built for this purpose) and of each element in
- * it.  dtfl_ddir_value_free frees both the elements and the array.  Pass a
- * NULL array with len 0 for the empty tuple/list.
+ * Tuple/List take ownership of each element in `items` but copy the
+ * `items` array itself, so the caller keeps and frees its own array.
+ * dtfl_ddir_value_free frees the elements.  Pass a NULL array with len 0
+ * for the empty tuple/list.
  */
 DTFL_API dtfl_ddir_value *dtfl_ddir_value_tuple(dtfl_ddir_value **items,
     size_t len);

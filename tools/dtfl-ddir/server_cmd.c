@@ -73,8 +73,12 @@ parse_value(const char *s)
 			if (*p == ',')
 				p++;
 		}
-		if (*p == '\0')
-			return dtfl_ddir_value_tuple(fields, nf);
+		if (*p == '\0') {
+			dtfl_ddir_value *t = dtfl_ddir_value_tuple(fields, nf);
+
+			free(fields); /* builder copies the array; free ours */
+			return t;
+		}
 		/* fell through: free partial and try as a term */
 		while (nf > 0)
 			dtfl_ddir_value_free(fields[--nf]);

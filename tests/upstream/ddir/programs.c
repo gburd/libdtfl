@@ -85,16 +85,20 @@ load(const char *name)
 	return p;
 }
 
-/* A value tuple from a flat int list (owns a heap array). */
+/* A value tuple from a flat int list.  The public tuple builder copies the
+ * array (owning the elements), so free our array after. */
 static dtfl_ddir_value *
 tup(const int64_t *xs, size_t n)
 {
 	dtfl_ddir_value **f = malloc(n * sizeof *f);
+	dtfl_ddir_value *t;
 	size_t i;
 
 	for (i = 0; i < n; i++)
 		f[i] = dtfl_ddir_value_int(xs[i]);
-	return dtfl_ddir_value_tuple(f, n);
+	t = dtfl_ddir_value_tuple(f, n);
+	free(f);
+	return t;
 }
 
 /* Find export `name` and return its consolidated row count (positive
