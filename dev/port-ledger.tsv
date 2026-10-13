@@ -191,12 +191,12 @@ differential-dataflow	advent_of_code_2017/src/bin/day_15.rs	46	-	-	excluded	not 
 differential-dataflow	advent_of_code_2017/src/bin/day_17.rs	42	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/lib.rs	0	-	-	excluded	not a workspace member upstream
 differential-dataflow	diagnostics/console/index.html	13	-	-	excluded	React frontend; works unmodified against the protocol-compatible server
-differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9)
-differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	todo	
-differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	todo	shipped verbatim; the C server speaks the same protocol
-differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	todo	
-differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	todo	
-differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	todo	divergence: binds 127.0.0.1 by default where upstream binds 0.0.0.0, ADR D12
+differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9), blocked on the scc ord_neu fix owned by another worker; examples/diag/scc-bench.c is a stub citing the blocker, the working diagnostics path is examples/diag/smoke.c.
+differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	done	ported: registers the diag session, starts the WebSocket server on worker 0 (127.0.0.1, D12), runs a bounded map/probe dataflow; runs under the smoke harness (tests/dist/test_examples_diag.sh).
+differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	done	shipped verbatim (ASCII, 3 em-dashes in comments converted); the C server speaks the same Frame protocol, consumed by applyBatch/rebuildState unmodified.
+differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	done	dtfl_diag_session_new/_free, dtfl_diag_server_start/_port/_stop, dtfl_diag_replay_fd/_fds; the session subscribes to the log streams and serves them, as lib.rs ties logging::register to server::Server::start.
+differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	done	the demux (construct_timely/construct_differential + update_to_json): decoded log batches reshaped into the live operator/channel/stat state and emitted as JsonUpdate diffs; the DD cross-join on client +1 is realized as a full-state snapshot replay on connect (src/diag/diag.c, ws_server.c).
+differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	done	the WebSocket serve loop: binds 127.0.0.1 by default where upstream binds 0.0.0.0 (ADR D12); RFC 6455 handshake and unmasked text framing with built-in SHA-1/base64 (src/diag/ws_frame.c); one Frame per closed timestamp.  The server thread uses __dtfl_thread_spawn.
 differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	todo	VecChunk arm only; the ColChunk arm is subsumed (D2)
 differential-dataflow	differential-dataflow/benches/sort-bench.rs	135	-	-	excluded	entirely commented out upstream
 differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	done	fixed multiset once in place of the forever random-insert loop; same enter_at/consolidate/leave; inspects the accumulation
@@ -452,14 +452,14 @@ differential-dataflow	tpchlike/src/queries/query20.rs	140	-	-	excluded	not a wor
 differential-dataflow	tpchlike/src/queries/query21.rs	138	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/queries/query22.rs	158	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/types.rs	310	-	-	excluded	not a workspace member upstream
-dataflow-diag	connect/src/lib.rs	16	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/connect.rs	104	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/mod.rs	5	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	todo	
-dataflow-diag	tdiag/src/commands/arrangements.rs	133	tools/dtfl-diag/arrangements.c	P11	todo	
-dataflow-diag	tdiag/src/commands/graph.rs	256	tools/dtfl-diag/graph.c	P11	todo	
-dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	todo	shipped verbatim; generated script must escape operator names
-dataflow-diag	tdiag/src/commands/mod.rs	9	tools/dtfl-diag/main.c	P11	todo	
-dataflow-diag	tdiag/src/commands/profile.rs	170	tools/dtfl-diag/profile.c	P11	todo	
-dataflow-diag	tdiag/src/lib.rs	25	tools/dtfl-diag/main.c	P11	todo	reads the current bincode stream, not the 0.11 abomonation stream (D9)
-dataflow-diag	tdiag/src/main.rs	178	tools/dtfl-diag/main.c	P11	todo	reads the current bincode stream, not the 0.11 abomonation stream (D9)
+dataflow-diag	connect/src/lib.rs	16	tools/dtfl-diag/connect.c	P11	done	ConnectError folded into the tool stderr; open_sockets/bind/await_sockets as diag_connect (files via -f, or TCP accept per source worker).
+dataflow-diag	connect/src/receive/connect.rs	104	tools/dtfl-diag/connect.c	P11	done	open_sockets/bind/await_sockets/make_readers as diag_connect; files or TCP, one descriptor per source worker, handed to dtfl_diag_replay_fds.
+dataflow-diag	connect/src/receive/mod.rs	5	tools/dtfl-diag/connect.c	P11	done	the receive module re-exports; subsumed into connect.c.
+dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	done	dtfl_diag_replay_fd/_fds: reads the EventWriter log-stream framing (D9), decodes each inner record with the shared log decoder, delivers dtfl_log_batches; replay-with-shutdown is the read-to-EOF loop.
+dataflow-diag	tdiag/src/commands/arrangements.rs	133	tools/dtfl-diag/arrangements.c	P11	done	tracks arrangement size per operator from Batch/Merge/Drop events, joined with operator names from the timely stream; prints current size (end-of-stream snapshot of the windowed live tool).
+dataflow-diag	tdiag/src/commands/graph.rs	256	tools/dtfl-diag/graph.c	P11	done	reconstructs the dataflow graph and re-wires channels crossing scope boundaries (ingress/egress joins + pass-through) exactly as graph.rs; writes the HTML with escaped operator names; tested against tests/interop/fixtures/diag_graph_stream.bin (tests/dist/test_diag_graph.sh).
+dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	done	shipped verbatim (ASCII); the generated script escapes operator names (write_json_escaped).
+dataflow-diag	tdiag/src/commands/mod.rs	9	tools/dtfl-diag/main.c	P11	done	subcommand dispatch (graph/profile/arrangements) in main.c.
+dataflow-diag	tdiag/src/commands/profile.rs	170	tools/dtfl-diag/profile.c	P11	done	pairs Schedule Start/Stop per operator to accumulate elapsed ns, joins with operator names/scope flags, prints sorted descending; tested against diag_profile_stream.bin.
+dataflow-diag	tdiag/src/lib.rs	25	tools/dtfl-diag/main.c	P11	done	DiagError folded into tool stderr; reads the current bincode stream, not the 0.11 abomonation stream (D9).
+dataflow-diag	tdiag/src/main.rs	178	tools/dtfl-diag/main.c	P11	done	the CLI (getopt flags -i/-p/-P/-s/-f/-o/--output-interval, a tool may use getopt); reads the current bincode stream, not the 0.11 abomonation stream (D9).
