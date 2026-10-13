@@ -193,6 +193,12 @@ tests_pbt_pbt_trace_SOURCES = tests/pbt/pbt_trace.c
 tests_pbt_pbt_trace_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_trace_LDADD = $(INTERNAL_PBT_LIBS)
 
+check_PROGRAMS += tests/pbt/pbt_chunk
+TESTS += tests/pbt/pbt_chunk
+tests_pbt_pbt_chunk_SOURCES = tests/pbt/pbt_chunk.c
+tests_pbt_pbt_chunk_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_chunk_LDADD = $(INTERNAL_PBT_LIBS)
+
 check_PROGRAMS += tests/pbt/pbt_arrange
 TESTS += tests/pbt/pbt_arrange
 tests_pbt_pbt_arrange_SOURCES = tests/pbt/pbt_arrange.c
