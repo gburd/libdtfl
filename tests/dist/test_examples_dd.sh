@@ -66,6 +66,8 @@ run() {
 run dd degrees degrees.expected sort
 run dd bfs bfs.expected sort
 run dd projekt projekt.expected sort
+run dd compact compact.expected cat
+run dd stackoverflow stackoverflow.expected sort
 
 if [ "$fail" -eq 0 ]; then
 	echo "[examples-dd] all smoke tests passed"

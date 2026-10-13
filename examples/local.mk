@@ -113,7 +113,9 @@ examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
 noinst_PROGRAMS += \
 	examples/dd/degrees \
 	examples/dd/bfs \
-	examples/dd/projekt
+	examples/dd/projekt \
+	examples/dd/compact \
+	examples/dd/stackoverflow
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -126,6 +128,14 @@ examples_dd_bfs_LDADD = $(EXAMPLE_LDADD)
 examples_dd_projekt_SOURCES = examples/dd/projekt.c
 examples_dd_projekt_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_projekt_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_compact_SOURCES = examples/dd/compact.c
+examples_dd_compact_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_compact_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_stackoverflow_SOURCES = examples/dd/stackoverflow.c
+examples_dd_stackoverflow_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_stackoverflow_LDADD = $(EXAMPLE_LDADD)
 
 # Smoke test: run a representative subset under `make check` so a
 # crashing, hanging or wrong-output example fails the build.  The
@@ -142,7 +152,9 @@ check_PROGRAMS += \
 	examples/timely/capture \
 	examples/dd/degrees \
 	examples/dd/bfs \
-	examples/dd/projekt
+	examples/dd/projekt \
+	examples/dd/compact \
+	examples/dd/stackoverflow
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
@@ -158,4 +170,6 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/capture.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
-	examples/dd/projekt.expected
+	examples/dd/projekt.expected \
+	examples/dd/compact.expected \
+	examples/dd/stackoverflow.expected
