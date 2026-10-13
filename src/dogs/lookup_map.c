@@ -67,6 +67,7 @@ typedef struct lookup_ctx {
 	__dtfl_lookup_output_fn output_func;
 	void *out_ctx;
 	void (*out_free)(void *);
+	void *route;			/* lm_route *, owned */
 	__dtfl_vec stash;		/* lm_stash */
 } lookup_ctx;
 
@@ -396,6 +397,8 @@ lookup_free(void *vctx)
 		c->key_free(c->key_ctx);
 	if (c->out_free != NULL)
 		c->out_free(c->out_ctx);
+	if (c->route != NULL)
+		__dtfl_free(c->route);
 	dtfl_type_free(c->out_type);
 	__dtfl_free(c);
 }
@@ -448,6 +451,7 @@ __dtfl_dogs_lookup_map(dtfl_collection *prefixes, dtfl_arranged *arr,
 	route->kt = g->kt;
 	route->depth = depth;
 	route->dw = c->dw;
+	c->route = route;
 
 	out_diff = __dtfl_diff_wrap(odc);
 	ut = __dtfl_update_type(out_type, depth, odc->width);
@@ -461,6 +465,6 @@ __dtfl_dogs_lookup_map(dtfl_collection *prefixes, dtfl_arranged *arr,
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, lookup_logic, c, lookup_free);
 	dtfl_type_free(ut);
-	/* The route ctx is owned by the exchange pact; freed with the op. */
+	/* The route ctx lives in lookup_ctx and is freed by lookup_free. */
 	return __dtfl_as_collection(st, out_type, out_diff, depth);
 }

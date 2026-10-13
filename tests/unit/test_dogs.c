@@ -263,13 +263,15 @@ build_dataflow(dtfl_scope *scope, void *arg)
 {
 	build_ctx *c = arg;
 	dtfl_collection *edges = dtfl_input_session_to_collection(c->in, scope);
-	dtfl_time_class *altneu = dtfl_time_altneu(dtfl_time_u64());
+	dtfl_time_class *base = dtfl_time_u64();
+	dtfl_time_class *altneu = dtfl_time_altneu(base);
 	dtfl_collection *ins, *probed;
 
 	c->tc->edges = edges;
 	c->tc->result = NULL;
 	dtfl_scope_scoped(scope, "Triangles", altneu, build_triangles, c->tc);
 	dtfl_time_class_free(altneu);
+	dtfl_time_class_free(base);
 
 	ins = dtfl_collection_inspect(c->tc->result, inspect_sink,
 	    DTFL_CTX(c->out, NULL));
