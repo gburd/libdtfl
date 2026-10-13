@@ -54,15 +54,17 @@ differentiate_logic(dtfl_op *op, void *vctx)
 			/* The alt update: emit (data, alt(t), diff) verbatim. */
 			unsigned char *alt = __dtfl_session_reserve(s, len);
 			unsigned char *neu;
-			uint64_t *nt;
+			uint64_t t;
 
 			memcpy(alt, rec, len);
 
 			/* The neu update: (data, neu(t), -diff). */
 			neu = __dtfl_session_reserve(s, len);
 			memcpy(neu, rec, len);
-			nt = (uint64_t *)(void *)(neu + rlen);
-			nt[0] = (nt[0] / 2) * 2 + 1;
+			/* The time at offset rlen may be unaligned; stage it. */
+			memcpy(&t, neu + rlen, sizeof t);
+			t = (t / 2) * 2 + 1;
+			memcpy(neu + rlen, &t, sizeof t);
 			c->dc->negate(c->dc, neu + (len - c->dw));
 		}
 		dtfl_session_close(s);
@@ -131,11 +133,13 @@ integrate_logic(dtfl_op *op, void *vctx)
 		for (i = 0; i < n; i++) {
 			size_t len;
 			const void *rec = dtfl_message_record(m, i, &len);
-			const uint64_t *et = __dtfl_update_time(rec, c->depth,
-			    c->dw, len);
+			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw, len);
 			unsigned char *dst;
+			uint64_t t;
 
-			if ((et[0] & 1) != 0)
+			/* The time at offset rlen may be unaligned; stage it. */
+			memcpy(&t, (const unsigned char *)rec + rlen, sizeof t);
+			if ((t & 1) != 0)
 				continue;	/* a neu update: discard */
 			dst = __dtfl_session_reserve(s, len);
 			memcpy(dst, rec, len);

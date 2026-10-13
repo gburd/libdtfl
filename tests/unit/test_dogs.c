@@ -452,9 +452,138 @@ DTFL_TEST(dogs__triangle_incremental)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* calculus round trip: integrate(differentiate(c)) == c.             */
+/* ------------------------------------------------------------------ */
+
+typedef struct calc_collected {
+	uint32_t v[64];
+	int64_t diff[64];
+	size_t n;
+} calc_collected;
+
+static void
+calc_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	calc_collected *c = ctx;
+
+	(void)len; (void)time;
+	if (c->n >= 64)
+		return;
+	c->v[c->n] = dtfl_get_u32(rec);
+	memcpy(&c->diff[c->n], diff, sizeof(int64_t));
+	c->n++;
+}
+
+typedef struct calc_ctx {
+	dtfl_collection *outer;
+	dtfl_collection *result;
+} calc_ctx;
+
+static void
+build_calc_inner(dtfl_scope *inner, void *arg)
+{
+	calc_ctx *c = arg;
+	/* differentiate enters the scope; integrate leaves it. */
+	dtfl_collection *diff = dtfl_collection_differentiate(c->outer, inner);
+
+	c->result = dtfl_collection_integrate(diff);
+	dtfl_collection_free(diff);
+}
+
+typedef struct calc_build {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	calc_collected *out;
+	calc_ctx *cc;
+} calc_build;
+
+static void
+build_calc(dtfl_scope *scope, void *arg)
+{
+	calc_build *c = arg;
+	dtfl_collection *coll = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_time_class *base = dtfl_time_u64();
+	dtfl_time_class *altneu = dtfl_time_altneu(base);
+	dtfl_collection *ins, *probed;
+
+	c->cc->outer = coll;
+	c->cc->result = NULL;
+	dtfl_scope_scoped(scope, "Calc", altneu, build_calc_inner, c->cc);
+	dtfl_time_class_free(altneu);
+	dtfl_time_class_free(base);
+
+	ins = dtfl_collection_inspect(c->cc->result, calc_sink,
+	    DTFL_CTX(c->out, NULL));
+	probed = dtfl_collection_probe_with(ins, c->probe);
+
+	dtfl_collection_free(probed);
+	dtfl_collection_free(ins);
+	dtfl_collection_free(c->cc->result);
+	dtfl_collection_free(coll);
+}
+
+DTFL_TEST(dogs__calculus_round_trip)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *u32 = dtfl_type_u32();
+	calc_build c;
+	calc_ctx cc;
+	calc_collected out;
+	unsigned char rec[4];
+	uint64_t next;
+	probe_cond pc;
+	size_t i;
+	int64_t net7 = 0, net9 = 0;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	memset(&cc, 0, sizeof cc);
+	c.in = dtfl_input_session_new(u32, r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.cc = &cc;
+	assert_int(dtfl_worker_dataflow(w, "calc", tc, build_calc, &c), ==, 0);
+
+	/* Insert 7 (x2) and 9 (x1); integrate(differentiate(.)) must recover. */
+	dtfl_put_u32(rec, 7);
+	dtfl_input_session_insert(c.in, rec, 4);
+	dtfl_input_session_insert(c.in, rec, 4);
+	dtfl_put_u32(rec, 9);
+	dtfl_input_session_insert(c.in, rec, 4);
+	next = 1;
+	dtfl_input_session_advance_to(c.in, &next);
+	dtfl_input_session_flush(c.in);
+	pc.probe = c.probe;
+	pc.target = next;
+	dtfl_worker_step_while(w, probe_behind, &pc);
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	for (i = 0; i < out.n; i++) {
+		if (out.v[i] == 7)
+			net7 += out.diff[i];
+		else if (out.v[i] == 9)
+			net9 += out.diff[i];
+	}
+	assert_int64(net7, ==, 2);
+	assert_int64(net9, ==, 1);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(dogs__triangle_static),
 	DTFL_T(dogs__triangle_incremental),
+	DTFL_T(dogs__calculus_round_trip),
 	DTFL_T_END
 };
 
