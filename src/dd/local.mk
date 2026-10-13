@@ -26,11 +26,15 @@ dd_sources = \
 	src/dd/dynamic.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
+	src/dd/trace/chunk_int.h \
 	src/dd/trace/description.c \
 	src/dd/trace/layout.c \
 	src/dd/trace/cursor.c \
 	src/dd/trace/cursor_list.c \
 	src/dd/trace/ord_neu.c \
+	src/dd/trace/chunk.c \
+	src/dd/trace/chunk_vec.c \
+	src/dd/trace/spill.c \
 	src/dd/trace/merge_batcher.c \
 	src/dd/trace/chunker.c \
 	src/dd/trace/spine_fueled.c \
