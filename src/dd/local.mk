@@ -208,3 +208,9 @@ TESTS += tests/unit/test_nested_iterate
 tests_unit_test_nested_iterate_SOURCES = tests/unit/test_nested_iterate.c
 tests_unit_test_nested_iterate_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_nested_iterate_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_trace_compaction
+TESTS += tests/unit/test_trace_compaction
+tests_unit_test_trace_compaction_SOURCES = tests/unit/test_trace_compaction.c
+tests_unit_test_trace_compaction_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_trace_compaction_LDADD = $(INTERNAL_LIBS)
