@@ -44,6 +44,7 @@ dtfl_collection_leave
 dtfl_collection_probe
 dtfl_collection_probe_with
 dtfl_collection_arrange
+dtfl_collection_arrange_by_key
 dtfl_arrange_from_upsert
 dtfl_arranged_as_collection
 dtfl_arranged_emit_record
@@ -59,6 +60,8 @@ dtfl_arranged_diff
 dtfl_arranged_scope
 dtfl_arranged_free
 dtfl_reduce_emit_pair
+dtfl_arranged_reduce_core
+dtfl_arranged_reduce_abelian
 dtfl_collection_reduce
 dtfl_collection_reduce_named
 dtfl_collection_count

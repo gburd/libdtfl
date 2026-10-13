@@ -117,7 +117,9 @@ noinst_PROGRAMS += \
 	examples/dd/compact \
 	examples/dd/stackoverflow \
 	examples/dd/hello \
-	examples/dd/accumulate
+	examples/dd/accumulate \
+	examples/dd/interpreted \
+	examples/dd/itembased_cf
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -146,6 +148,14 @@ examples_dd_hello_LDADD = $(EXAMPLE_LDADD)
 examples_dd_accumulate_SOURCES = examples/dd/accumulate.c
 examples_dd_accumulate_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_accumulate_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_interpreted_SOURCES = examples/dd/interpreted.c
+examples_dd_interpreted_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_interpreted_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_itembased_cf_SOURCES = examples/dd/itembased_cf.c
+examples_dd_itembased_cf_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_itembased_cf_LDADD = $(EXAMPLE_LDADD)
 
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
@@ -184,7 +194,9 @@ check_PROGRAMS += \
 	examples/dogs/delta_query_wcoj \
 	examples/dogs/dogsdogsdogs \
 	examples/dd/hello \
-	examples/dd/accumulate
+	examples/dd/accumulate \
+	examples/dd/interpreted \
+	examples/dd/itembased_cf
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
@@ -206,4 +218,6 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dogs/delta_query_wcoj.expected \
 	examples/dogs/dogsdogsdogs.expected \
 	examples/dd/hello.expected \
-	examples/dd/accumulate.expected
+	examples/dd/accumulate.expected \
+	examples/dd/interpreted.expected \
+	examples/dd/itembased_cf.expected

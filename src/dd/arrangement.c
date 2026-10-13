@@ -331,6 +331,8 @@ arrange_free(void *vctx)
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
 	dtfl_type_free(c->rt);
+	dtfl_type_free(c->kt);
+	dtfl_type_free(c->vt);
 	if (c->route != NULL)
 		__dtfl_free(c->route);
 	__dtfl_free(c);
@@ -392,8 +394,8 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 	trace = __dtfl_trace_new(keyed, kt, vt, tc, dc);
 
 	ac->rt = dtfl_type_retain(c->type);
-	ac->kt = kt;
-	ac->vt = vt;
+	ac->kt = dtfl_type_retain(kt);
+	ac->vt = dtfl_type_retain(vt);
 	ac->tc = tc;
 	ac->dc = dc;
 	ac->depth = depth;
@@ -456,6 +458,19 @@ __dtfl_collection_arrange_by_key(dtfl_collection *c, const dtfl_type *kt,
     const dtfl_type *vt, const char *name)
 {
 	return arrange_core(c, false, kt, vt, name);
+}
+
+/*
+ * dtfl_collection_arrange_by_key: the public forwarder to the internal
+ * arrange_by_key (collection.rs arrange_by_key).  A thin wrapper so
+ * examples and downstream code can build the shared index that
+ * dtfl_arranged_join_core and dtfl_arranged_reduce_core read.
+ */
+dtfl_arranged *
+dtfl_collection_arrange_by_key(dtfl_collection *c, const dtfl_type *key,
+    const dtfl_type *val, const char *name)
+{
+	return __dtfl_collection_arrange_by_key(c, key, val, name);
 }
 
 /* ------------------------------------------------------------------ */

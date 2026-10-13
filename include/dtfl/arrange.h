@@ -52,6 +52,20 @@ DTFL_API dtfl_arranged *dtfl_collection_arrange(dtfl_collection *c,
     const char *name);
 
 /*
+ * Arranges a collection of key || value records by key (arrange_by_key).
+ * Each record is split into its key and value by `key`'s length (the key
+ * is the leading field, D1), updates are exchanged by the key prefix so a
+ * join finds matching keys on one worker, and the result trace indexes
+ * key -> value.  `val` describes the value side so the library can order
+ * and index values.  `name` labels the operator.  Returns a handle the
+ * caller frees with dtfl_arranged_free.  This is the shared index that join
+ * and reduce read; dtfl_arranged_join_core and dtfl_arranged_reduce_core
+ * take arrangements built this way.
+ */
+DTFL_API dtfl_arranged *dtfl_collection_arrange_by_key(dtfl_collection *c,
+    const dtfl_type *key, const dtfl_type *val, const char *name);
+
+/*
  * Arranges a stream of keyed upserts into a shared trace
  * (arrange_from_upsert).  Each record of `upserts` is a key followed by an
  * option(value) (one tag byte, 0 for None and 1 for Some, then the value),

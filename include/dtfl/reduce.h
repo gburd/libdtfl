@@ -74,6 +74,52 @@ DTFL_API dtfl_collection *dtfl_collection_reduce_named(dtfl_collection *c,
     const dtfl_type *out_val, const dtfl_diff *out_diff, dtfl_reduce_fn logic,
     dtfl_ctx ctx);
 
+/* ------------------------------------------------------------------ */
+/* Reduce directly over an arrangement (arrangement.rs reduce_core,       */
+/* reduce_abelian).                                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A reduce-core logic: like dtfl_reduce_fn, but it also sees the tentative
+ * accumulated output and emits the full output change rather than the new
+ * output alone.  `key` is the current key; the input multiset is the `n`
+ * (value, diff) entries (`in_vals[i]`/`in_vlens[i]` are value i's bytes and
+ * length, `in_diffs` is the packed input-diff column); the tentative output
+ * multiset is the `m` (value, diff) entries (`out_vals`/`out_vlens`/
+ * `out_diffs`, packed with the output diff width).  The logic emits output
+ * (value, diff) pairs through `out`; those pairs are the change to apply to
+ * the output, so a reduce_core logic that wants to keep the prior output
+ * must retract it itself.  dtfl_arranged_reduce_abelian wraps this to
+ * retract the prior output automatically (see below).
+ */
+typedef void (*dtfl_reduce_core_fn)(void *ctx, const void *key, size_t klen,
+    size_t n, const void *const *in_vals, const size_t *in_vlens,
+    const void *in_diffs, size_t m, const void *const *out_vals,
+    const size_t *out_vlens, const void *out_diffs, dtfl_reduce_emit *out);
+
+/*
+ * dtfl_arranged_reduce_core (Arranged::reduce_core): reduce an arrangement
+ * `a` (key -> value) directly, producing an output arrangement
+ * (key -> out_val, out_diff differences).  `name` labels the operator;
+ * `logic` computes the output change per key as described for
+ * dtfl_reduce_core_fn.  `out_diff` need not be Abelian.  Returns a handle
+ * the caller frees with dtfl_arranged_free; the caller still owns `a`.
+ */
+DTFL_API dtfl_arranged *dtfl_arranged_reduce_core(dtfl_arranged *a,
+    const char *name, const dtfl_type *out_val, const dtfl_diff *out_diff,
+    dtfl_reduce_core_fn logic, dtfl_ctx ctx);
+
+/*
+ * dtfl_arranged_reduce_abelian (Arranged::reduce_abelian): as reduce_core,
+ * but it wraps `logic` to retract the prior output (negate and append the
+ * tentative output) and consolidate, so `logic` need only produce the new
+ * output for each key.  `out_diff` must be Abelian.  Returns a handle the
+ * caller frees with dtfl_arranged_free; the caller still owns `a`.
+ */
+DTFL_API dtfl_arranged *dtfl_arranged_reduce_abelian(dtfl_arranged *a,
+    const char *name, const dtfl_type *out_val, const dtfl_diff *out_diff,
+    dtfl_reduce_core_fn logic, dtfl_ctx ctx);
+
 /*
  * count: for each distinct key in `c` (the whole record is the key), emit
  * the record key || count, where count is the summed input diff rendered as
