@@ -137,6 +137,22 @@ examples_dd_stackoverflow_SOURCES = examples/dd/stackoverflow.c
 examples_dd_stackoverflow_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_stackoverflow_LDADD = $(EXAMPLE_LDADD)
 
+# ----------------------------------------------------------------------
+# dogsdogsdogs (delta-query) examples (P9).
+# ----------------------------------------------------------------------
+
+noinst_PROGRAMS += \
+	examples/dogs/delta_query_wcoj \
+	examples/dogs/dogsdogsdogs
+
+examples_dogs_delta_query_wcoj_SOURCES = examples/dogs/delta_query_wcoj.c
+examples_dogs_delta_query_wcoj_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dogs_delta_query_wcoj_LDADD = $(EXAMPLE_LDADD)
+
+examples_dogs_dogsdogsdogs_SOURCES = examples/dogs/dogsdogsdogs.c
+examples_dogs_dogsdogsdogs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dogs_dogsdogsdogs_LDADD = $(EXAMPLE_LDADD)
+
 # Smoke test: run a representative subset under `make check` so a
 # crashing, hanging or wrong-output example fails the build.  The
 # examples the harness runs are added to check_PROGRAMS so `make check`
@@ -154,7 +170,9 @@ check_PROGRAMS += \
 	examples/dd/bfs \
 	examples/dd/projekt \
 	examples/dd/compact \
-	examples/dd/stackoverflow
+	examples/dd/stackoverflow \
+	examples/dogs/delta_query_wcoj \
+	examples/dogs/dogsdogsdogs
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
@@ -172,4 +190,6 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/bfs.expected \
 	examples/dd/projekt.expected \
 	examples/dd/compact.expected \
-	examples/dd/stackoverflow.expected
+	examples/dd/stackoverflow.expected \
+	examples/dogs/delta_query_wcoj.expected \
+	examples/dogs/dogsdogsdogs.expected
