@@ -1,0 +1,98 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_INDEX_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_index_new ,
+.Nm dtfl_collection_index_free ,
+.Nm dtfl_collection_index_extend_using ,
+.Nm dtfl_prefix_extender_free ,
+.Nm dtfl_collection_extend
+.Nd worst-case-optimal multi-way joins by prefix extension
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dogs.h
+.Ft dtfl_collection_index *
+.Fn dtfl_collection_index_new "dtfl_collection *c" "const dtfl_type *kt" "const dtfl_type *vt"
+.Ft void
+.Fn dtfl_collection_index_free "dtfl_collection_index *idx"
+.Ft dtfl_prefix_extender *
+.Fn dtfl_collection_index_extend_using "const dtfl_collection_index *idx" "const dtfl_type *prefix_type" "dtfl_key_selector_fn key" "dtfl_ctx ctx"
+.Ft void
+.Fn dtfl_prefix_extender_free "dtfl_prefix_extender *pe"
+.Ft dtfl_collection *
+.Fn dtfl_collection_extend "dtfl_collection *prefixes" "dtfl_prefix_extender *const *extenders" "size_t n" "const dtfl_type *out_type"
+.Sh DESCRIPTION
+A delta query maintains a multi-way equijoin incrementally by keeping, for
+each relation, an index of its tuples, and for each change to a relation
+extending the changed prefix with the matching tuples of the other
+relations.
+.Pp
+.Fn dtfl_collection_index_new
+indexes a collection of
+.Va kt Ns Li ||vt
+.Pq key then value
+records into the three traces an extender needs: a count trace (how many
+distinct extensions a relation offers a prefix), a propose trace (the
+extensions themselves) and a validate trace (whether a proposed extension
+exists).
+The diff class of
+.Va c
+must be the signed default.
+.Pp
+.Fn dtfl_collection_index_extend_using
+builds an extender from an index and a key selector that reads the join key
+out of a prefix of type
+.Va prefix_type .
+The key selector is what makes one index serve several positions in a
+query, such as forward and reverse edges.
+The extender holds its own references to the index's traces, so the index
+may be freed once its extenders are built.
+.Pp
+.Fn dtfl_collection_extend
+runs the generic join.
+With a single extender it is a plain propose.
+With several, each prefix is annotated with every extender's offered count,
+routed to the extender that offers the fewest extensions (the
+worst-case-optimal choice), proposed from that one, then validated against
+every other extender; the per-extender results are concatenated.
+The output records are
+.Va prefix Ns Li || Ns extension
+of
+.Va out_type .
+The caller still owns
+.Va prefixes
+and the extenders.
+.Pp
+A key selector
+.Pq Vt dtfl_key_selector_fn
+reads the join key out of a prefix record and writes its bytes to
+.Va key ,
+storing the length through
+.Va klen ;
+.Va key
+has room for at least
+.Va cap
+bytes.
+.Sh RETURN VALUES
+.Fn dtfl_collection_index_new
+and
+.Fn dtfl_collection_index_extend_using
+return handles the caller frees with
+.Fn dtfl_collection_index_free
+and
+.Fn dtfl_prefix_extender_free .
+.Fn dtfl_collection_extend
+returns a new
+.Vt dtfl_collection
+the caller frees with
+.Fn dtfl_collection_free .
+.Sh SEE ALSO
+.Xr dtfl_collection_delay_neu 3 ,
+.Xr dtfl_dogs_propose 3 ,
+.Xr dtfl_time_altneu 3
+.Sh STANDARDS
+A C11 port of the dogsdogsdogs
+.Pa src/lib.rs .

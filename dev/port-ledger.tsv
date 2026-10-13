@@ -298,15 +298,15 @@ differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dog
 differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	todo	
 differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
 differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
-differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	todo	
 differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join2.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/validate.rs	39	src/dogs/validate.c	P9	todo	
-differential-dataflow	dogsdogsdogs/tests/lookup_map_regression.rs	108	tests/upstream/dogs/lookup_map_regression.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/validate.rs	39	src/dogs/validate.c	P9	done	
+differential-dataflow	dogsdogsdogs/tests/lookup_map_regression.rs	108	tests/upstream/dogs/lookup_map_regression.c	P9	done	
 differential-dataflow	doop/src/main.rs	1242	-	-	excluded	not a workspace member upstream
 differential-dataflow	experiments/src/bin/arrange.rs	227	bench/experiments/arrange.c	P15	todo	performance parity table (PLAN section 9)
 differential-dataflow	experiments/src/bin/attend.rs	60	-	-	deferred	not needed for the performance table

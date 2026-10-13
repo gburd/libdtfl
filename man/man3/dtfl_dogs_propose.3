@@ -1,0 +1,88 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_DOGS_PROPOSE 3
+.Os
+.Sh NAME
+.Nm dtfl_dogs_propose ,
+.Nm dtfl_dogs_propose_distinct ,
+.Nm dtfl_dogs_validate ,
+.Nm dtfl_dogs_count
+.Nd prefix-extension operators for delta queries
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dogs.h
+.Ft dtfl_collection *
+.Fn dtfl_dogs_propose "dtfl_collection *prefixes" "dtfl_arranged *arr" "const dtfl_type *out_type" "dtfl_key_selector_fn key" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_dogs_propose_distinct "dtfl_collection *prefixes" "dtfl_arranged *arr" "const dtfl_type *out_type" "dtfl_key_selector_fn key" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_dogs_validate "dtfl_collection *extensions" "dtfl_arranged *arr" "const dtfl_type *out_type" "const dtfl_type *prefix_type" "const dtfl_type *val_type" "dtfl_key_selector_fn key" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_dogs_count "dtfl_collection *prefixes" "dtfl_arranged *arr" "const dtfl_type *prefix_type" "dtfl_key_selector_fn key" "dtfl_ctx ctx" "uint64_t index"
+.Sh DESCRIPTION
+These are the operators the generic join
+.Pq Xr dtfl_collection_extend 3
+is built from.
+They may also be used directly to wire a delta query by hand.
+Each selects a key from a prefix with
+.Va key
+and reads the arrangement
+.Va arr
+at trace times less or equal to the prefix's own time, the lattice order
+that, under an AltNeu scope, makes each pair of concurrent updates interact
+exactly once.
+.Pp
+.Fn dtfl_dogs_propose
+extends each prefix with every value the arrangement holds under the
+prefix's key, scaling the prefix diff by the matched count.
+.Fn dtfl_dogs_propose_distinct
+does the same but leaves the diff unscaled.
+.Va arr
+is a key \[->] value arrangement, and the output records are
+.Va prefix Ns Li || Ns value
+of
+.Va out_type .
+.Pp
+.Fn dtfl_dogs_validate
+keeps each
+.Va prefix Ns Li || Ns value
+extension whose
+.Pq Fn key "prefix" , value
+pair is present in
+.Va arr ,
+a
+.Pq key , value
+\[->] unit arrangement arranged by self.
+.Va prefix_type
+splits the extension into its prefix and value parts.
+.Pp
+.Fn dtfl_dogs_count
+annotates each prefix triple
+.Pq prefix , count , index ,
+where the count and index are two u64 words following the prefix, with the
+fewer of its current count and the number of extensions
+.Va arr
+offers under the prefix's key; when the arrangement offers fewer, the
+triple's index is overwritten with
+.Va index .
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_collection
+the caller frees with
+.Fn dtfl_collection_free ,
+or
+.Dv NULL
+with
+.Dv DTFL_EALGEBRA
+when the diff classes do not multiply.
+.Sh SEE ALSO
+.Xr dtfl_collection_extend 3 ,
+.Xr dtfl_collection_index_new 3
+.Sh STANDARDS
+A C11 port of the dogsdogsdogs
+.Pa src/operators/propose.rs ,
+.Pa src/operators/validate.rs
+and
+.Pa src/operators/count.rs .

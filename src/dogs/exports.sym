@@ -2,3 +2,12 @@
 dtfl_collection_delay_neu
 dtfl_collection_differentiate
 dtfl_collection_integrate
+dtfl_dogs_propose
+dtfl_dogs_propose_distinct
+dtfl_dogs_validate
+dtfl_dogs_count
+dtfl_collection_index_new
+dtfl_collection_index_free
+dtfl_collection_index_extend_using
+dtfl_prefix_extender_free
+dtfl_collection_extend
