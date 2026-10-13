@@ -106,6 +106,27 @@ examples_timely_hashjoin_SOURCES = examples/timely/hashjoin.c
 examples_timely_hashjoin_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
 
+# ----------------------------------------------------------------------
+# Differential dataflow examples (P9).
+# ----------------------------------------------------------------------
+
+noinst_PROGRAMS += \
+	examples/dd/degrees \
+	examples/dd/bfs \
+	examples/dd/projekt
+
+examples_dd_degrees_SOURCES = examples/dd/degrees.c
+examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_degrees_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_bfs_SOURCES = examples/dd/bfs.c
+examples_dd_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_bfs_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_projekt_SOURCES = examples/dd/projekt.c
+examples_dd_projekt_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_projekt_LDADD = $(EXAMPLE_LDADD)
+
 # Smoke test: run a representative subset under `make check` so a
 # crashing, hanging or wrong-output example fails the build.  The
 # examples the harness runs are added to check_PROGRAMS so `make check`
@@ -118,10 +139,13 @@ check_PROGRAMS += \
 	examples/timely/unionfind \
 	examples/timely/pagerank \
 	examples/timely/hashjoin \
-	examples/timely/capture
+	examples/timely/capture \
+	examples/dd/degrees \
+	examples/dd/bfs \
+	examples/dd/projekt
 
-dist_check_SCRIPTS += tests/dist/test_examples.sh
-TESTS += tests/dist/test_examples.sh
+dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
+TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 
 EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/hello.expected \
@@ -131,4 +155,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/unionfind.expected \
 	examples/timely/pagerank.expected \
 	examples/timely/hashjoin.expected \
-	examples/timely/capture.expected
+	examples/timely/capture.expected \
+	examples/dd/degrees.expected \
+	examples/dd/bfs.expected \
+	examples/dd/projekt.expected
