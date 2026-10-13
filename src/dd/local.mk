@@ -88,9 +88,9 @@ tests_unit_test_enter_at_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_enter_at_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_merge_batcher tests/unit/test_cursor \
-	tests/unit/test_ord_neu
+	tests/unit/test_ord_neu tests/unit/test_chunk
 TESTS += tests/unit/test_merge_batcher tests/unit/test_cursor \
-	tests/unit/test_ord_neu
+	tests/unit/test_ord_neu tests/unit/test_chunk
 tests_unit_test_merge_batcher_SOURCES = tests/unit/test_merge_batcher.c
 tests_unit_test_merge_batcher_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_merge_batcher_LDADD = $(INTERNAL_LIBS)
@@ -100,6 +100,9 @@ tests_unit_test_cursor_LDADD = $(INTERNAL_LIBS)
 tests_unit_test_ord_neu_SOURCES = tests/unit/test_ord_neu.c
 tests_unit_test_ord_neu_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_ord_neu_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_chunk_SOURCES = tests/unit/test_chunk.c
+tests_unit_test_chunk_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_chunk_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/upstream/dd/trace
 TESTS += tests/upstream/dd/trace
