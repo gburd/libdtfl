@@ -458,6 +458,19 @@ __dtfl_collection_arrange_by_key(dtfl_collection *c, const dtfl_type *kt,
 	return arrange_core(c, false, kt, vt, name);
 }
 
+/*
+ * dtfl_collection_arrange_by_key: the public forwarder to the internal
+ * arrange_by_key (collection.rs arrange_by_key).  A thin wrapper so
+ * examples and downstream code can build the shared index that
+ * dtfl_arranged_join_core and dtfl_arranged_reduce_core read.
+ */
+dtfl_arranged *
+dtfl_collection_arrange_by_key(dtfl_collection *c, const dtfl_type *key,
+    const dtfl_type *val, const char *name)
+{
+	return __dtfl_collection_arrange_by_key(c, key, val, name);
+}
+
 /* ------------------------------------------------------------------ */
 /* as_collection (flat_map_batches).                                   */
 /* ------------------------------------------------------------------ */
