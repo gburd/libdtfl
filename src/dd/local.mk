@@ -104,6 +104,12 @@ tests_unit_test_chunk_SOURCES = tests/unit/test_chunk.c
 tests_unit_test_chunk_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_chunk_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_trace_spill
+TESTS += tests/unit/test_trace_spill
+tests_unit_test_trace_spill_SOURCES = tests/unit/test_trace_spill.c
+tests_unit_test_trace_spill_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_trace_spill_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/upstream/dd/trace
 TESTS += tests/upstream/dd/trace
 tests_upstream_dd_trace_SOURCES = tests/upstream/dd/trace.c
