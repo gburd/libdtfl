@@ -10,7 +10,7 @@ BENCH_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include -I$(top_srcdir)/src \
 	-Wno-pedantic
 BENCH_LDADD = libdtfl_internal.la
 
-noinst_PROGRAMS += bench/chunk_bench bench/spines
+noinst_PROGRAMS += bench/chunk_bench bench/spines bench/trace_spill
 
 bench_chunk_bench_SOURCES = bench/chunk_bench.c
 bench_chunk_bench_CFLAGS = $(BENCH_CFLAGS)
@@ -19,3 +19,7 @@ bench_chunk_bench_LDADD = $(BENCH_LDADD)
 bench_spines_SOURCES = bench/spines.c
 bench_spines_CFLAGS = $(BENCH_CFLAGS)
 bench_spines_LDADD = $(BENCH_LDADD)
+
+bench_trace_spill_SOURCES = bench/trace_spill.c
+bench_trace_spill_CFLAGS = $(BENCH_CFLAGS)
+bench_trace_spill_LDADD = $(BENCH_LDADD)
