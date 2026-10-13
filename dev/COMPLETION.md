@@ -58,6 +58,9 @@ Not started -- MUST be finished before the project is done
         bfs, scc, pagerank and the rest as differential programs; the
         dogsdogsdogs delta-query library.  Exit: bfs/scc/dogsdogsdogs
         tests pass; examples diff-equal to Rust via fixtures.
+        scc blocked on bug 3 (nested iterate-in-feedback progress at
+        depth 3); see tests/unit/test_nested_iterate.c for the repro and
+        diagnosis.
 [ ] P10 dogsdogsdogs / differential capture (1 row).  Exit: capture
         round trip under message duplication and reordering.
 [ ] P11 diagnostics (the dataflow-diag crate): the in-process WebSocket

@@ -79,7 +79,7 @@ sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
 
 	(void)time; (void)len;
 	node = dtfl_get_u64(p);
-	dist = (uint32_t)dtfl_get_u64(p + 8);
+	dist = dtfl_get_u32(p + 8);
 	memcpy(&d, diff, sizeof d);
 	if (node < MAXNODE && dist < MAXNODE)
 		c->net[node][dist] += d;

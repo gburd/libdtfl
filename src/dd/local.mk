@@ -69,6 +69,18 @@ tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
 tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_update_align
+TESTS += tests/unit/test_update_align
+tests_unit_test_update_align_SOURCES = tests/unit/test_update_align.c
+tests_unit_test_update_align_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_update_align_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_enter_at
+TESTS += tests/unit/test_enter_at
+tests_unit_test_enter_at_SOURCES = tests/unit/test_enter_at.c
+tests_unit_test_enter_at_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_enter_at_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_merge_batcher tests/unit/test_cursor \
 	tests/unit/test_ord_neu
 TESTS += tests/unit/test_merge_batcher tests/unit/test_cursor \
@@ -182,3 +194,9 @@ TESTS += tests/pbt/pbt_iterate
 tests_pbt_pbt_iterate_SOURCES = tests/pbt/pbt_iterate.c
 tests_pbt_pbt_iterate_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_iterate_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_nested_iterate
+TESTS += tests/unit/test_nested_iterate
+tests_unit_test_nested_iterate_SOURCES = tests/unit/test_nested_iterate.c
+tests_unit_test_nested_iterate_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_nested_iterate_LDADD = $(INTERNAL_LIBS)

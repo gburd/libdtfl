@@ -33,6 +33,7 @@
 .Nm dtfl_collection_explode ,
 .Nm dtfl_collection_delay ,
 .Nm dtfl_collection_enter ,
+.Nm dtfl_collection_enter_at ,
 .Nm dtfl_collection_leave ,
 .Nm dtfl_collection_probe ,
 .Nm dtfl_collection_probe_with
@@ -90,6 +91,8 @@ Timely and differential dataflow library
 .Fn dtfl_collection_delay "dtfl_collection *c" "dtfl_collection_delay_fn fn" "dtfl_ctx ctx"
 .Ft dtfl_collection *
 .Fn dtfl_collection_enter "dtfl_collection *c" "dtfl_scope *child"
+.Ft dtfl_collection *
+.Fn dtfl_collection_enter_at "dtfl_collection *c" "dtfl_scope *child" "dtfl_collection_enter_at_fn logic" "dtfl_ctx ctx"
 .Ft dtfl_collection *
 .Fn dtfl_collection_leave "dtfl_collection *c"
 .Ft dtfl_collection *
@@ -181,6 +184,15 @@ and
 .Fn dtfl_collection_leave
 move a collection across a scope boundary, projecting the embedded time
 with the scope refinement.
+.Fn dtfl_collection_enter_at
+is like
+.Fn dtfl_collection_enter ,
+but each record appears in the child scope at a per-record initial inner
+time that
+.Fa logic
+writes into its
+.Fa inner_time_out
+argument, which the operator pairs with the refined outer time.
 .Fn dtfl_collection_probe
 and
 .Fn dtfl_collection_probe_with

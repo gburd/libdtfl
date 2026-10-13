@@ -231,6 +231,20 @@ DTFL_API dtfl_collection *dtfl_collection_enter(dtfl_collection *c,
 DTFL_API dtfl_collection *dtfl_collection_leave(dtfl_collection *c);
 
 /*
+ * enter_at: like enter, but each record appears in the child scope at a
+ * per-record initial inner time rather than the minimum.  The child must
+ * directly refine the collection's scope (a Product<outer, inner>).  For
+ * each update `logic` writes the initial inner time (`inner` words,
+ * matching the child's inner coordinate depth) into `inner_time_out`,
+ * which the operator pairs with the refined outer time, as
+ * Collection::enter_at pairs Product::new(time, initial(data)).
+ */
+typedef void (*dtfl_collection_enter_at_fn)(void *ctx, const void *rec,
+    size_t len, uint64_t *inner_time_out);
+DTFL_API dtfl_collection *dtfl_collection_enter_at(dtfl_collection *c,
+    dtfl_scope *child, dtfl_collection_enter_at_fn logic, dtfl_ctx ctx);
+
+/*
  * probe / probe_with: attach a timely probe to the collection's output,
  * to detect when it has stabilized.  probe allocates a probe and stores
  * it through `probe`; probe_with attaches an existing one.

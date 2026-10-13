@@ -121,7 +121,7 @@ sink_log(void *ctx, const void *rec, size_t len, const uint64_t *time,
 	(void)time; (void)len;
 	if (c->n >= 4096)
 		return;
-	c->u[c->n].dist = (uint32_t)dtfl_get_u64(p + 8);
+	c->u[c->n].dist = dtfl_get_u32(p + 8);
 	memcpy(&c->u[c->n].diff, diff, sizeof(int64_t));
 	c->n++;
 }

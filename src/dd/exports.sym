@@ -39,6 +39,7 @@ dtfl_collection_inspect
 dtfl_collection_explode
 dtfl_collection_delay
 dtfl_collection_enter
+dtfl_collection_enter_at
 dtfl_collection_leave
 dtfl_collection_probe
 dtfl_collection_probe_with
