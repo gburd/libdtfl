@@ -300,7 +300,7 @@ differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	A
 differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	done	
-differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join2.c	P9	todo	
 differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	done	

@@ -11,3 +11,4 @@ dtfl_collection_index_free
 dtfl_collection_index_extend_using
 dtfl_prefix_extender_free
 dtfl_collection_extend
+dtfl_dogs_half_join

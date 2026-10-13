@@ -206,6 +206,47 @@ DTFL_API dtfl_collection *dtfl_dogs_count(dtfl_collection *prefixes,
     dtfl_arranged *arr, const dtfl_type *prefix_type,
     dtfl_key_selector_fn key, dtfl_ctx ctx, uint64_t index);
 
+/* ------------------------------------------------------------------ */
+/* half_join (operators/half_join.rs)                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A half_join output closure: for a matched (key, val1, val2) it writes the
+ * output record bytes to `out_rec` (up to `cap`, storing the length through
+ * `out_len`).  The operator pairs the record with the joined time (the
+ * lattice join of the update's carried time1 and the matched trace time2)
+ * and the product of the two diffs, and ships it at the update's initial
+ * time.  `key`, `val1` and `val2` are the key, streamed value and matched
+ * value byte slices.
+ */
+typedef void (*dtfl_half_join_output_fn)(void *ctx, const void *key,
+    size_t klen, const void *val1, size_t v1len, const void *val2,
+    size_t v2len, void *out_rec, size_t cap, size_t *out_len);
+
+/*
+ * half_join (operators/half_join.rs): a binary equijoin that responds only
+ * to updates on its first input, used to build delta joins over partially
+ * ordered times.  Each streamed update is a record key||val1||time1 carried
+ * at an initial time less or equal to time1; for every (key, val2) in `arr`
+ * at a trace time2 that `comparison` accepts against the initial time, it
+ * emits output_func(key, val1, val2) at the joined time (time1 join time2),
+ * carried at the initial time, with the product of the diffs.  The output
+ * record is out_record||joined_time of a type whose record part is
+ * `out_type` (the operator appends the joined time words).
+ *
+ * `strict` selects the total-order comparison: true compares time2 strictly
+ * less than the initial time (ignoring concurrent updates), false compares
+ * less or equal (seeing concurrent updates).  Under an AltNeu scope these
+ * are the two sides that make a pair of concurrent updates interact exactly
+ * once.  `kt` and `v1t` split the streamed record into its key and value;
+ * the carried time1 is the scope's time words that follow them.  The caller
+ * still owns `arr`.
+ */
+DTFL_API dtfl_collection *dtfl_dogs_half_join(dtfl_collection *stream,
+    dtfl_arranged *arr, const dtfl_type *kt, const dtfl_type *v1t,
+    const dtfl_type *out_type, bool strict,
+    dtfl_half_join_output_fn output_func, dtfl_ctx ctx);
+
 #ifdef __cplusplus
 }
 #endif

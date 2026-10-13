@@ -13,7 +13,8 @@ dogs_sources = \
 	src/dogs/propose.c \
 	src/dogs/validate.c \
 	src/dogs/count.c \
-	src/dogs/extend.c
+	src/dogs/extend.c \
+	src/dogs/half_join.c
 
 libdtfl_la_SOURCES += $(dogs_sources)
 libdtfl_internal_la_SOURCES += $(dogs_sources)
@@ -23,6 +24,7 @@ EXTRA_DIST += src/dogs/exports.sym
 dist_man_MANS += man/man3/dtfl_collection_delay_neu.3
 dist_man_MANS += man/man3/dtfl_collection_index_new.3
 dist_man_MANS += man/man3/dtfl_dogs_propose.3
+dist_man_MANS += man/man3/dtfl_dogs_half_join.3
 
 check_PROGRAMS += tests/upstream/dogs/lookup_map_regression
 TESTS += tests/upstream/dogs/lookup_map_regression
@@ -42,3 +44,9 @@ TESTS += tests/pbt/pbt_dogs
 tests_pbt_pbt_dogs_SOURCES = tests/pbt/pbt_dogs.c
 tests_pbt_pbt_dogs_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_dogs_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_half_join
+TESTS += tests/unit/test_half_join
+tests_unit_test_half_join_SOURCES = tests/unit/test_half_join.c
+tests_unit_test_half_join_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_half_join_LDADD = $(INTERNAL_LIBS)
