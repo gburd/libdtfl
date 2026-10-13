@@ -58,4 +58,20 @@ dist_ddirsession_DATA = \
 	tools/dtfl-ddir/server/sessions/generated.txt \
 	tools/dtfl-ddir/server/sessions/shared_trace.txt \
 	tools/dtfl-ddir/server/sessions/arrange_idem.txt
+
+# dtfl-ddir smoke and server-session replay tests (dist tier): the tool
+# must be built, the data files and expected transcripts ship.
+dist_check_SCRIPTS += tests/dist/test_ddir_smoke.sh
+dist_check_SCRIPTS += tests/dist/test_ddir_server.sh
+TESTS += tests/dist/test_ddir_smoke.sh
+TESTS += tests/dist/test_ddir_server.sh
+EXTRA_DIST += \
+	tests/upstream/ddir/sessions/clock.expected \
+	tests/upstream/ddir/sessions/derived.expected \
+	tests/upstream/ddir/sessions/peek.expected \
+	tests/upstream/ddir/sessions/values.expected \
+	tests/upstream/ddir/sessions/drop.expected \
+	tests/upstream/ddir/sessions/generated.expected \
+	tests/upstream/ddir/sessions/shared_trace.expected \
+	tests/upstream/ddir/sessions/arrange_idem.expected
 endif

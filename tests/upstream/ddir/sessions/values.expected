@@ -1,0 +1,11 @@
+installed "echo"
+tick -> epoch 1
+tick -> epoch 2
+tick -> epoch 3
+tick -> epoch 4
+error: malformed value "inject(oops)"
+epoch: 4
+traces (1):
+  out (importers: 0)
+programs (1):
+  echo (inputs: 1, imports: 0, exports: 1)
