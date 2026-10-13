@@ -291,4 +291,55 @@ __dtfl_pull *__dtfl_zc_puller_new(__dtfl_bytes_fifo *receiver,
     const __dtfl_msg_class *mc, size_t identifier, __dtfl_events *events,
     __dtfl_zc_canaries *canaries);
 
+/*
+ * push_pull.rs PullerInner wrapped in counters.rs Puller and a Canary:
+ * pulls first from `inner` (the process-local typed puller, ownership
+ * taken), then from `receiver` (the FIFO of inter-process payload
+ * views, retained), decoding with mc.  Reports `identifier` to `events`
+ * (the allocator's) when a run of messages ends, and to `canaries`
+ * (retained) on destroy.  The Tcp allocator uses this; the plain Puller
+ * above has no inner.
+ */
+__dtfl_pull *__dtfl_zc_puller_inner_new(__dtfl_pull *inner,
+    __dtfl_bytes_fifo *receiver, const __dtfl_msg_class *mc,
+    size_t identifier, __dtfl_events *events, __dtfl_zc_canaries *canaries);
+
+/* ------------------------------------------------------------------ */
+/* tcp.rs: the send and receive loops                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * One MergeQueue writer handle in transit between a worker thread and a
+ * network thread.  The queues move through __dtfl_mpsc channels (the
+ * promise_futures rendezvous): element type is one of these.
+ */
+typedef struct __dtfl_mq_handoff {
+	__dtfl_merge_queue *queue;
+} __dtfl_mq_handoff;
+
+/*
+ * recv_loop: read framed messages from socket `fd` and route the
+ * payload bytes to the target worker's queue.  `targets` is a vector of
+ * __dtfl_mpsc * (one per local worker, size_t threads); each yields the
+ * writer handle its worker posted.  Byte views for a message whose
+ * target range is [lower, upper) go to targets[t - worker_offset] for
+ * each t in the range.  A zero-length header is end of stream; a short
+ * or malformed frame, a zero read, or data after a clean shutdown
+ * panics (upstream's tcp_panic).  Takes ownership of the `targets`
+ * vector's storage and the mpsc references in it; does not close `fd`.
+ */
+void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
+    size_t worker_offset);
+
+/*
+ * send_loop: drain each local worker's outgoing queue to socket `fd` as
+ * framed messages, then write a final zero-length header and shut down
+ * the write half.  `sources` is a vector of __dtfl_mpsc * (one per local
+ * worker); the loop creates a MergeQueue pair per source, posts the
+ * writer to the worker, and drains the reader.  A write failure panics.
+ * Takes ownership of the `sources` vector's storage and references; does
+ * not close `fd`.
+ */
+void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources);
+
 #endif /* DTFL_ZC_INT_H */
