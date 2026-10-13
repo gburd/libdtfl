@@ -1,0 +1,168 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_DDIR_PARSE 3
+.Os
+.Sh NAME
+.Nm dtfl_ddir_parse ,
+.Nm dtfl_ddir_program_free ,
+.Nm dtfl_ddir_program_input_count ,
+.Nm dtfl_ddir_program_export_count ,
+.Nm dtfl_ddir_program_export_name ,
+.Nm dtfl_ddir_build ,
+.Nm dtfl_ddir_time_class ,
+.Nm dtfl_ddir_evaluate ,
+.Nm dtfl_ddir_outputs_free ,
+.Nm dtfl_ddir_value_int ,
+.Nm dtfl_ddir_value_tuple ,
+.Nm dtfl_ddir_value_variant ,
+.Nm dtfl_ddir_value_list ,
+.Nm dtfl_ddir_value_unit ,
+.Nm dtfl_ddir_value_clone ,
+.Nm dtfl_ddir_value_cmp ,
+.Nm dtfl_ddir_value_free ,
+.Nm dtfl_ddir_value_parse
+.Nd parse and run Differential Dataflow IR programs
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/ddir.h
+.Ft int
+.Fn dtfl_ddir_parse "const char *program" "dtfl_ddir_syntax syntax" "dtfl_ddir_program **out"
+.Ft void
+.Fn dtfl_ddir_program_free "dtfl_ddir_program *p"
+.Ft size_t
+.Fn dtfl_ddir_program_input_count "const dtfl_ddir_program *p"
+.Ft size_t
+.Fn dtfl_ddir_program_export_count "const dtfl_ddir_program *p"
+.Ft "const char *"
+.Fn dtfl_ddir_program_export_name "const dtfl_ddir_program *p" "size_t i"
+.Ft int
+.Fn dtfl_ddir_build "const dtfl_ddir_program *program" "dtfl_scope *scope" "dtfl_collection *const *inputs" "size_t n_inputs" "dtfl_collection **exports"
+.Ft dtfl_time_class *
+.Fn dtfl_ddir_time_class "void"
+.Ft int
+.Fn dtfl_ddir_evaluate "const dtfl_ddir_program *program" "const dtfl_ddir_row *const *inputs" "const size_t *input_lens" "size_t n_inputs" "dtfl_ddir_output **outputs" "size_t *n_outputs"
+.Ft void
+.Fn dtfl_ddir_outputs_free "dtfl_ddir_output *outputs" "size_t n"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_int "int64_t n"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_tuple "dtfl_ddir_value **items" "size_t len"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_variant "uint32_t tag" "dtfl_ddir_value *payload"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_list "dtfl_ddir_value **items" "size_t len"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_unit "void"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_clone "const dtfl_ddir_value *v"
+.Ft int
+.Fn dtfl_ddir_value_cmp "const dtfl_ddir_value *a" "const dtfl_ddir_value *b"
+.Ft void
+.Fn dtfl_ddir_value_free "dtfl_ddir_value *v"
+.Ft dtfl_ddir_value *
+.Fn dtfl_ddir_value_parse "const char *term"
+.Sh DESCRIPTION
+DDIR is a small language for building differential dataflows at runtime.
+A program names positional input collections, defines derived collections
+by expressions
+.Pq map, filter, equijoin, reduce, concat, and iterate for recursion ,
+and declares named outputs.
+.Pp
+.Fn dtfl_ddir_parse
+parses
+.Fa program
+in the given surface
+.Fa syntax
+.Pq Dv DTFL_DDIR_PIPE for the pipe syntax Pq Pa .ddp , Dv DTFL_DDIR_APPLICATIVE for the applicative syntax Pq Pa .ddir ,
+lowers it to the scope-tree IR, optimizes it, and writes the resulting
+program through
+.Fa out .
+It returns zero on success.
+On a parse or lowering error it returns a
+.Dv DTFL_E Ns *
+code, reports a message through
+.Xr dtfl_last_error_detail 3 ,
+and leaves
+.Pf * Fa out
+.Dv NULL .
+Free the program with
+.Fn dtfl_ddir_program_free .
+.Pp
+.Fn dtfl_ddir_program_input_count
+and
+.Fn dtfl_ddir_program_export_count
+report how many positional inputs the program expects and how many named
+exports it declares;
+.Fn dtfl_ddir_program_export_name
+returns the name of export
+.Fa i .
+.Pp
+.Fn dtfl_ddir_build
+lowers
+.Fa program
+into a live differential dataflow inside
+.Fa scope ,
+whose time class must be
+.Fn dtfl_ddir_time_class
+.Pq Vt Product<u64, PointStamp<u64>> .
+It binds the program's positional inputs to
+.Fa inputs
+.Pq Fa n_inputs must equal Fn dtfl_ddir_program_input_count
+and writes one output collection per named export into
+.Fa exports ,
+in export order.
+The caller owns and frees the returned collections.
+.Pp
+.Fn dtfl_ddir_evaluate
+is the data-in, data-out shortcut: it feeds explicit input rows on a
+single in-process worker, runs the computation to quiescence, and writes
+one
+.Vt dtfl_ddir_output
+per export
+.Pq each export's consolidated final contents
+through
+.Fa outputs .
+Free the result with
+.Fn dtfl_ddir_outputs_free .
+.Pp
+A DDIR value is an algebraic data type over a single scalar: an integer, a
+tuple, a tagged variant, or a list.
+A collection element is a
+.Pq key, value
+pair of such values.
+The
+.Fn dtfl_ddir_value_ Ns *
+functions construct, clone, compare and free values;
+.Fn dtfl_ddir_value_cmp
+is the structural ordering that gives join-key matching, min, and
+distinct their meaning.
+.Fn dtfl_ddir_value_parse
+parses one value from a closed scalar term string, such as
+.Ql tuple(1, 2) .
+.Sh RETURN VALUES
+.Fn dtfl_ddir_parse ,
+.Fn dtfl_ddir_build
+and
+.Fn dtfl_ddir_evaluate
+return zero on success or a
+.Dv DTFL_E Ns *
+code on failure.
+The
+.Fn dtfl_ddir_value_ Ns *
+constructors never return
+.Dv NULL ;
+.Fn dtfl_ddir_value_parse
+returns
+.Dv NULL
+on a malformed term.
+.Sh SEE ALSO
+.Xr dtfl_collection_iterate 3 ,
+.Xr dtfl_collection_join 3 ,
+.Xr dtfl_collection_reduce 3
+.Sh STANDARDS
+Ported from the differential-dataflow
+.Ql interactive
+crate at tag
+.Ql differential-dataflow-v0.25.1 .
