@@ -26,11 +26,15 @@ dd_sources = \
 	src/dd/dynamic.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
+	src/dd/trace/chunk_int.h \
 	src/dd/trace/description.c \
 	src/dd/trace/layout.c \
 	src/dd/trace/cursor.c \
 	src/dd/trace/cursor_list.c \
 	src/dd/trace/ord_neu.c \
+	src/dd/trace/chunk.c \
+	src/dd/trace/chunk_vec.c \
+	src/dd/trace/spill.c \
 	src/dd/trace/merge_batcher.c \
 	src/dd/trace/chunker.c \
 	src/dd/trace/spine_fueled.c \
@@ -84,9 +88,9 @@ tests_unit_test_enter_at_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_enter_at_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_merge_batcher tests/unit/test_cursor \
-	tests/unit/test_ord_neu
+	tests/unit/test_ord_neu tests/unit/test_chunk
 TESTS += tests/unit/test_merge_batcher tests/unit/test_cursor \
-	tests/unit/test_ord_neu
+	tests/unit/test_ord_neu tests/unit/test_chunk
 tests_unit_test_merge_batcher_SOURCES = tests/unit/test_merge_batcher.c
 tests_unit_test_merge_batcher_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_merge_batcher_LDADD = $(INTERNAL_LIBS)
@@ -96,6 +100,21 @@ tests_unit_test_cursor_LDADD = $(INTERNAL_LIBS)
 tests_unit_test_ord_neu_SOURCES = tests/unit/test_ord_neu.c
 tests_unit_test_ord_neu_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_ord_neu_LDADD = $(INTERNAL_LIBS)
+tests_unit_test_chunk_SOURCES = tests/unit/test_chunk.c
+tests_unit_test_chunk_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_chunk_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_trace_spill
+TESTS += tests/unit/test_trace_spill
+tests_unit_test_trace_spill_SOURCES = tests/unit/test_trace_spill.c
+tests_unit_test_trace_spill_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_trace_spill_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_chunk_vec
+TESTS += tests/unit/test_chunk_vec
+tests_unit_test_chunk_vec_SOURCES = tests/unit/test_chunk_vec.c
+tests_unit_test_chunk_vec_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_chunk_vec_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/upstream/dd/trace
 TESTS += tests/upstream/dd/trace
@@ -179,6 +198,12 @@ TESTS += tests/pbt/pbt_trace
 tests_pbt_pbt_trace_SOURCES = tests/pbt/pbt_trace.c
 tests_pbt_pbt_trace_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_trace_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_chunk
+TESTS += tests/pbt/pbt_chunk
+tests_pbt_pbt_chunk_SOURCES = tests/pbt/pbt_chunk.c
+tests_pbt_pbt_chunk_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_chunk_LDADD = $(INTERNAL_PBT_LIBS)
 
 check_PROGRAMS += tests/pbt/pbt_arrange
 TESTS += tests/pbt/pbt_arrange

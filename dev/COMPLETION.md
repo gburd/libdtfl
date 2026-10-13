@@ -39,39 +39,42 @@ Engine (the dataflow core) -- DONE and tested
         helpers, 5 differential examples, 2 dd upstream tests, the
         differential manual chapters
 
-Not started -- MUST be finished before the project is done
-----------------------------------------------------------
-[ ] P2/P3 TCP + cluster allocator, networking handshake, create_sockets,
-        zero-copy initialize, comm_log, comm_hello; the ProcessBinary
-        and Cluster modes of initialize; the remaining progress wiring.
-        Exit: comm_hello on all five allocators; a hand-built operator
-        runs on Cluster; TSan clean.
+Not started or partial -- MUST be finished before the project is done
+---------------------------------------------------------------------
+[x] P2/P3 TCP + cluster allocator, networking handshake, create_sockets,
+        zero-copy initialize; the ProcessBinary and Cluster modes of
+        initialize.  DONE (feat/tcp): test_tcp drives a loopback mesh;
+        Cluster is wired into dtfl_execute; TSan clean.  (comm_hello the
+        example and comm_log emission remain, tracked separately.)
 [ ] Binary capture transport: dtfl_event_writer_* / dtfl_event_reader_*
         (declared in timely_ops.h, unimplemented).  Unblocks the
         capture_send/capture_recv timely examples.
-[ ] Public timely/differential logging subscriber API: worker
-        log_register/insert, BatchLogger, the TimelyEvent / DifferentialEvent
-        record types as public types.  Unblocks the logging examples and
-        is a prerequisite for P11.  (The human-readable log sink hook is
-        separate and tracked under embedding below.)
-[ ] P9  algorithms + dogsdogsdogs + remaining differential examples:
-        bfs, scc, pagerank and the rest as differential programs; the
-        dogsdogsdogs delta-query library.  Exit: bfs/scc/dogsdogsdogs
-        tests pass; examples diff-equal to Rust via fixtures.
-        scc blocked on bug 3 (nested iterate-in-feedback progress at
-        depth 3); see tests/unit/test_nested_iterate.c for the repro and
-        diagnosis.
-[ ] P10 dogsdogsdogs / differential capture (1 row).  Exit: capture
-        round trip under message duplication and reordering.
-[ ] P11 diagnostics (the dataflow-diag crate): the in-process WebSocket
-        server and the dtfl-diag tool.  Exit: upstream index.html
-        renders a live libdtfl dataflow; dtfl-diag graph reads the Rust
-        0.31 log fixture.
-[ ] P12 DDIR: parser, lowering, interpreter, explain, dtfl-ddir; trace
-        spill (graded chunks, chunk spill) and its benchmarks/examples.
-        Exit: the explain suite; upstream .ddp/.ddir programs give the
-        same results.
-[ ] P13 DDIR server + tools (42 rows: server, programs, dtfl-ddir).
+[x] Public timely/differential logging subscriber API (dtfl/log.h).
+        DONE (feat/log-subscriber): a subscriber receives decoded
+        timely/differential/communication event batches; the P11
+        prerequisite.  (The human-readable log sink hook is separate,
+        under embedding.)
+[~] P9  algorithms + dogsdogsdogs + remaining differential examples.
+        DONE: bfs, scc (the ord_neu compaction fix landed), identifiers,
+        the dogsdogsdogs delta-query library, and 11 differential/dogs
+        examples.  REMAINING: a few blocked examples (pagerank,
+        monoid-bfs, dynamic, graspan, progress, multitemporal, scc,
+        ngo) each needing a distinct API, and half_join2.
+[ ] P10 differential capture (1 row).  Exit: capture round trip under
+        message duplication and reordering.
+[x] P11 diagnostics (the dataflow-diag crate): the in-process WebSocket
+        server and dtfl-diag.  DONE (feat/p11-diag): Frame JSON byte-
+        compatible with the upstream consoles; graph/profile/
+        arrangements; binds 127.0.0.1 (D12).  scc-bench example remains.
+[~] P12 trace spill: graded chunks, chunk spill, the spines and
+        chunk_bench benchmarks, the spill_stress / spill_compare
+        examples.  IN PROGRESS (feat/p12-spill).  Exit: spill round
+        trip; spill PBT.
+[~] P13 DDIR: parser, lowering, interpreter, explain, dtfl-ddir, the
+        plugin server and programs.  IN PROGRESS (feat/p13-ddir: the
+        parse/IR/lower/backend core; explain + server + tool are a
+        follow-up).  Exit: the explain suite; upstream .ddp/.ddir
+        programs give the same results.
 [ ] P14 plugin server + its four example plugins.  Exit: the dd_server
         session scripts replay.
 [ ] P15 release: the three experiments/ benchmarks, the performance
@@ -80,8 +83,14 @@ Not started -- MUST be finished before the project is done
 
 Examples
 --------
-[~] timely examples: 18/23 (5 blocked on transport/logging API above)
-[ ] differential examples: 0 ported
+[~] timely examples: 18/23 (5 blocked: capture_send/recv on the binary
+        transport, 3 logging examples on the logging subscriber being
+        wired into examples)
+[~] differential + dogs examples: 11 ported (hello, degrees, bfs,
+        projekt, compact, stackoverflow, accumulate, interpreted,
+        itembased_cf, 2 dogs delta queries); ~16 remain (pagerank,
+        monoid-bfs, cursors, arrange, dynamic, graspan, progress,
+        multitemporal, scc, delta_query/2, ngo, the P12 spill examples)
 [ ] experiments/ benchmarks (3), deferred rows revisited at P15
 
 Documentation
@@ -96,11 +105,10 @@ Embedding (host = PostgreSQL etc.) -- a release requirement
 -----------------------------------------------------------
 [x] memory: dtfl_set_alloc_hooks (all allocation; gate-enforced)
 [x] panic: dtfl_set_panic_hook (host may longjmp / ereport)
-[~] logging sink: dtfl_set_log_hook (human-readable; maps to elog) -- in
-        progress on feat/embed
-[~] thread-spawn hook: dtfl_set_thread_hooks (maps to bgworkers), or the
-        documented single-thread cooperative mode -- in progress
-[ ] embedding contract man page dtfl_embedding(7) -- in progress
+[x] logging sink: dtfl_set_log_hook (human-readable; maps to elog)
+[x] thread-spawn hook: dtfl_set_thread_hooks (maps to bgworkers), or the
+        documented single-thread cooperative mode
+[x] embedding contract man page dtfl_embedding(7)
 [ ] a worked PostgreSQL embedding example or an extension skeleton
         (alloc->palloc, panic->ereport, log->elog, threads->bgworker)
 
@@ -109,15 +117,47 @@ Verification (fidelity against real Rust) -- a release requirement
 [x] completeness ledger + ledger-diff (regenerates from the pins)
 [x] ledger gate fails if a done file skips all its upstream tests
 [x] interop fixture: dtfl_type_cmp reproduces Rust Ord (byte-level)
-[~] interop: wire-format fixtures (capture framing, log streams) -- in
-        progress on feat/fixtures
-[~] interop: operator-output oracle (join/count/reduce byte-equal to
-        Rust) -- in progress
-[~] differential fuzz oracle (Hegel vs C model, anchored to Rust-seeded
-        fixtures) -- in progress
+[x] interop: wire-format fixtures (capture framing, log streams)
+[x] interop: operator-output oracle (join/count/reduce byte-equal to Rust)
+[x] differential fuzz oracle (Hegel vs C model, anchored to Rust-seeded
+        fixtures)
 [ ] every upstream #[test] ported (test-ledger all done/subsumed/
-        deferred): currently 41/167
+        deferred): currently 52/167
 [ ] the P15 fuzz campaign and the performance parity table
+
+Deferred-with-reason items that MUST still be finished before 1.0
+----------------------------------------------------------------
+These are not dropped; each has a precise completion condition.  The
+first three are port-ledger rows the completion gate already counts as
+unfinished (wip/todo); the fourth is tracked here because a property
+test is not an upstream #[test] and so has no ledger row.
+[ ] comm logging (communication/src/logging.rs -> src/comm/comm_log.c,
+        wip): the CommunicationEvent encoder and the "communication"
+        subscriber stream exist and round-trip; the DATA-PLANE EMISSION
+        from the network send/recv loops is not wired (the allocator log
+        sink, upstream Hooks.log_fn, is unmodeled).  FINISH: plumb a log
+        sink into the comm allocators so send/recv actually emit Message
+        and State events; then flip to done.
+[ ] differential logging emission (differential-dataflow/src/logging.rs
+        -> src/dd/dd_log.c, wip): same shape as comm_log; the encoder
+        and stream exist, the spine/batcher emission from the arrange
+        layer is not wired.  FINISH: emit Batch/Merge/Drop/etc. events
+        from the arrangement operators; flip to done.
+[ ] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
+        src/dogs/half_join2.c, todo): the unified-blob half-join
+        variant.  Observable behavior equals half_join, so it has no
+        oracle until the ngo example exercises it.  FINISH: port the
+        ngo example first (it needs arrange_by_self/by_key leapfrog),
+        then port half_join2 with ngo as its test, flip both to done.
+[ ] TCP property test (pbt_tcp.c): deferred because loopback TCP is not
+        deterministic enough for Hegel's shrink/replay (the framing
+        round-trip is covered by pbt_wire.c; the live mesh by
+        test_tcp.c).  FINISH CONDITION: add a seeded, deterministic
+        transport harness (e.g. an in-memory socketpair with a recorded
+        schedule) so a property over the full send/recv/route path is
+        replayable; then add pbt_tcp.c.  If that harness proves
+        infeasible, this stays covered by pbt_wire + test_tcp and is
+        closed with that justification recorded here.
 
 Release gate (tests/dist/test_completion.sh)
 ---------------------------------------------
