@@ -22,6 +22,7 @@ minimize_vals(__dtfl_cursor_list *cl)
 {
 	const void *min = NULL;
 	size_t minlen = 0, i;
+	bool have_min = false;
 
 	__dtfl_vec_clear(&cl->min_val);
 	for (i = 0; i < cl->min_key.len; i++) {
@@ -34,10 +35,11 @@ minimize_vals(__dtfl_cursor_list *cl)
 			continue;
 		val = __dtfl_cursor_val(&cl->cursors[idx], cl->batches[idx],
 		    &vlen);
-		if (min == NULL) {
+		if (!have_min) {
 			__dtfl_vec_push(&cl->min_val, &idx);
 			min = val;
 			minlen = vlen;
+			have_min = true;
 			continue;
 		}
 		r = dtfl_type_cmp(cl->vt, val, vlen, min, minlen);
@@ -61,6 +63,7 @@ minimize_keys(__dtfl_cursor_list *cl)
 {
 	const void *min = NULL;
 	size_t minlen = 0, i;
+	bool have_min = false;
 
 	__dtfl_vec_clear(&cl->min_key);
 	for (i = 0; i < cl->n; i++) {
@@ -71,10 +74,11 @@ minimize_keys(__dtfl_cursor_list *cl)
 		if (!__dtfl_cursor_key_valid(&cl->cursors[i], cl->batches[i]))
 			continue;
 		key = __dtfl_cursor_key(&cl->cursors[i], cl->batches[i], &klen);
-		if (min == NULL) {
+		if (!have_min) {
 			__dtfl_vec_push(&cl->min_key, &i);
 			min = key;
 			minlen = klen;
+			have_min = true;
 			continue;
 		}
 		r = dtfl_type_cmp(cl->kt, key, klen, min, minlen);

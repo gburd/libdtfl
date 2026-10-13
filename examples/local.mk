@@ -106,6 +106,63 @@ examples_timely_hashjoin_SOURCES = examples/timely/hashjoin.c
 examples_timely_hashjoin_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
 
+# ----------------------------------------------------------------------
+# Differential dataflow examples (P9).
+# ----------------------------------------------------------------------
+
+noinst_PROGRAMS += \
+	examples/dd/degrees \
+	examples/dd/bfs \
+	examples/dd/projekt \
+	examples/dd/compact \
+	examples/dd/stackoverflow \
+	examples/dd/hello \
+	examples/dd/accumulate
+
+examples_dd_degrees_SOURCES = examples/dd/degrees.c
+examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_degrees_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_bfs_SOURCES = examples/dd/bfs.c
+examples_dd_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_bfs_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_projekt_SOURCES = examples/dd/projekt.c
+examples_dd_projekt_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_projekt_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_compact_SOURCES = examples/dd/compact.c
+examples_dd_compact_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_compact_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_stackoverflow_SOURCES = examples/dd/stackoverflow.c
+examples_dd_stackoverflow_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_stackoverflow_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_hello_SOURCES = examples/dd/hello.c
+examples_dd_hello_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_hello_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_accumulate_SOURCES = examples/dd/accumulate.c
+examples_dd_accumulate_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_accumulate_LDADD = $(EXAMPLE_LDADD)
+
+# ----------------------------------------------------------------------
+# dogsdogsdogs (delta-query) examples (P9).
+# ----------------------------------------------------------------------
+
+noinst_PROGRAMS += \
+	examples/dogs/delta_query_wcoj \
+	examples/dogs/dogsdogsdogs
+
+examples_dogs_delta_query_wcoj_SOURCES = examples/dogs/delta_query_wcoj.c
+examples_dogs_delta_query_wcoj_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dogs_delta_query_wcoj_LDADD = $(EXAMPLE_LDADD)
+
+examples_dogs_dogsdogsdogs_SOURCES = examples/dogs/dogsdogsdogs.c
+examples_dogs_dogsdogsdogs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dogs_dogsdogsdogs_LDADD = $(EXAMPLE_LDADD)
+
 # Smoke test: run a representative subset under `make check` so a
 # crashing, hanging or wrong-output example fails the build.  The
 # examples the harness runs are added to check_PROGRAMS so `make check`
@@ -118,10 +175,19 @@ check_PROGRAMS += \
 	examples/timely/unionfind \
 	examples/timely/pagerank \
 	examples/timely/hashjoin \
-	examples/timely/capture
+	examples/timely/capture \
+	examples/dd/degrees \
+	examples/dd/bfs \
+	examples/dd/projekt \
+	examples/dd/compact \
+	examples/dd/stackoverflow \
+	examples/dogs/delta_query_wcoj \
+	examples/dogs/dogsdogsdogs \
+	examples/dd/hello \
+	examples/dd/accumulate
 
-dist_check_SCRIPTS += tests/dist/test_examples.sh
-TESTS += tests/dist/test_examples.sh
+dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
+TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 
 EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/hello.expected \
@@ -131,4 +197,13 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/unionfind.expected \
 	examples/timely/pagerank.expected \
 	examples/timely/hashjoin.expected \
-	examples/timely/capture.expected
+	examples/timely/capture.expected \
+	examples/dd/degrees.expected \
+	examples/dd/bfs.expected \
+	examples/dd/projekt.expected \
+	examples/dd/compact.expected \
+	examples/dd/stackoverflow.expected \
+	examples/dogs/delta_query_wcoj.expected \
+	examples/dogs/dogsdogsdogs.expected \
+	examples/dd/hello.expected \
+	examples/dd/accumulate.expected

@@ -169,7 +169,8 @@ dtfl_input_session_flush(dtfl_input_session *s)
 			scratch = __dtfl_realloc(scratch, total);
 			scratch_cap = total;
 		}
-		memcpy(scratch, rec, rlen);
+		if (rlen != 0)
+			memcpy(scratch, rec, rlen);
 		if (tw != 0)
 			memcpy(scratch + rlen, __dtfl_batch_time(s->buffer, i),
 			    tw);
