@@ -79,6 +79,20 @@ DTFL_API dtfl_variable *dtfl_variable_new(dtfl_scope *scope,
     const dtfl_type *type, const dtfl_diff *diff, dtfl_collection **collection);
 
 /*
+ * Variable::new at a chosen PointStamp coordinate.  Like dtfl_variable_new,
+ * but for a dynamic (PointStamp) scope whose feedback advances coordinate
+ * `level` (1-based) rather than the innermost Product coordinate.  This is
+ * what a program needs when several iterative loops share one
+ * iterative<PointStamp> scope at different coordinates (DDIR, dynamic/mod.rs
+ * feedback_summary(level, 1)).  `scope` must have a PointStamp (or
+ * Product-with-PointStamp) time class and `level` must be between 1 and the
+ * PointStamp's maximum length.
+ */
+DTFL_API dtfl_variable *dtfl_variable_new_at(dtfl_scope *scope,
+    const dtfl_type *type, const dtfl_diff *diff, size_t level,
+    dtfl_collection **collection);
+
+/*
  * Variable::new_from: a new Variable seeded from `source`, and its
  * collection, which is `source` concatenated with the feedback.  The
  * Variable retains the negated source, so set binds `x = logic(x + source)

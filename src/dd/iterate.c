@@ -178,6 +178,33 @@ dtfl_variable_new(dtfl_scope *scope, const dtfl_type *type,
 }
 
 dtfl_variable *
+dtfl_variable_new_at(dtfl_scope *scope, const dtfl_type *type,
+    const dtfl_diff *diff, size_t level, dtfl_collection **collection)
+{
+	const dtfl_time_class *tc = dtfl_scope_time_class(scope);
+	dtfl_variable *v = __dtfl_alloc(sizeof *v);
+	dtfl_stream *updates;
+	const dtfl_type *ut;
+
+	/* The feedback advances PointStamp coordinate `level` by one, where
+	 * dtfl_variable_new advances the innermost Product coordinate. */
+	dtfl_feedback_summary(tc, level, 1, v->step);
+	v->scope = scope;
+	v->source_neg = NULL;
+
+	ut = __dtfl_update_type(type, dtfl_time_depth(tc), diff->cls->width);
+	updates = dtfl_feedback_new(scope, ut, v->step, &v->feedback);
+	dtfl_type_free(ut);
+	if (collection != NULL)
+		*collection = __dtfl_as_collection(updates, type,
+		    dtfl_diff_retain(diff), dtfl_time_depth(tc));
+	else
+		dtfl_collection_free(__dtfl_as_collection(updates, type,
+		    dtfl_diff_retain(diff), dtfl_time_depth(tc)));
+	return v;
+}
+
+dtfl_variable *
 dtfl_variable_new_from(dtfl_collection *source, dtfl_collection **collection)
 {
 	dtfl_scope *scope = dtfl_stream_scope(source->stream);

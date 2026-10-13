@@ -79,6 +79,7 @@ dtfl_collection_semijoin
 dtfl_collection_antijoin
 dtfl_collection_iterate
 dtfl_variable_new
+dtfl_variable_new_at
 dtfl_variable_new_from
 dtfl_variable_set
 dtfl_variable_set_concat

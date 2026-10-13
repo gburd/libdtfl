@@ -5,6 +5,7 @@
 .Sh NAME
 .Nm dtfl_collection_iterate ,
 .Nm dtfl_variable_new ,
+.Nm dtfl_variable_new_at ,
 .Nm dtfl_variable_new_from ,
 .Nm dtfl_variable_set ,
 .Nm dtfl_variable_set_concat ,
@@ -21,6 +22,8 @@ Timely and differential dataflow library
 .Fn dtfl_collection_iterate "dtfl_collection *c" "dtfl_iterate_fn logic" "dtfl_ctx ctx"
 .Ft dtfl_variable *
 .Fn dtfl_variable_new "dtfl_scope *scope" "const dtfl_type *type" "const dtfl_diff *diff" "dtfl_collection **collection"
+.Ft dtfl_variable *
+.Fn dtfl_variable_new_at "dtfl_scope *scope" "const dtfl_type *type" "const dtfl_diff *diff" "size_t level" "dtfl_collection **collection"
 .Ft dtfl_variable *
 .Fn dtfl_variable_new_from "dtfl_collection *source" "dtfl_collection **collection"
 .Ft void
@@ -83,6 +86,13 @@ creates an initially empty Variable in
 an iterative subscope, and stores its collection through
 .Fa collection ;
 its difference class need only be a Semigroup.
+.Fn dtfl_variable_new_at
+is the same for a dynamic
+.Pq PointStamp
+scope whose feedback advances coordinate
+.Fa level
+rather than the innermost Product coordinate, so several loops can share
+one iterative scope at different coordinates.
 .Fn dtfl_variable_new_from
 creates a Variable seeded from
 .Fa source
