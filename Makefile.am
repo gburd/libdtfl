@@ -82,6 +82,7 @@ include bench/local.mk
 # Tools (bin_PROGRAMS): command-line programs built on the public API
 # only.  Included after the src fragments so the library exists to link.
 include tools/local.mk
+include tools/dtfl-ddir/local.mk
 
 # Examples (noinst): included after the src fragments so the library and
 # its public headers exist to link against (AGENTS.md section 11).

@@ -327,35 +327,35 @@ differential-dataflow	experiments/src/bin/graspan2.rs	276	-	-	deferred	not neede
 differential-dataflow	experiments/src/bin/multitemporal.rs	338	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/ysb.rs	139	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/lib.rs	7	-	-	deferred	benchmark support code
-differential-dataflow	interactive/examples/ddir_server.rs	290	tools/dtfl-ddir/ddir_server.c	P13	todo	
-differential-dataflow	interactive/examples/ddir_vec.rs	229	tools/dtfl-ddir/ddir_vec.c	P13	todo	
-differential-dataflow	interactive/examples/dump_explain.rs	39	tools/dtfl-ddir/dump_explain.c	P13	todo	
-differential-dataflow	interactive/examples/programs/adt.ddp	22	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/binders.ddp	14	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/kcore.ddir	28	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/reach.ddir	13	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/reach.ddp	13	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/scc.ddir	38	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/scc.ddp	37	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/stable.ddir	22	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/stable.ddp	15	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/unnest.ddp	14	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/arrange_idem.ddp	54	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/clock_watch.ddp	4	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/count_gen.ddp	6	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/echo.ddp	3	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/producer.ddp	5	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/rand_reach.ddp	15	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/reach_gen.ddp	15	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/reach_import.ddp	13	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/arrange_idem.txt	39	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/clock.txt	10	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/derived.txt	10	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/drop.txt	24	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/generated.txt	25	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/peek.txt	18	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/shared_trace.txt	25	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
+differential-dataflow	interactive/examples/ddir_server.rs	290	tools/dtfl-ddir/server_cmd.c	P13	done	the server subcommand of dtfl-ddir: install/feed/tick/drop/peek/list/exit over the public server API; folded with ddir_vec and dump_explain into one dtfl-ddir binary
+differential-dataflow	interactive/examples/ddir_vec.rs	229	tools/dtfl-ddir/run.c	P13	done	the run subcommand of dtfl-ddir: parse/evaluate/print; rows from a file or stdin, "@N" selects the input (a clearer form of the round-robin EDGES_FILE assignment)
+differential-dataflow	interactive/examples/dump_explain.rs	39	tools/dtfl-ddir/explain_cmd.c	P13	done	the explain subcommand of dtfl-ddir: reports the program and its explanation rewrite by shape (the full scope-tree dump is not on the public API)
+differential-dataflow	interactive/examples/programs/adt.ddp	22	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/binders.ddp	14	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/kcore.ddir	28	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/reach.ddir	13	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/reach.ddp	13	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/scc.ddir	38	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/scc.ddp	37	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/stable.ddir	22	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/stable.ddp	15	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/unnest.ddp	14	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/arrange_idem.ddp	54	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/clock_watch.ddp	4	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/count_gen.ddp	6	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/echo.ddp	3	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/producer.ddp	5	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/rand_reach.ddp	15	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/reach_gen.ddp	15	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/reach_import.ddp	13	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/arrange_idem.txt	39	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/clock.txt	10	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/derived.txt	10	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/drop.txt	24	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/generated.txt	25	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/peek.txt	18	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/shared_trace.txt	25	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
 differential-dataflow	interactive/src/backend/col.rs	259	-	-	excluded	disabled upstream
 differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	done	render_tree walk; nested { } renders as a region at depth + 1, leave_dynamic pops its PointStamp coordinate
 differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	done	whole program in one iterative dynamic scope; time is literally Product<u64,PointStamp<u64>>; render_linear is one faithful operator with enter_at and lift_iter
