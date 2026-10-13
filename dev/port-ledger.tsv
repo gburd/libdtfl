@@ -363,11 +363,11 @@ differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_d
 differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	todo	
 differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	wip	
 differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	todo	
-differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	todo	
+differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	
 differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	wip	
 differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	wip	
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	wip	
-differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	todo	
+differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	todo	
 differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	todo	
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it

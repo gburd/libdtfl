@@ -12,7 +12,9 @@ ddir_sources = \
 	src/ddir/ir.c \
 	src/ddir/parse.c \
 	src/ddir/parse_pipe.c \
-	src/ddir/parse_applicative.c
+	src/ddir/parse_applicative.c \
+	src/ddir/scope_ir.c \
+	src/ddir/lower.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
 libdtfl_internal_la_SOURCES += $(ddir_sources)
@@ -26,3 +28,15 @@ TESTS += tests/unit/test_ddir
 tests_unit_test_ddir_SOURCES = tests/unit/test_ddir.c
 tests_unit_test_ddir_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_ddir_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_scope_ir
+TESTS += tests/unit/test_scope_ir
+tests_unit_test_scope_ir_SOURCES = tests/unit/test_scope_ir.c
+tests_unit_test_scope_ir_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_scope_ir_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_lower
+TESTS += tests/unit/test_lower
+tests_unit_test_lower_SOURCES = tests/unit/test_lower.c
+tests_unit_test_lower_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_lower_LDADD = $(INTERNAL_LIBS)

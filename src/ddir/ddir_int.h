@@ -361,6 +361,11 @@ void dd_scope_free(dd_scope *s);
 void dd_scope_optimize(dd_scope *s);
 void dd_program_optimize(dtfl_ddir_program *p);
 
+/* Lower a parsed AST (vec of dd_stmt*) into a Program (lower.rs). */
+dtfl_ddir_program *dd_lower_tree(const dd_vec *stmts);
+/* Free a program and its scope tree. */
+void dd_program_free(dtfl_ddir_program *p);
+
 /* ------------------------------------------------------------------ */
 /* Value data model and the Term interpreter (ir.rs)                   */
 /* ------------------------------------------------------------------ */
