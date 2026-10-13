@@ -96,6 +96,12 @@ Not started or partial -- MUST be finished before the project is done
         explain scc sufficiency tests (scc_row_explanations_sufficient_small,
         two_simultaneous_queries_sufficient, demand_is_a_subset_of_the_input)
         are un-SKIPped and pass under ASan + LSan.
+[ ] DDIR self-referential feedback hang: a program with
+        var x = ARRANGE(CONCAT(x, NEGATE(...))) parks the worker (lost
+        wake / non-convergence) in the backend/iterate rendering; kcore
+        and stable DDIR programs SKIP on it.  Minimal repro in the
+        p13-server report.  Distinct from the two bugs above; a backend
+        convergence fix before 1.0.
 [ ] reduce interesting-time assertion: rd_retire's output-tag match
         asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
         DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
