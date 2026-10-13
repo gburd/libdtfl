@@ -20,6 +20,7 @@
 
 #include "comm/comm_int.h"
 #include "dtfl/config.h"
+#include "dtfl/log.h"
 
 /* Joins the network threads; returned for Cluster configurations. */
 typedef struct __dtfl_comms_guard __dtfl_comms_guard;
@@ -68,5 +69,20 @@ int __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
  * cluster allocator is its only reader.
  */
 bool __dtfl_config_zerocopy(const dtfl_config *cfg);
+
+/*
+ * Log subscriptions recorded on a config (dtfl_config_log_subscribe),
+ * installed on every worker as it starts.  The ctx is shared across
+ * worker threads; ctx_free is called once, when the config is freed.
+ */
+typedef struct __dtfl_log_sub {
+	const char *stream;
+	dtfl_log_subscriber_fn fn;
+	void *ctx;
+	void (*ctx_free)(void *);
+} __dtfl_log_sub;
+
+size_t __dtfl_config_log_subs(const dtfl_config *cfg,
+    const __dtfl_log_sub **subs);
 
 #endif /* DTFL_INIT_INT_H */

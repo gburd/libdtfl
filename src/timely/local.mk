@@ -12,6 +12,7 @@ timely_sources = \
 	src/timely/activate.c \
 	src/timely/worker.c \
 	src/timely/timely_log.c \
+	src/timely/log.c \
 	src/timely/scope.c \
 	src/timely/execute.c \
 	src/timely/message.c \
@@ -62,6 +63,7 @@ libdtfl_la_SOURCES += $(timely_sources)
 libdtfl_internal_la_SOURCES += $(timely_sources)
 dtflinclude_HEADERS += include/dtfl/timely.h
 dtflinclude_HEADERS += include/dtfl/timely_ops.h
+dtflinclude_HEADERS += include/dtfl/log.h
 dist_man_MANS += man/man3/dtfl_execute.3
 dist_man_MANS += man/man3/dtfl_worker_dataflow.3
 dist_man_MANS += man/man3/dtfl_scope_scoped.3
@@ -98,6 +100,7 @@ dist_man_MANS += man/man3/dtfl_stream_enter.3
 dist_man_MANS += man/man3/dtfl_stream_result.3
 dist_man_MANS += man/man3/dtfl_barrier.3
 dist_man_MANS += man/man3/dtfl_sequencer.3
+dist_man_MANS += man/man3/dtfl_worker_log_subscribe.3
 EXTRA_DIST += src/timely/exports.sym
 
 check_PROGRAMS += tests/unit/test_worker
@@ -203,3 +206,9 @@ TESTS += tests/pbt/pbt_capture
 tests_pbt_pbt_capture_SOURCES = tests/pbt/pbt_capture.c
 tests_pbt_pbt_capture_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_capture_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/unit/test_log_subscribe
+TESTS += tests/unit/test_log_subscribe
+tests_unit_test_log_subscribe_SOURCES = tests/unit/test_log_subscribe.c
+tests_unit_test_log_subscribe_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_log_subscribe_LDADD = $(INTERNAL_LIBS)

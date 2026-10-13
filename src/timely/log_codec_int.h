@@ -23,4 +23,37 @@ void __dtfl_bc_usizes(__dtfl_vec *o, const size_t *v, size_t n);
 /* Duration from nanoseconds: u64 seconds then u32 nanoseconds. */
 void __dtfl_bc_duration(__dtfl_vec *o, uint64_t ns);
 
+/*
+ * A reader over a fixint little-endian bincode record.  It tracks a
+ * cursor and an overrun flag; once a read runs past the end every
+ * further read is a no-op and `bad` stays set, so a decoder can read a
+ * whole record and check `bad` once at the end rather than at each step.
+ */
+typedef struct __dtfl_bc_reader {
+	const unsigned char *p;
+	size_t len;
+	size_t off;
+	bool bad;
+} __dtfl_bc_reader;
+
+void __dtfl_bc_reader_init(__dtfl_bc_reader *r, const void *data, size_t len);
+uint8_t __dtfl_bc_read_u8(__dtfl_bc_reader *r);
+uint32_t __dtfl_bc_read_u32(__dtfl_bc_reader *r);
+uint64_t __dtfl_bc_read_u64(__dtfl_bc_reader *r);
+/* isize/i64: read as u64 and reinterpret two's complement. */
+int64_t __dtfl_bc_read_i64(__dtfl_bc_reader *r);
+/* Duration -> nanoseconds (u64 seconds then u32 nanoseconds). */
+uint64_t __dtfl_bc_read_duration(__dtfl_bc_reader *r);
+/*
+ * A borrowed string: a u64 length then that many bytes, returned as a
+ * (pointer, length) slice into the record.  The slice is not
+ * NUL-terminated; the decoder copies it when it needs a C string.
+ */
+const char *__dtfl_bc_read_str(__dtfl_bc_reader *r, size_t *slen);
+/*
+ * A Vec<usize> as a borrowed count and a cursor positioned at the first
+ * element; the caller reads `*count` u64s with __dtfl_bc_read_u64.
+ */
+size_t __dtfl_bc_read_vec_len(__dtfl_bc_reader *r);
+
 #endif /* DTFL_LOG_CODEC_INT_H */

@@ -19,3 +19,4 @@ dtfl_config_set_seed
 dtfl_config_set_threads
 dtfl_config_threads
 dtfl_config_timely_log_addr
+dtfl_config_log_subscribe

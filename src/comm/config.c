@@ -37,6 +37,7 @@ struct dtfl_config {
 	uint64_t seed;
 	char *timely_log_addr;		/* owned or NULL */
 	char *differential_log_addr;	/* owned or NULL */
+	__dtfl_vec log_subs;		/* __dtfl_log_sub, streams owned */
 };
 
 dtfl_config *
@@ -47,6 +48,7 @@ dtfl_config_new(void)
 	cfg->mode = DTFL_COMM_THREAD;
 	cfg->threads = 1;
 	cfg->progress_mode = DTFL_PROGRESS_DEMAND;
+	__dtfl_vec_init(&cfg->log_subs, sizeof(__dtfl_log_sub));
 	return cfg;
 }
 
@@ -63,11 +65,21 @@ free_addresses(char **addresses, size_t n)
 void
 dtfl_config_free(dtfl_config *cfg)
 {
+	size_t i;
+
 	if (cfg == NULL)
 		return;
 	free_addresses(cfg->addresses, cfg->naddresses);
 	__dtfl_free(cfg->timely_log_addr);
 	__dtfl_free(cfg->differential_log_addr);
+	for (i = 0; i < cfg->log_subs.len; i++) {
+		__dtfl_log_sub *s = DTFL_VEC_AT(&cfg->log_subs, __dtfl_log_sub, i);
+
+		if (s->ctx_free != NULL)
+			s->ctx_free(s->ctx);
+		__dtfl_free((void *)(uintptr_t)s->stream);
+	}
+	__dtfl_vec_free(&cfg->log_subs);
 	__dtfl_free(cfg);
 }
 
@@ -551,4 +563,46 @@ const char *
 dtfl_config_differential_log_addr(const dtfl_config *cfg)
 {
 	return cfg->differential_log_addr;
+}
+
+/* ------------------------------------------------------------------ */
+/* Structured event logging (dtfl/log.h)                               */
+/* ------------------------------------------------------------------ */
+
+int
+dtfl_config_log_subscribe(dtfl_config *cfg, const char *stream,
+    dtfl_log_subscriber_fn fn, void *ctx, void (*ctx_free)(void *))
+{
+	__dtfl_log_sub sub;
+	size_t i;
+
+	if (cfg == NULL || stream == NULL || fn == NULL)
+		return __dtfl_err(DTFL_EINVAL, "dtfl_config_log_subscribe: "
+		    "NULL argument");
+	/* A second subscribe of the same stream replaces the first. */
+	for (i = 0; i < cfg->log_subs.len; i++) {
+		__dtfl_log_sub *s = DTFL_VEC_AT(&cfg->log_subs, __dtfl_log_sub, i);
+
+		if (strcmp(s->stream, stream) == 0) {
+			if (s->ctx_free != NULL)
+				s->ctx_free(s->ctx);
+			s->fn = fn;
+			s->ctx = ctx;
+			s->ctx_free = ctx_free;
+			return DTFL_OK;
+		}
+	}
+	sub.stream = __dtfl_strdup(stream);
+	sub.fn = fn;
+	sub.ctx = ctx;
+	sub.ctx_free = ctx_free;
+	__dtfl_vec_push(&cfg->log_subs, &sub);
+	return DTFL_OK;
+}
+
+size_t
+__dtfl_config_log_subs(const dtfl_config *cfg, const __dtfl_log_sub **subs)
+{
+	*subs = (const __dtfl_log_sub *)cfg->log_subs.data;
+	return cfg->log_subs.len;
 }

@@ -85,6 +85,100 @@ __dtfl_bc_duration(__dtfl_vec *o, uint64_t ns)
 	__dtfl_bc_u32(o, (uint32_t)(ns % UINT64_C(1000000000)));
 }
 
+void
+__dtfl_bc_reader_init(__dtfl_bc_reader *r, const void *data, size_t len)
+{
+	r->p = data;
+	r->len = len;
+	r->off = 0;
+	r->bad = false;
+}
+
+/* Returns false and sets bad if `n` more bytes are not available. */
+static bool
+bc_want(__dtfl_bc_reader *r, size_t n)
+{
+	if (r->bad || n > r->len - r->off) {
+		r->bad = true;
+		return false;
+	}
+	return true;
+}
+
+uint8_t
+__dtfl_bc_read_u8(__dtfl_bc_reader *r)
+{
+	if (!bc_want(r, 1))
+		return 0;
+	return r->p[r->off++];
+}
+
+uint32_t
+__dtfl_bc_read_u32(__dtfl_bc_reader *r)
+{
+	uint32_t v = 0;
+	int i;
+
+	if (!bc_want(r, 4))
+		return 0;
+	for (i = 0; i < 4; i++)
+		v |= (uint32_t)r->p[r->off + (size_t)i] << (8 * i);
+	r->off += 4;
+	return v;
+}
+
+uint64_t
+__dtfl_bc_read_u64(__dtfl_bc_reader *r)
+{
+	uint64_t v = 0;
+	int i;
+
+	if (!bc_want(r, 8))
+		return 0;
+	for (i = 0; i < 8; i++)
+		v |= (uint64_t)r->p[r->off + (size_t)i] << (8 * i);
+	r->off += 8;
+	return v;
+}
+
+int64_t
+__dtfl_bc_read_i64(__dtfl_bc_reader *r)
+{
+	return (int64_t)__dtfl_bc_read_u64(r);
+}
+
+uint64_t
+__dtfl_bc_read_duration(__dtfl_bc_reader *r)
+{
+	uint64_t secs = __dtfl_bc_read_u64(r);
+	uint32_t nanos = __dtfl_bc_read_u32(r);
+
+	return secs * UINT64_C(1000000000) + nanos;
+}
+
+const char *
+__dtfl_bc_read_str(__dtfl_bc_reader *r, size_t *slen)
+{
+	uint64_t n = __dtfl_bc_read_u64(r);
+	const char *s;
+
+	*slen = 0;
+	if (r->bad || n > r->len - r->off) {
+		r->bad = true;
+		return NULL;
+	}
+	s = (const char *)(r->p + r->off);
+	r->off += (size_t)n;
+	*slen = (size_t)n;
+	return s;
+}
+
+size_t
+__dtfl_bc_read_vec_len(__dtfl_bc_reader *r)
+{
+	return (size_t)__dtfl_bc_read_u64(r);
+}
+
 /* Logs the encoded event in `buf` to the "timely" logger, if any. */
 static void
 emit(__dtfl_worker *w, __dtfl_vec *buf)
