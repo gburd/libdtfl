@@ -357,12 +357,12 @@ differential-dataflow	interactive/examples/server/sessions/peek.txt	18	tools/dtf
 differential-dataflow	interactive/examples/server/sessions/shared_trace.txt	25	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
 differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
 differential-dataflow	interactive/src/backend/col.rs	259	-	-	excluded	disabled upstream
-differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	todo	
-differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	todo	
+differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	wip	render_tree walk ported; nested-Product rendering (see backend_vec.c)
+differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	wip	renders iterate as nested Product scopes; the literal Product<u64,PointStamp<u64>> dynamic-scope rendering via feedback_summary/enter_dynamic is pending, needed for explain exact time model; enter_at/lift_iter not yet supported
 differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	todo	
 differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	todo	
 differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	wip	
-differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	todo	
+differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	wip	parse/build/evaluate entry ported; survey_sources subsumed by the lowered import count; gen_row/load_program not ported (not needed for the core)
 differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	
 differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	wip	
 differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	wip	

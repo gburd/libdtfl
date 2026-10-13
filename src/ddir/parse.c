@@ -98,6 +98,35 @@ dd_arena_strdup(dd_parse_ctx *pc, const char *s)
 	return dd_arena_raw(pc, __dtfl_strdup(s));
 }
 
+void
+dd_arena_retrack(dd_parse_ctx *pc, void *old, void *new)
+{
+	size_t i;
+
+	if (old != NULL)
+		for (i = 0; i < pc->arena_len; i++)
+			if (pc->arena[i].kind == DD_A_RAW &&
+			    pc->arena[i].ptr == old) {
+				pc->arena[i].ptr = new;
+				return;
+			}
+	(void)dd_arena_raw(pc, new);
+}
+
+void
+dd_arena_untrack(dd_parse_ctx *pc, void *p)
+{
+	size_t i;
+
+	if (p == NULL)
+		return;
+	for (i = 0; i < pc->arena_len; i++)
+		if (pc->arena[i].kind == DD_A_RAW && pc->arena[i].ptr == p) {
+			pc->arena[i].ptr = NULL; /* NULL frees to a no-op */
+			return;
+		}
+}
+
 /* Free a term box and its own owned vec backing, but not child boxes. */
 static void
 term_free_shallow(dd_term *t)
@@ -370,6 +399,12 @@ dd_term *
 dd_build_builtin(dd_parse_ctx *pc, const char *name, dd_vec *args)
 {
 	dd_term *t;
+
+	/* parse_args left the backing arena-tracked (so a longjmp mid-parse
+	 * reclaims it).  Take ownership here: each path below either frees it
+	 * (dd_vec_free), moves it into a node, or re-tracks it before an
+	 * error longjmp. */
+	dd_arena_untrack(pc, args->data);
 
 /* On error: hand the args backing to the arena, then unwind. */
 #define NEED(cond, msg)							\

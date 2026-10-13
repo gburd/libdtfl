@@ -9,12 +9,16 @@
 ddir_sources = \
 	src/ddir/ddir_int.h \
 	src/ddir/parse_int.h \
+	src/ddir/backend_int.h \
 	src/ddir/ir.c \
 	src/ddir/parse.c \
 	src/ddir/parse_pipe.c \
 	src/ddir/parse_applicative.c \
 	src/ddir/scope_ir.c \
-	src/ddir/lower.c
+	src/ddir/lower.c \
+	src/ddir/backend.c \
+	src/ddir/backend_vec.c \
+	src/ddir/ddir.c
 
 libdtfl_la_SOURCES += $(ddir_sources)
 libdtfl_internal_la_SOURCES += $(ddir_sources)

@@ -261,13 +261,18 @@ static dd_vec
 aparse_args(aparser *p)
 {
 	dd_vec args = { 0 };
+	void *prev = NULL;
 
 	aexpect(p, A_LPAREN);
 	if (apk(p)->kind != A_RPAREN) {
 		dd_vec_push(&args, aparse_term(p));
+		dd_arena_retrack(p->pc, prev, args.data);
+		prev = args.data;
 		while (apk(p)->kind == A_COMMA) {
 			anx(p);
 			dd_vec_push(&args, aparse_term(p));
+			dd_arena_retrack(p->pc, prev, args.data);
+			prev = args.data;
 		}
 	}
 	aexpect(p, A_RPAREN);
@@ -476,15 +481,20 @@ static dd_vec
 aparse_field_list_until(aparser *p, const atok_kind *terms, size_t nterms)
 {
 	dd_vec fields = { 0 };
+	void *prev = NULL;
 	size_t i;
 
 	for (i = 0; i < nterms; i++)
 		if (apk(p)->kind == terms[i])
 			return fields;
 	dd_vec_push(&fields, aparse_proj_field(p));
+	dd_arena_retrack(p->pc, prev, fields.data);
+	prev = fields.data;
 	while (apk(p)->kind == A_COMMA) {
 		anx(p);
 		dd_vec_push(&fields, aparse_proj_field(p));
+		dd_arena_retrack(p->pc, prev, fields.data);
+		prev = fields.data;
 	}
 	return fields;
 }
@@ -506,8 +516,10 @@ aparse_projection(aparser *p)
 	}
 	aexpect(p, A_RPAREN);
 	kt = dd_arena_term(p->pc, DD_T_TUPLE);
+	dd_arena_untrack(p->pc, key.data);
 	kt->u.seq = key;
 	vt = dd_arena_term(p->pc, DD_T_TUPLE);
+	dd_arena_untrack(p->pc, val.data);
 	vt->u.seq = val;
 	proj.key = kt;
 	proj.val = vt;

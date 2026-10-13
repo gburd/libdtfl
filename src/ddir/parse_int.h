@@ -50,6 +50,12 @@ dd_term *dd_arena_term(dd_parse_ctx *pc, dd_term_kind kind);
 dd_expr *dd_arena_expr(dd_parse_ctx *pc, dd_expr_kind kind);
 dd_stmt *dd_arena_stmt(dd_parse_ctx *pc, dd_stmt_kind kind);
 void *dd_arena_raw(dd_parse_ctx *pc, void *p); /* track an existing block */
+/* Replace a tracked RAW pointer `old` with `new` (a realloc), or add `new`
+ * if `old` is not tracked.  Used so a growable scratch vec's backing stays
+ * reclaimable across the reallocs its growth triggers. */
+void dd_arena_retrack(dd_parse_ctx *pc, void *old, void *new);
+/* Stop tracking a RAW pointer (it has moved into a node that now owns it). */
+void dd_arena_untrack(dd_parse_ctx *pc, void *p);
 char *dd_arena_strdup(dd_parse_ctx *pc, const char *s);
 /* Set up an empty arena before a parse. */
 void dd_arena_init(dd_parse_ctx *pc);

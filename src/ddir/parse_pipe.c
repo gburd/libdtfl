@@ -545,16 +545,17 @@ parse_primary_term(pparser *p)
 				dd_vec args = parse_args(p);
 				dd_term *tuple;
 
-				if (args.len != c->arity) {
-					dd_arena_raw(p->pc, args.data);
+				/* args.data is arena-tracked by parse_args. */
+				if (args.len != c->arity)
 					dd_parse_error(p->pc,
 					    "constructor `%s` expects %zu args, "
 					    "got %zu", name, c->arity, args.len);
-				}
 				base = dd_arena_term(p->pc, DD_T_INJECT);
 				base->u.inject.tag = dd_arena_term(p->pc, DD_T_INT);
 				base->u.inject.tag->u.int_lit = c->tag;
 				tuple = dd_arena_term(p->pc, DD_T_TUPLE);
+				/* move the backing into the node (node owns it now) */
+				dd_arena_untrack(p->pc, args.data);
 				tuple->u.seq = args;
 				base->u.inject.payload = tuple;
 			} else {
@@ -698,13 +699,18 @@ static dd_vec
 parse_args(pparser *p)
 {
 	dd_vec args = { 0 };
+	void *prev = NULL;
 
 	expect(p, T_LPAREN);
 	if (pk(p)->kind != T_RPAREN) {
 		dd_vec_push(&args, parse_term(p));
+		dd_arena_retrack(p->pc, prev, args.data);
+		prev = args.data;
 		while (pk(p)->kind == T_COMMA) {
 			nx(p);
 			dd_vec_push(&args, parse_term(p));
+			dd_arena_retrack(p->pc, prev, args.data);
+			prev = args.data;
 		}
 	}
 	expect(p, T_RPAREN);
@@ -738,15 +744,20 @@ static dd_vec
 parse_field_list_until(pparser *p, const tok_kind *terms, size_t nterms)
 {
 	dd_vec fields = { 0 };
+	void *prev = NULL;
 	size_t i;
 
 	for (i = 0; i < nterms; i++)
 		if (pk(p)->kind == terms[i])
 			return fields;
 	dd_vec_push(&fields, parse_proj_field(p));
+	dd_arena_retrack(p->pc, prev, fields.data);
+	prev = fields.data;
 	while (pk(p)->kind == T_COMMA) {
 		nx(p);
 		dd_vec_push(&fields, parse_proj_field(p));
+		dd_arena_retrack(p->pc, prev, fields.data);
+		prev = fields.data;
 	}
 	return fields;
 }
@@ -768,8 +779,10 @@ parse_projection_inner(pparser *p)
 	}
 	expect(p, T_RPAREN);
 	kt = dd_arena_term(p->pc, DD_T_TUPLE);
+	dd_arena_untrack(p->pc, key.data);
 	kt->u.seq = key;
 	vt = dd_arena_term(p->pc, DD_T_TUPLE);
+	dd_arena_untrack(p->pc, val.data);
 	vt->u.seq = val;
 	proj.key = kt;
 	proj.val = vt;
@@ -958,9 +971,12 @@ static dd_expr *
 parse_concat_expr(pparser *p)
 {
 	dd_vec parts = { 0 };
+	void *prev = NULL;
 	dd_expr *result;
 
 	dd_vec_push(&parts, parse_atom(p));
+	dd_arena_retrack(p->pc, prev, parts.data);
+	prev = parts.data;
 	for (;;) {
 		if (pk(p)->kind == T_PLUS) {
 			nx(p);
@@ -974,13 +990,17 @@ parse_concat_expr(pparser *p)
 		} else {
 			break;
 		}
+		dd_arena_retrack(p->pc, prev, parts.data);
+		prev = parts.data;
 	}
 	if (parts.len == 1) {
 		result = parts.data[0];
+		dd_arena_untrack(p->pc, parts.data);
 		dd_vec_free(&parts);
 		return result;
 	}
 	result = dd_arena_expr(p->pc, DD_E_CONCAT);
+	dd_arena_untrack(p->pc, parts.data);
 	result->u.concat = parts;
 	return result;
 }
