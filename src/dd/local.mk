@@ -69,6 +69,12 @@ tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
 tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_update_align
+TESTS += tests/unit/test_update_align
+tests_unit_test_update_align_SOURCES = tests/unit/test_update_align.c
+tests_unit_test_update_align_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_update_align_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_merge_batcher tests/unit/test_cursor \
 	tests/unit/test_ord_neu
 TESTS += tests/unit/test_merge_batcher tests/unit/test_cursor \

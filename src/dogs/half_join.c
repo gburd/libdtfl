@@ -313,8 +313,9 @@ half_join_logic(dtfl_op *op, void *vctx)
 			size_t tw = (size_t)c->depth * sizeof(uint64_t);
 			/* The record is key||val1||time1; strip time1. */
 			size_t kvlen = full - tw;
-			const uint64_t *initial = __dtfl_update_time(rec,
-			    c->depth, c->dw, len);
+			uint64_t initbuf[DTFL_TIME_MAX];
+			const uint64_t *initial = __dtfl_update_time_copy(rec,
+			    c->depth, c->dw, len, initbuf);
 			const void *diff = c->dw != 0 ?
 			    __dtfl_update_diff(rec, c->dw, len) : NULL;
 			hj_prop p;

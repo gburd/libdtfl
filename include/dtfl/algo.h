@@ -12,12 +12,10 @@
  *   - a node N is a u64 record (dtfl_type_u64);
  *   - an edge (N, N) is a pair record (dtfl_type_pair of two u64);
  *   - a labelled node (N, L) is a pair record;
- *   - bfs emits (N, u32): a u64 node followed by a u32 distance stored
- *     in a u64 field, i.e. a 16-byte record (dtfl_type_pair of u64 and
- *     u64), with the u32 iteration/distance counter kept as upstream
- *     (bfs.rs): distance + 1 is computed in u32 and wraps at 2^32.  The
- *     u64 storage keeps the record eight-aligned so the update's
- *     embedded time stays aligned.
+ *   - bfs emits (N, u32): a u64 node followed by a u32 distance, i.e. a
+ *     12-byte record (dtfl_type_pair of u64 and u32), with the u32
+ *     iteration/distance counter kept as upstream (bfs.rs): distance + 1
+ *     is computed in u32 and wraps at 2^32.
  *
  * The diff class of every input must be the signed default (i64); the
  * output carries the same class.  Node identifiers compare and hash

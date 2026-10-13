@@ -290,10 +290,12 @@ map_logic(dtfl_op *op, void *vctx)
 			size_t len;
 			const void *rec = dtfl_message_record(m, i, &len);
 			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw, len);
+			uint64_t et[DTFL_TIME_MAX];
 			dtfl_collection_emit e;
 
 			e.s = s;
-			e.time = __dtfl_update_time(rec, c->depth, c->dw, len);
+			e.time = __dtfl_update_time_copy(rec, c->depth, c->dw,
+			    len, et);
 			e.to_depth = c->depth;
 			e.diff = c->dw != 0 ?
 			    __dtfl_update_diff(rec, c->dw, len) : NULL;
@@ -511,7 +513,9 @@ inspect_logic(void *vctx, const uint64_t *time, const void *rec, size_t len)
 {
 	inspect_ctx *c = vctx;
 	size_t rlen = __dtfl_update_rec_len(c->depth, c->dw, len);
-	const uint64_t *et = __dtfl_update_time(rec, c->depth, c->dw, len);
+	uint64_t buf[DTFL_TIME_MAX];
+	const uint64_t *et = __dtfl_update_time_copy(rec, c->depth, c->dw,
+	    len, buf);
 	const void *diff = __dtfl_update_diff(rec, c->dw, len);
 
 	(void)time;
@@ -579,10 +583,12 @@ explode_logic(dtfl_op *op, void *vctx)
 			const void *rec = dtfl_message_record(m, i, &len);
 			size_t rlen = __dtfl_update_rec_len(c->depth, c->in_dw,
 			    len);
+			uint64_t et[DTFL_TIME_MAX];
 			dtfl_collection_emit e;
 
 			e.s = s;
-			e.time = __dtfl_update_time(rec, c->depth, c->in_dw, len);
+			e.time = __dtfl_update_time_copy(rec, c->depth, c->in_dw,
+			    len, et);
 			e.to_depth = c->depth;
 			e.diff = __dtfl_update_diff(rec, c->in_dw, len);
 			e.out_dw = c->out_dw;
@@ -989,8 +995,9 @@ consolidate_logic(dtfl_op *op, void *vctx)
 			size_t len;
 			const void *rec = dtfl_message_record(m, i, &len);
 			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw, len);
-			const uint64_t *et = __dtfl_update_time(rec, c->depth,
-			    c->dw, len);
+			uint64_t etbuf[DTFL_TIME_MAX];
+			const uint64_t *et = __dtfl_update_time_copy(rec,
+			    c->depth, c->dw, len, etbuf);
 			const void *diff = c->dw != 0 ?
 			    __dtfl_update_diff(rec, c->dw, len) : NULL;
 			dtfl_cap *cap = dtfl_op_input_cap_delayed(op, 0, 0, et);

@@ -52,13 +52,27 @@ __dtfl_update_rec_len(unsigned depth, size_t dw, size_t total)
 	return total - (size_t)depth * sizeof(uint64_t) - dw;
 }
 
+/*
+ * Copies the `depth` embedded time words of update record `upd` into
+ * the caller's aligned buffer `out` and returns it.  The embedded time
+ * sits at byte offset rec_len inside the record, which is not 8-aligned
+ * for a record whose length is not a multiple of 8 (a (u64, u32) pair,
+ * say), so a direct uint64_t deref there is misaligned (UBSan traps,
+ * and strict-alignment targets fault).  memcpy from the unaligned source
+ * is legal; every lattice or summary op reads from the aligned copy.
+ * The on-record layout is unchanged, so traces, cursors and the wire
+ * format are unaffected.
+ */
 static inline const uint64_t *
-__dtfl_update_time(const void *upd, unsigned depth, size_t dw, size_t total)
+__dtfl_update_time_copy(const void *upd, unsigned depth, size_t dw,
+    size_t total, uint64_t out[DTFL_TIME_MAX])
 {
 	const unsigned char *p = upd;
 
-	return (const uint64_t *)(const void *)(p +
-	    __dtfl_update_rec_len(depth, dw, total));
+	if (depth != 0)
+		memcpy(out, p + __dtfl_update_rec_len(depth, dw, total),
+		    (size_t)depth * sizeof(uint64_t));
+	return out;
 }
 
 static inline const void *

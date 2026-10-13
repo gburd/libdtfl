@@ -394,8 +394,9 @@ upsert_logic(dtfl_op *op, void *vctx)
 			const void *rec = dtfl_message_record(m, i, &len);
 			size_t rlen = __dtfl_update_rec_len(c->depth, c->dw,
 			    len);
-			const uint64_t *et = __dtfl_update_time(rec, c->depth,
-			    c->dw, len);
+			uint64_t etbuf[DTFL_TIME_MAX];
+			const uint64_t *et = __dtfl_update_time_copy(rec,
+			    c->depth, c->dw, len, etbuf);
 			size_t klen = dtfl_type_value_len(c->kt, rec, rlen);
 			pending p;
 
