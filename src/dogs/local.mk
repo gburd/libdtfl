@@ -30,3 +30,15 @@ tests_upstream_dogs_lookup_map_regression_SOURCES = \
 	tests/upstream/dogs/lookup_map_regression.c
 tests_upstream_dogs_lookup_map_regression_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_dogs_lookup_map_regression_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_dogs
+TESTS += tests/unit/test_dogs
+tests_unit_test_dogs_SOURCES = tests/unit/test_dogs.c
+tests_unit_test_dogs_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_dogs_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/pbt/pbt_dogs
+TESTS += tests/pbt/pbt_dogs
+tests_pbt_pbt_dogs_SOURCES = tests/pbt/pbt_dogs.c
+tests_pbt_pbt_dogs_CFLAGS = $(PBT_CFLAGS)
+tests_pbt_pbt_dogs_LDADD = $(INTERNAL_PBT_LIBS)
