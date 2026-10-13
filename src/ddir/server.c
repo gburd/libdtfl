@@ -59,6 +59,7 @@ typedef enum origin {
 /* Everything the server holds for one installed program. */
 typedef struct installed {
 	char *name;		    /* owned registry key */
+	dtfl_ddir_program *prog;    /* owned clone, outlives the dataflow */
 	dtfl_input_session **inputs; /* positional input index -> handle */
 	size_t *input_pos;	    /* the positional index of inputs[i] */
 	size_t n_inputs;
@@ -311,9 +312,10 @@ recipe_row(const recipe *r, uint64_t e, dd_value **key, dd_value **val)
 	if (r->kind == RECIPE_RANDOM) {
 		dd_gen_row(r->seed, e, r->nodes, r->arity, key, val);
 	} else {
-		dd_value *item = dd_value_int((int64_t)e);
+		dd_value **items = __dtfl_alloc(sizeof *items);
 
-		*key = dd_value_tuple(&item, 1);
+		items[0] = dd_value_int((int64_t)e);
+		*key = dd_value_tuple(items, 1);
 		*val = dd_value_unit();
 	}
 }
@@ -586,9 +588,10 @@ install_generated(dtfl_ddir_server *s, const char *name, const recipe *r)
 static void
 clock_row(outer_time t, dd_value **key, dd_value **val)
 {
-	dd_value *item = dd_value_int((int64_t)t);
+	dd_value **items = __dtfl_alloc(sizeof *items);
 
-	*key = dd_value_tuple(&item, 1);
+	items[0] = dd_value_int((int64_t)t);
+	*key = dd_value_tuple(items, 1);
 	*val = dd_value_unit();
 }
 
@@ -730,7 +733,10 @@ dtfl_ddir_server_install(dtfl_ddir_server *s, const char *name,
 
 	memset(&ic, 0, sizeof ic);
 	ic.s = s;
-	ic.program = program;
+	/* The rendered dataflow holds pointers into the program's AST (every
+	 * linear op reads its Term each step), so the server owns a clone that
+	 * outlives the dataflow; the caller's program may be freed at once. */
+	ic.program = dd_program_clone(program);
 	ic.probe = dtfl_probe_new();
 	ic.pub_names = root->exports.len
 	    ? __dtfl_calloc(root->exports.len, sizeof(char *)) : NULL;
@@ -755,6 +761,7 @@ dtfl_ddir_server_install(dtfl_ddir_server *s, const char *name,
 		__dtfl_free(ic.inputs);
 		__dtfl_free(ic.input_pos);
 		dtfl_probe_free(ic.probe);
+		dd_program_free((dtfl_ddir_program *)ic.program);
 		return ic.err;
 	}
 
@@ -768,6 +775,7 @@ dtfl_ddir_server_install(dtfl_ddir_server *s, const char *name,
 
 	p = alloc_program(s);
 	p->name = __dtfl_strdup(name);
+	p->prog = (dtfl_ddir_program *)ic.program;
 	p->inputs = ic.inputs;
 	p->input_pos = ic.input_pos;
 	p->n_inputs = ic.n_inputs;
@@ -974,6 +982,7 @@ dtfl_ddir_server_drop(dtfl_ddir_server *s, const char *name)
 		__dtfl_free(p->exports[i]);
 	__dtfl_free(p->exports);
 	__dtfl_free(p->name);
+	dd_program_free(p->prog);
 
 	idx = (size_t)(p - s->programs);
 	s->programs[idx] = s->programs[--s->n_programs];
@@ -1228,6 +1237,7 @@ dtfl_ddir_server_free(dtfl_ddir_server *s)
 		__dtfl_free(p->exports);
 		dtfl_probe_free(p->probe);
 		__dtfl_free(p->name);
+		dd_program_free(p->prog);
 	}
 	__dtfl_free(s->programs);
 	for (i = 0; i < s->n_traces; i++) {
