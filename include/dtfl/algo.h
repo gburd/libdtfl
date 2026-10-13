@@ -12,9 +12,12 @@
  *   - a node N is a u64 record (dtfl_type_u64);
  *   - an edge (N, N) is a pair record (dtfl_type_pair of two u64);
  *   - a labelled node (N, L) is a pair record;
- *   - bfs emits (N, u32): a u64 node followed by a u32 distance, i.e.
- *     a 12-byte record (dtfl_type_pair of u64 and u32), with the u32
- *     iteration/distance counter kept as upstream (bfs.rs).
+ *   - bfs emits (N, u32): a u64 node followed by a u32 distance stored
+ *     in a u64 field, i.e. a 16-byte record (dtfl_type_pair of u64 and
+ *     u64), with the u32 iteration/distance counter kept as upstream
+ *     (bfs.rs): distance + 1 is computed in u32 and wraps at 2^32.  The
+ *     u64 storage keeps the record eight-aligned so the update's
+ *     embedded time stays aligned.
  *
  * The diff class of every input must be the signed default (i64); the
  * output carries the same class.  Node identifiers compare and hash
@@ -45,9 +48,11 @@ extern "C" {
  * bfs (bfs.rs): breadth-first distance labeling.  Given `edges`, a
  * collection of (u64 src, u64 dst) edge records, and `roots`, a
  * collection of bare u64 node records, returns a collection of
- * (u64 node, u32 dist) records giving the minimum number of steps from
- * any root to each reachable node.  The output record is a pair of a u64
- * and a u32 (12 bytes).  Nodes unreachable from a root are absent.
+ * (u64 node, u64 dist) records giving the minimum number of steps from
+ * any root to each reachable node.  The output record is a pair of two
+ * u64 (16 bytes); the distance is a u32 counter (it wraps at 2^32)
+ * stored in the u64 field so the record stays eight-aligned.  Nodes
+ * unreachable from a root are absent.
  *
  * The computation seeds each root at distance 0, then iterates to a
  * fixed point: join each labelled node against outgoing edges to reach
