@@ -47,13 +47,23 @@ typedef struct dtfl_trace dtfl_trace;
 /*
  * The arrange output stream carries a __dtfl_batch_ord * per record (one
  * sealed batch), on a Pipeline pact so the pointer stays on this worker.
- * The record is the pointer bytes; the retained reference belongs to the
- * record, released when the record is consumed.
+ * The record bytes are an owning reference: the stream message holds it
+ * (the arena's elem hooks release it on free), so a batch stays alive for
+ * the lifetime of the message that carries it whether or not a consumer
+ * ever reads it.  This is upstream's Vec<Rc<Batch>> message.
  */
 #define DTFL_BATCH_PTR_SIZE (sizeof(__dtfl_batch_ord *))
 
 /* The dtfl_type for a batch-pointer stream (fixed width, memcmp order). */
 const dtfl_type *__dtfl_batch_ptr_type(void);
+
+/*
+ * Mark `s` as a batch-pointer output: every buffer the session flushes
+ * releases each record's __dtfl_batch_ord on free (and retains on a copy),
+ * so an emitted batch owns a reference held by its stream message.  The
+ * producer still retains the reference it places into the record.
+ */
+void __dtfl_session_set_batch_ptr(dtfl_session *s);
 
 /* ------------------------------------------------------------------ */
 /* TraceBox (agent.rs trace_box::TraceBox).                            */

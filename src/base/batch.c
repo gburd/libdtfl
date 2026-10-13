@@ -40,7 +40,28 @@ __dtfl_batch_new(unsigned time_words, unsigned diff_bytes)
 	__dtfl_vec_push(&b->offs, &zero);
 	b->tw = time_words;
 	b->dw = diff_bytes;
+	b->elem_drop = NULL;
+	b->elem_retain = NULL;
 	return b;
+}
+
+void
+__dtfl_batch_set_elem_hooks(__dtfl_batch *b, void (*drop)(void *rec),
+    void (*retain)(void *rec))
+{
+	b->elem_drop = drop;
+	b->elem_retain = retain;
+}
+
+/* Runs `fn` on each record's bytes (for the owning-pointer arenas). */
+static void
+batch_each_elem(__dtfl_batch *b, void (*fn)(void *rec))
+{
+	size_t i, n = __dtfl_batch_len(b);
+	const size_t *o = (const size_t *)b->offs.data;
+
+	for (i = 0; i < n; i++)
+		fn(b->arena.data + o[i]);
 }
 
 __dtfl_batch *
@@ -56,6 +77,8 @@ __dtfl_batch_release(__dtfl_batch *b)
 {
 	if (b == NULL || !__dtfl_arc_release(&b->ref))
 		return;
+	if (b->elem_drop != NULL)
+		batch_each_elem(b, b->elem_drop);
 	__dtfl_vec_free(&b->arena);
 	__dtfl_vec_free(&b->offs);
 	__dtfl_vec_free(&b->times);
@@ -73,6 +96,11 @@ __dtfl_batch_copy(const __dtfl_batch *b)
 	__dtfl_vec_copy(&c->offs, &b->offs);
 	__dtfl_vec_copy(&c->times, &b->times);
 	__dtfl_vec_copy(&c->diffs, &b->diffs);
+	c->elem_drop = b->elem_drop;
+	c->elem_retain = b->elem_retain;
+	/* The copy owns its own reference to each record's referent. */
+	if (c->elem_retain != NULL)
+		batch_each_elem(c, c->elem_retain);
 	return c;
 }
 
@@ -97,6 +125,8 @@ __dtfl_batch_make_mut(__dtfl_batch *b)
 void
 __dtfl_batch_clear(__dtfl_batch *b)
 {
+	if (b->elem_drop != NULL)
+		batch_each_elem(b, b->elem_drop);
 	__dtfl_vec_clear(&b->arena);
 	__dtfl_vec_truncate(&b->offs, 1);
 	__dtfl_vec_clear(&b->times);

@@ -1805,6 +1805,11 @@ reduce_logic(dtfl_op *op, void *vctx)
 
 				__dtfl_vec_push(&c->batch_storage, &ret);
 			}
+			/*
+			 * The record is a borrow (the input message owns the batch
+			 * reference); reduce keeps its own reference in
+			 * batch_storage for the deferred retire.
+			 */
 		}
 	}
 
@@ -1871,9 +1876,17 @@ reduce_logic(dtfl_op *op, void *vctx)
 		src = *DTFL_VEC_AT(&c->caps, dtfl_cap *, ci);
 		d = dtfl_cap_delayed(src, produced[i].tag);
 		s = dtfl_op_session(op, 0, d);
-		/* The writer takes the reference into the output trace. */
+		__dtfl_session_set_batch_ptr(s);
+		/*
+		 * writer.insert(batch.clone(), ...) then output.give(batch):
+		 * the writer takes one reference into the output trace, and the
+		 * stream record owns a second (retained here, released when the
+		 * stream message frees).  The downstream reader must survive the
+		 * shared spine merging and dropping the trace's reference.
+		 */
 		__dtfl_trace_writer_insert(&c->out_writer, produced[i].batch,
 		    produced[i].tag);
+		__dtfl_batch_ord_retain(produced[i].batch);
 		dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 		memcpy(dst, &produced[i].batch, sizeof produced[i].batch);
 		dtfl_session_close(s);
@@ -2231,9 +2244,16 @@ abk_logic(dtfl_op *op, void *vctx)
 				    dtfl_cap *, j)));
 
 			batch = abk_seal_batch(c, &upper);
+			/*
+			 * writer.insert(batch.clone()) then output.give(batch): the
+			 * writer takes one reference into the trace and the stream
+			 * record owns a second, released when the message frees.
+			 */
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
+			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
+			__dtfl_session_set_batch_ptr(s);
 			dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 			memcpy(dst, &batch, sizeof batch);
 			dtfl_session_close(s);

@@ -21,6 +21,7 @@
  * the writer prunes it (agent.rs new_listener, writer.rs insert).
  */
 #include "dd/arrange_int.h"
+#include "timely/timely_int.h"
 
 /* ------------------------------------------------------------------ */
 /* Batch pointer records on the arrange output stream.                 */
@@ -41,6 +42,31 @@ __dtfl_batch_ptr_type(void)
 	};
 
 	return &t;
+}
+
+/* Arena record hooks: a batch-pointer record is a retained batch pointer. */
+static void
+batch_ptr_drop(void *rec)
+{
+	__dtfl_batch_ord *b;
+
+	memcpy(&b, rec, sizeof b);
+	__dtfl_batch_ord_release(b);
+}
+
+static void
+batch_ptr_retain(void *rec)
+{
+	__dtfl_batch_ord *b;
+
+	memcpy(&b, rec, sizeof b);
+	__dtfl_batch_ord_retain(b);
+}
+
+void
+__dtfl_session_set_batch_ptr(dtfl_session *s)
+{
+	__dtfl_session_set_batch_ptr_hooks(s, batch_ptr_drop, batch_ptr_retain);
 }
 
 /* ------------------------------------------------------------------ */
