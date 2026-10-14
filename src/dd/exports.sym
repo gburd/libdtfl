@@ -15,6 +15,7 @@ dtfl_diff_width
 dtfl_diff_is_abelian
 dtfl_input_session_new
 dtfl_input_session_to_collection
+dtfl_stream_as_collection
 dtfl_input_session_update
 dtfl_input_session_update_at
 dtfl_input_session_insert
