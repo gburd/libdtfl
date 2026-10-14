@@ -102,6 +102,12 @@ Not started or partial -- MUST be finished before the project is done
         and stable DDIR programs SKIP on it.  Minimal repro in the
         p13-server report.  Distinct from the two bugs above; a backend
         convergence fix before 1.0.
+[ ] trace new_listener frontier-lag: a new trace listener seeds its
+        frontier from the last data batch's upper (src/dd/agent.c
+        new_listener), so peeking a derived trace that stopped changing
+        before the current epoch can hang.  P14 peek works around it
+        in-component (drains and stops when the frontier stalls); a
+        proper fix belongs in the P6/P7 trace layer.
 [ ] reduce interesting-time assertion: rd_retire's output-tag match
         asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
         DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
