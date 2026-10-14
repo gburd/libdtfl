@@ -1,0 +1,59 @@
+@c SPDX-License-Identifier: MIT
+@c doc/threads.texi: the Threads chapter.
+@c The thread-safety contract from dev/PLAN.md section 5 and dtfl(7).
+
+@node Threads
+@chapter Threads
+
+libdtfl keeps almost no global state, and the state it does keep lives
+in a worker that belongs to one thread.  The full contract is in
+@code{dtfl(7)}; it has six rules.
+
+@enumerate
+@item
+@strong{Handles belong to one worker.}  A @code{dtfl_worker} and
+everything reached from it (scopes, streams, collections, operators,
+capabilities, input handles, probes and traces) belong to the thread
+that runs that worker.  Using one from another thread is undefined
+behavior.  Debug builds (@option{--enable-debug}) detect the violation
+and call the panic hook.  This matches Rust, where those types are
+@code{!Send}.
+
+@item
+@strong{The thread-safe exceptions.}  A few objects may be used from any
+thread: @code{dtfl_sync_activator} (to wake a worker from outside), a
+read-only shared probe snapshot, the synchronized event link, the
+@code{dtfl_guards} join handle, and the four global hook setters.  The
+setters must be called before the first @code{dtfl_execute}.
+
+@item
+@strong{Inter-worker data moves only through the allocator's queues.}
+Record batches are reference counted with atomic counts, because they
+cross threads in the multi-worker communication modes.
+
+@item
+@strong{Trace sharing is worker-local.}  A trace (the shared index
+behind an arrangement) imports only into dataflows on the same worker.
+Rust forbids cross-worker sharing (@code{TraceAgent} is an @code{Rc}),
+and so does libdtfl.
+
+@item
+@strong{No hidden global state.}  The only process-wide writable state is
+the four host hooks (allocation, panic, logging, thread spawning); the
+only per-thread state is the buffer behind
+@code{dtfl_last_error_detail}.  The library installs no signal handlers,
+reads no environment variables, and touches no @code{getopt} globals.
+Two independent @code{dtfl_execute} calls can therefore run at the same
+time in one process.
+
+@item
+@strong{Reentrancy.}  An operator callback may call any API on its own
+worker @emph{except} @code{dtfl_worker_step}; a nested step is detected
+and calls the panic hook.
+@end enumerate
+
+The contract is verified by a ThreadSanitizer build over the
+multi-worker suites, by Helgrind on the typed-process allocator, and by
+a symbol-table check that fails on any writable or thread-local symbol
+in the shared library outside the allowlisted hook and error-buffer
+globals.

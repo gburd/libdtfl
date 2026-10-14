@@ -49,6 +49,17 @@ distribution.
 
 @menu
 * Introduction::                What libdtfl is.
+* Installation::                Building and installing.
+* Concepts::                    Dataflow, time, progress, collections.
+* Threads::                     The thread-safety contract.
+* Error handling::              Error codes and the host hooks.
+* Embedding::                   Hosting libdtfl inside another program.
+* Timely Dataflow::             The timely dataflow tutorial.
+* Differential Dataflow::       The differential dataflow tutorial.
+* Diagnostics::                 The diagnostics console and tools.
+* DDIR::                        The differential dataflow IR language.
+* API Reference::               The manual pages.
+* Porting notes::               How libdtfl relates to the Rust originals.
 * Index::                       Index of concepts and functions.
 @end menu
 
@@ -68,9 +79,22 @@ recomputed.
 
 Include @file{dtfl/dtfl.h} and link with @option{-ldtfl}, or use
 @command{pkg-config --cflags --libs dtfl}.  The reference pages for every
-function are in manual sections 1, 3 and 7.  This manual is the tutorial
-and conceptual companion to those pages: it teaches the model and walks
-through worked examples, all in C against the actual libdtfl API.
+function are in manual sections 1, 3 and 7; see @ref{API Reference}.
+This manual is the tutorial and conceptual companion to those pages: it
+teaches the model and walks through worked examples, all in C against
+the actual libdtfl API.
+
+@include installation.texi
+@include concepts.texi
+@include threads.texi
+@include errors.texi
+@include embedding.texi
+@include timely/manual.texi
+@include differential/manual.texi
+@include diagnostics.texi
+@include ddir.texi
+@include apiref.texi
+@include porting.texi
 
 @node Index
 @unnumbered Index

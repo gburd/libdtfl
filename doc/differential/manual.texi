@@ -1,0 +1,8 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/manual.texi: the Differential Dataflow tutorial (wrapper chapter).
+
+@node Differential Dataflow
+@chapter Differential Dataflow
+
+This chapter ports the differential dataflow book to C.  It is
+forthcoming; the chapters land one at a time.

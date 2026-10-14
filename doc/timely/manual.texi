@@ -1,0 +1,8 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/manual.texi: the Timely Dataflow tutorial (wrapper chapter).
+
+@node Timely Dataflow
+@chapter Timely Dataflow
+
+This chapter ports the timely dataflow book to C.  It is forthcoming;
+the chapters land one at a time.
