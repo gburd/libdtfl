@@ -1,0 +1,12 @@
+LOG1: Channels id=3
+LOG1: Channels id=5
+LOG1: Operates id=0 name=logsend1
+LOG1: Operates id=1 name=Input
+LOG1: Operates id=2 name=Consolidate
+LOG1: Operates id=4 name=Probe
+LOG2: Channels id=10
+LOG2: Channels id=12
+LOG2: Operates id=11 name=Probe
+LOG2: Operates id=7 name=logsend2
+LOG2: Operates id=8 name=Input
+LOG2: Operates id=9 name=Consolidate

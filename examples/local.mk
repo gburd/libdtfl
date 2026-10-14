@@ -28,7 +28,8 @@ noinst_PROGRAMS += \
 	examples/timely/bfs \
 	examples/timely/pagerank \
 	examples/timely/wordcount \
-	examples/timely/hashjoin
+	examples/timely/hashjoin \
+	examples/timely/logging-send
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -106,6 +107,10 @@ examples_timely_hashjoin_SOURCES = examples/timely/hashjoin.c
 examples_timely_hashjoin_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
 
+examples_timely_logging_send_SOURCES = examples/timely/logging-send.c
+examples_timely_logging_send_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_logging_send_LDADD = $(EXAMPLE_LDADD)
+
 # ----------------------------------------------------------------------
 # Differential dataflow examples (P9).
 # ----------------------------------------------------------------------
@@ -119,7 +124,10 @@ noinst_PROGRAMS += \
 	examples/dd/hello \
 	examples/dd/accumulate \
 	examples/dd/interpreted \
-	examples/dd/itembased_cf
+	examples/dd/itembased_cf \
+	examples/dd/scc \
+	examples/dd/pagerank \
+	examples/dd/dynamic
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -157,6 +165,18 @@ examples_dd_itembased_cf_SOURCES = examples/dd/itembased_cf.c
 examples_dd_itembased_cf_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_itembased_cf_LDADD = $(EXAMPLE_LDADD)
 
+examples_dd_scc_SOURCES = examples/dd/scc.c
+examples_dd_scc_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_scc_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_pagerank_SOURCES = examples/dd/pagerank.c
+examples_dd_pagerank_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_pagerank_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_dynamic_SOURCES = examples/dd/dynamic.c
+examples_dd_dynamic_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_dynamic_LDADD = $(EXAMPLE_LDADD)
+
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
 # ----------------------------------------------------------------------
@@ -186,6 +206,7 @@ check_PROGRAMS += \
 	examples/timely/pagerank \
 	examples/timely/hashjoin \
 	examples/timely/capture \
+	examples/timely/logging-send \
 	examples/dd/degrees \
 	examples/dd/bfs \
 	examples/dd/projekt \
@@ -196,7 +217,10 @@ check_PROGRAMS += \
 	examples/dd/hello \
 	examples/dd/accumulate \
 	examples/dd/interpreted \
-	examples/dd/itembased_cf
+	examples/dd/itembased_cf \
+	examples/dd/scc \
+	examples/dd/pagerank \
+	examples/dd/dynamic
 
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
@@ -210,6 +234,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/pagerank.expected \
 	examples/timely/hashjoin.expected \
 	examples/timely/capture.expected \
+	examples/timely/logging-send.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
 	examples/dd/projekt.expected \
@@ -220,7 +245,10 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/hello.expected \
 	examples/dd/accumulate.expected \
 	examples/dd/interpreted.expected \
-	examples/dd/itembased_cf.expected
+	examples/dd/itembased_cf.expected \
+	examples/dd/scc.expected \
+	examples/dd/pagerank.expected \
+	examples/dd/dynamic.expected
 
 # ----------------------------------------------------------------------
 # Diagnostics examples (P11).  smoke runs the full in-process path
