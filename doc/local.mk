@@ -2,16 +2,23 @@
 # doc/local.mk: the Texinfo manual.
 #
 # info_TEXINFOS builds and installs libdtfl.info and ships libdtfl.texi
-# in the distribution.  libdtfl_TEXINFOS lists the @include files so
-# distcheck ships them too.  PDF and HTML are not gated (the pdf
-# toolchain may be absent); info is.
+# in the distribution.  doc_libdtfl_TEXINFOS lists the @include files so
+# distcheck ships them too (automake canonicalizes doc/libdtfl.texi to
+# the variable name doc_libdtfl_TEXINFOS, slash to underscore).  PDF and
+# HTML are not gated (the pdf toolchain may be absent); info is.
 #
 # The doc/snippets directory is already shipped through EXTRA_DIST in
 # Makefile.am; tests/dist/test_docs.sh compiles each snippet.
 
 info_TEXINFOS = doc/libdtfl.texi
 
-libdtfl_TEXINFOS = \
+# distcheck builds the DVI/PDF manual by default, which needs a TeX
+# toolchain that need not be present.  The info manual is the gated
+# output (PLAN section 10), so point distcheck's documentation build at
+# it instead of the DVI.  automake >= 1.16 honors this variable.
+AM_DISTCHECK_DVI_TARGET = info
+
+doc_libdtfl_TEXINFOS = \
 	doc/installation.texi \
 	doc/concepts.texi \
 	doc/threads.texi \
