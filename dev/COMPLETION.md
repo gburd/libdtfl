@@ -129,11 +129,19 @@ Examples
 
 Documentation
 -------------
-[ ] Texinfo manual doc/libdtfl.texi: NOT written (one attempt abandoned).
-    Build it incrementally: minimal manual that builds under makeinfo and
-    commits first, then one chapter per commit.
-[ ] timely tutorial chapters doc/timely/*.texi (mdbook port): 0/7
-[ ] differential chapters doc/differential/*.texi: 0
+[x] Texinfo manual doc/libdtfl.texi: written and building under makeinfo
+    with zero warnings.  Top-level chapters: Introduction, Installation,
+    Concepts, Threads, Error handling, Embedding, Timely Dataflow,
+    Differential Dataflow, Diagnostics, DDIR, API Reference, Porting
+    notes, Index.  Wired as info_TEXINFOS + libdtfl_TEXINFOS so make
+    info, make dist and distcheck build and ship libdtfl.info.
+[x] timely tutorial chapters doc/timely/*.texi (mdbook port): 7/7
+    (introduction + chapter_0..chapter_5), C API throughout.
+[x] differential chapters doc/differential/*.texi: introduction +
+    chapter_0, chapter_1, chapter_a, chapter_2..chapter_6, C API
+    throughout.  Code examples ship as doc/snippets/*.c (timely_hello,
+    timely_input, timely_ops, timely_iterate, dd_manages, dd_reduce),
+    each compiled and run by tests/dist/test_docs.sh against a .expected.
 
 Embedding (host = PostgreSQL etc.) -- a release requirement
 -----------------------------------------------------------
