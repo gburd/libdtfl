@@ -4,8 +4,8 @@
  *
  * tests/unit/test_diff.c: diff classes (PLAN D4, difference.rs).  Each
  * built-in's algebra, the capabilities it must lack, tuples, user
- * classes, and multiply.  difference_vector__test_semigroup_vec waits
- * for vec diffs.
+ * classes, and multiply.  difference_vector__test_semigroup_vec covers
+ * the Vec<R> algebra (difference.rs vector module).
  */
 #include "dtfl_test.h"
 #include "dd/dd_int.h"
@@ -326,6 +326,67 @@ DTFL_TEST(diff_multiply)
 	return MUNIT_OK;
 }
 
+/*
+ * difference_vector__test_semigroup_vec (difference.rs vector tests):
+ * [1,2,3].plus_equals([1,1,1,1]) == [2,3,4,1].  Also exercise the
+ * Vec<R> is_zero, negate and multiply algebra over i64 elements.
+ */
+DTFL_TEST(difference_vector__test_semigroup_vec)
+{
+	const __dtfl_diff_class *e = B(I64);
+	int64_t a[4] = { 1, 2, 3, 0 };
+	int64_t b[4] = { 1, 1, 1, 1 };
+	size_t alen = 3;
+	int64_t out[4];
+	const __dtfl_diff_class *oc;
+
+	(void)params; (void)data;
+	/* Element-wise add over the overlap, then append the leftover. */
+	__dtfl_diff_vec_plus_equals(e, a, &alen, b, 4);
+	assert_size(alen, ==, 4);
+	assert_int64(a[0], ==, 2);
+	assert_int64(a[1], ==, 3);
+	assert_int64(a[2], ==, 4);
+	assert_int64(a[3], ==, 1);
+
+	/* is_zero: an all-zero vector (and the empty vector) is zero. */
+	assert_false(__dtfl_diff_vec_is_zero(e, a, 4));
+	assert_true(__dtfl_diff_vec_is_zero(e, a, 0));
+	{
+		int64_t z[3] = { 0, 0, 0 };
+
+		assert_true(__dtfl_diff_vec_is_zero(e, z, 3));
+	}
+
+	/* negate: element-wise, and plus_equals of a vector and its negation
+	 * is zero. */
+	{
+		int64_t c[4] = { 2, 3, 4, 1 };
+		int64_t nc[4] = { 2, 3, 4, 1 };
+		size_t clen = 4;
+
+		__dtfl_diff_vec_negate(e, nc, 4);
+		assert_int64(nc[0], ==, -2);
+		assert_int64(nc[3], ==, -1);
+		__dtfl_diff_vec_plus_equals(e, c, &clen, nc, 4);
+		assert_true(__dtfl_diff_vec_is_zero(e, c, 4));
+	}
+
+	/* multiply: each element times the scalar, output class is i64. */
+	{
+		int64_t v[3] = { 2, 3, 4 }, s = -3;
+
+		oc = __dtfl_diff_vec_multiply(e, e, v, 3, &s, out);
+		assert_ptr_equal(oc, e);
+		assert_int64(out[0], ==, -6);
+		assert_int64(out[1], ==, -9);
+		assert_int64(out[2], ==, -12);
+		/* No Multiply for mismatched element and scalar classes. */
+		assert_null(__dtfl_diff_vec_multiply(e, B(I32), v, 3, &s, out));
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(diff_signed_algebra),
 	DTFL_T(diff_unsigned_algebra),
@@ -333,6 +394,7 @@ static MunitTest tests[] = {
 	DTFL_T(diff_tuple),
 	DTFL_T(diff_user_class),
 	DTFL_T(diff_multiply),
+	DTFL_T(difference_vector__test_semigroup_vec),
 	DTFL_T_END
 };
 
