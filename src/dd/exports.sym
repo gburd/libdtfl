@@ -51,6 +51,7 @@ dtfl_arranged_emit_record
 dtfl_arranged_trace
 dtfl_trace_import
 dtfl_trace_free
+dtfl_trace_to_vec
 dtfl_arranged_enter
 dtfl_arranged_leave
 dtfl_arranged_enter_region
