@@ -95,6 +95,20 @@ __dtfl_trace_get_physical_compaction(const __dtfl_trace *t)
 }
 
 /*
+ * The trace's current upper frontier (spine_fueled.rs Spine.upper): the
+ * upper of the last batch inserted, which the logically-empty seal batches
+ * writer.rs seal inserts advance even when they carry no data.  Upstream's
+ * map_batches reports every batch (including empties), so new_listener's seed
+ * frontier equals this; the C map_batches is built on batches_through, which
+ * drops empties, so new_listener reads this directly.
+ */
+const __dtfl_antichain *
+__dtfl_trace_upper(const __dtfl_trace *t)
+{
+	return &t->spine.upper;
+}
+
+/*
  * TraceReader::cursor_through: assemble a CursorList over the batches a cut
  * at `upper` selects.  Returns false if there is no clean cut; otherwise it
  * fills *out and transfers the batch references to it.  A NULL/empty `upper`

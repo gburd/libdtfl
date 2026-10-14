@@ -583,6 +583,8 @@ const __dtfl_antichain *__dtfl_trace_get_logical_compaction(
     const __dtfl_trace *t);
 const __dtfl_antichain *__dtfl_trace_get_physical_compaction(
     const __dtfl_trace *t);
+/* The trace's current upper frontier (includes empty seal-batch advances). */
+const __dtfl_antichain *__dtfl_trace_upper(const __dtfl_trace *t);
 /* Returns false if `upper` has no clean cut; else fills *out. */
 bool __dtfl_trace_cursor_through(__dtfl_trace *t,
     const __dtfl_antichain *upper, __dtfl_cursor_list *out);
