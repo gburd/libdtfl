@@ -1,0 +1,112 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_0.texi: ports differential-dataflow
+@c mdbook/src/chapter_0/chapter_0.md (Motivation), chapter_0_0.md
+@c (Getting started), chapter_0_1.md (Write a program), chapter_0_2.md
+@c (Change its input).
+
+@node Differential First Program
+@section Write a program, change its input
+
+A differential program is two easy steps: write a program, then change
+its input.  We will work through both with one example, the skip-level
+management report.
+
+@subsection Step 1: write a program
+
+You write differential programs against collections that appear static,
+using operations that look like database or MapReduce idioms.  Our
+example has one input: a collection @code{manages} of pairs
+@code{(manager, person)}.  The program finds, for each person, their
+manager's manager.  In SQL this is an equijoin, and we write exactly
+that: re-order @code{manages} so the person is the key, join it with
+@code{manages} on the shared middle manager, and report the result.
+
+@example
+static void
+swap_pair(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
+@{
+        unsigned char buf[16];                  /* (m2, m1) -> (m1, m2) */
+        memcpy(buf, (const unsigned char *)rec + 8, 8);
+        memcpy(buf + 8, rec, 8);
+        dtfl_collection_emit_record(out, buf, sizeof buf);
+@}
+
+static void
+build(dtfl_scope *scope, void *arg)
+@{
+        /* ... */
+        dtfl_collection *manages =
+            dtfl_input_session_to_collection(c->manages, scope);
+        dtfl_collection *swapped =
+            dtfl_collection_map(manages, pair, swap_pair, DTFL_NOCTX);
+        dtfl_collection *joined =
+            dtfl_collection_join_map(swapped, manages, u64, u64, u64,
+                triple, skip_level, DTFL_NOCTX);
+        dtfl_collection_consolidate(joined);    /* ... inspect, probe */
+@}
+@end example
+
+The input is loaded as a binary tree of ten people: person @var{p}
+reports to person @code{p/2}.  (Only worker 0 loads the data; the next
+section shows how to spread the load across workers.)
+
+@example
+for (person = 0; person < 10; person++) @{
+        unsigned char buf[16];
+        dtfl_put_u64(buf, person / 2);          /* manager */
+        dtfl_put_u64(buf + 8, person);          /* person */
+        dtfl_input_session_insert(c->manages, buf, sizeof buf);
+@}
+dtfl_input_session_advance_to(c->manages, &one);
+dtfl_input_session_flush(c->manages);
+@end example
+
+The complete program is in @file{doc/snippets/dd_manages.c}.  Each output
+record is @code{(m1, (m2, p))}: person @var{p}, their manager @var{m1},
+and that manager's manager @var{m2}.  Run at time 0 it prints the
+skip-level reports of the tree:
+
+@example
+(0, (0, 0))
+(0, (0, 1))
+(1, (0, 2))
+(1, (0, 3))
+(2, (1, 4))
+@dots{}
+(4, (2, 9))
+@end example
+
+Note two C specifics.  @code{dtfl_collection_join_map} emits exactly the
+bytes the result closure writes; the key is not prepended, so the
+closure writes @code{m1 || m2 || p} itself (@pxref{Records}).  And
+@code{dtfl_collection_consolidate} sums the diffs per @code{(record,
+time)}, so each distinct report appears once.
+
+@subsection Step 2: change its input
+
+The program was written against a static collection, but the collection
+can change.  Suppose each employee switches from reporting to
+@code{p/2} to reporting to @code{p/3}, one person per logical time.
+After loading the initial tree, advance the time and apply each change:
+
+@example
+for (person = 1; person < 10; person++) @{
+        uint64_t t = person;                    /* a distinct epoch */
+        unsigned char old[16], new[16];
+
+        dtfl_input_session_advance_to(c->manages, &t);
+        dtfl_put_u64(old, person / 2); dtfl_put_u64(old + 8, person);
+        dtfl_put_u64(new, person / 3); dtfl_put_u64(new + 8, person);
+        dtfl_input_session_remove(c->manages, old, sizeof old);
+        dtfl_input_session_insert(c->manages, new, sizeof new);
+@}
+@end example
+
+@code{dtfl_input_session_advance_to} moves to a new logical time;
+@code{dtfl_input_session_remove} retracts the old management relation
+(a diff of @code{-1}) and @code{dtfl_input_session_insert} asserts the
+new one (@code{+1}).  Differential dataflow responds with the changes to
+the skip-level report: for each affected person it emits the retractions
+(diff @code{-1}) of reports that no longer hold and the assertions (diff
+@code{+1}) of the new ones, each at the time the change took effect.  It
+does not recompute the whole report; it computes only the difference.

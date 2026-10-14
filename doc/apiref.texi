@@ -1,0 +1,92 @@
+@c SPDX-License-Identifier: MIT
+@c doc/apiref.texi: the API Reference chapter.
+
+@node API Reference
+@chapter API Reference
+
+This manual teaches the model and walks through examples.  The reference
+for every function, with its exact prototype, arguments, return value
+and error codes, is in the manual pages, installed by @command{make
+install} and read with @command{man}.  They are the authoritative
+description of the API.
+
+@section Overview pages
+
+@table @code
+@item dtfl(7)
+the library overview: conventions, the error model, the thread-safety
+summary, and the list of related pages.
+@item dtfl_embedding(7)
+the embedding contract: the four host hooks and the PostgreSQL mapping
+(@pxref{Embedding}).
+@end table
+
+@section Core timely pages
+
+@table @code
+@item dtfl_execute(3)
+run a computation (@code{dtfl_execute}, @code{dtfl_execute_directly},
+@code{dtfl_guards_join}).
+@item dtfl_config(3)
+build an execution configuration.
+@item dtfl_worker_dataflow(3)
+build a dataflow and drive a worker.
+@item dtfl_scope_scoped(3)
+nested, iterative and region scopes.
+@item dtfl_to_stream(3), dtfl_input_new(3), dtfl_unordered_input_new(3)
+create inputs.
+@item dtfl_probe_new(3)
+observe progress.
+@item dtfl_op_builder_new(3), dtfl_op_input_next(3), dtfl_pact_pipeline(3)
+build custom operators.
+@item dtfl_cap_delayed(3)
+capabilities.
+@item dtfl_type(3), dtfl_put_u64(3), dtfl_time_class(3), dtfl_time_cmp(3), dtfl_summary_results_in(3)
+the record and time models.
+@end table
+
+@section Stream operator pages
+
+@code{dtfl_stream_map(3)}, @code{dtfl_stream_concat(3)},
+@code{dtfl_stream_exchange(3)}, @code{dtfl_stream_broadcast(3)},
+@code{dtfl_stream_partition(3)}, @code{dtfl_stream_delay(3)},
+@code{dtfl_stream_count(3)}, @code{dtfl_stream_aggregate(3)},
+@code{dtfl_stream_state_machine(3)}, @code{dtfl_stream_branch(3)},
+@code{dtfl_stream_ok_err(3)}, @code{dtfl_stream_result(3)},
+@code{dtfl_stream_reclock(3)}, @code{dtfl_stream_enter(3)},
+@code{dtfl_stream_unary_notify(3)}, @code{dtfl_notificator_notify_at(3)},
+@code{dtfl_iterator_source(3)}, @code{dtfl_stream_capture(3)},
+@code{dtfl_feedback_new(3)}, @code{dtfl_barrier(3)},
+@code{dtfl_sequencer(3)}.
+
+@section Differential pages
+
+@table @code
+@item dtfl_collection_new(3)
+collections, diff classes and input sessions.
+@item dtfl_collection_reduce(3)
+the reduce family (reduce, count, distinct, threshold).
+@item dtfl_collection_join(3)
+the join family (join, join_map, semijoin, antijoin).
+@item dtfl_collection_arrange(3), dtfl_collection_arrange_by_key(3)
+arrangements and shared traces.
+@item dtfl_collection_iterate(3)
+iteration and variables.
+@item dtfl_algo_bfs(3)
+the graph and sequence algorithms.
+@item dtfl_collection_index_new(3), dtfl_dogs_propose(3), dtfl_dogs_half_join(3), dtfl_collection_delay_neu(3)
+the dogsdogsdogs delta queries and worst-case-optimal joins.
+@end table
+
+@section Diagnostics and DDIR pages
+
+@table @code
+@item dtfl_worker_log_subscribe(3), dtfl_diag_session_new(3)
+structured logging and the diagnostics console.
+@item dtfl-diag(1)
+the diagnostics command-line tool.
+@item dtfl_ddir_parse(3), dtfl_ddir_explain(3), dtfl_ddir_server(3)
+the DDIR language.
+@item dtfl-ddir(1)
+the DDIR command-line tool.
+@end table

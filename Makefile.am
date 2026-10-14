@@ -88,6 +88,9 @@ include tools/dtfl-ddir/local.mk
 # its public headers exist to link against (AGENTS.md section 11).
 include examples/local.mk
 
+# The Texinfo manual (info_TEXINFOS + libdtfl_TEXINFOS).
+include doc/local.mk
+
 # Sanitizer and interop targets (PLAN section 6).
 check-asan:
 	@echo "Configure a separate build with --enable-asan --enable-ubsan and run make check there."

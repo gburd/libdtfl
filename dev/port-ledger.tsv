@@ -30,39 +30,39 @@ timely-dataflow	communication/src/networking.rs	172	src/comm/networking.c	P2	don
 timely-dataflow	container/src/lib.rs	294	src/base/batch.c	P1	done	the record batch is the only container (D2)
 timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	done	
 timely-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	todo	
+timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	done	manual skeleton and menu
+timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	done	
 timely-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 timely-dataflow	timely/examples/barrier.rs	30	examples/timely/barrier.c	P4	done	
 timely-dataflow	timely/examples/bfs.rs	139	examples/timely/bfs.c	P4	done	fixed small graph for a checkable reachable set; single worker
@@ -371,49 +371,49 @@ differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	do
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	wip	registry + lifecycle (install/feed/tick/drop/peek/list); single in-process worker, commands on the calling thread; shared traces across installs; generated/iota/clock sources; multi-worker Sequencer deferred; no trace compaction (public handle lacks the setter)
 differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	todo	
+differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	done	manual skeleton and menu
+differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	done	
 differential-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	server/dataflows/degr_dist/src/lib.rs	25	examples/server/degr_dist.c	P14	todo	built as dlopen(3) plugins
 differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/server/neighborhood.c	P14	todo	built as dlopen(3) plugins

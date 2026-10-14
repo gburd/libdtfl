@@ -1,0 +1,87 @@
+@c SPDX-License-Identifier: MIT
+@c doc/ddir.texi: the DDIR chapter.
+@c From include/dtfl/ddir.h, dtfl-ddir(1), and the example programs under
+@c tools/dtfl-ddir/programs/.
+
+@node DDIR
+@chapter DDIR
+
+DDIR, the Differential Dataflow Intermediate Representation, is a small
+language for building differential dataflows at runtime.  Where the
+collection API (@pxref{Differential Dataflow}) builds a dataflow in C at
+compile time, DDIR builds one from a text program, so a host can accept
+dataflow definitions as data.
+
+A program names positional input collections, defines derived
+collections by expressions (map and filter, equijoin, reduce, concat,
+and @code{iterate} for recursion), and declares named outputs.  Its time
+is @code{Product<u64, PointStamp<u64>>}, so iteration pushes a loop
+coordinate without changing the timestamp type.
+
+@section Two surface syntaxes
+
+The same program can be written two ways, which parse to the same IR.
+The @dfn{applicative} syntax (@file{.ddir}) nests function-like forms;
+the @dfn{pipe} syntax (@file{.ddp}) threads a value through a pipeline
+of operators.  Reachability, in both:
+
+@example
+-- applicative (.ddir)
+let edges = MAP(INPUT 0, ($0[0] ; $0[1]));
+let roots = MAP(INPUT 1, ($0[0] ;));
+reach: @{
+    let proposals = JOIN(reach, edges, ($2));
+    var reach = REDUCE(CONCAT(roots, proposals), DISTINCT);
+@}
+export "result" = INSPECT(ARRANGE(MAP(reach::reach, (;))), total);
+@end example
+
+@example
+-- pipe (.ddp)
+let edges = input 0 | key($0[0] ; $0[1]);
+let roots = input 1 | key($0[0] ;);
+reach: @{
+    let proposals = reach | join(edges, ($2 ;));
+    var reach = roots + proposals | distinct;
+@}
+export "result" = reach::reach | key(;) | arrange | inspect(total);
+@end example
+
+@section The pipeline
+
+@table @code
+@item dtfl_ddir_parse
+turns program text in a chosen syntax into a lowered, optimized
+scope-tree program (the IR).
+@item dtfl_ddir_build
+lowers that IR into a live differential dataflow inside a scope, binding
+the program's positional inputs to collections and returning its named
+exports; the scope's time class must be @code{dtfl_ddir_time_class}.
+@item dtfl_ddir_evaluate
+is the data-in, data-out shortcut: it feeds explicit input rows, runs
+the program to quiescence on one in-process worker, and returns each
+export's consolidated final contents.
+@end table
+
+A DDIR value is an algebraic data type over a single scalar: an integer,
+a tuple, a tagged variant, or a list.  A collection element is a
+@code{(key, value)} pair of such values.  The @code{dtfl_ddir_value_*}
+functions construct and inspect values, and @code{dtfl_ddir_value_parse}
+parses one from a closed scalar term.
+
+@section The explanation rewrite
+
+DDIR can rewrite a program so that, for a query against its first
+export, it computes the input rows that regenerate the queried output
+row: a per-source demand-set explanation.  @code{dtfl_ddir_explain}
+produces that rewritten program; @code{dtfl_ddir_clone_identity} is the
+identity transform it is built on.
+
+@section The command-line tool
+
+@command{dtfl-ddir} builds and runs DDIR programs.  @command{dtfl-ddir
+run @var{program} [@var{rows-file}]} evaluates a program on explicit
+rows and prints each export's sorted contents; @command{dtfl-ddir
+server} runs a live command session (install, feed, tick, peek);
+@command{dtfl-ddir explain} runs the explanation rewrite.  See
+@code{dtfl-ddir(1)} for the row and session syntax.

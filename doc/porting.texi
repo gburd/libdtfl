@@ -1,0 +1,81 @@
+@c SPDX-License-Identifier: MIT
+@c doc/porting.texi: the Porting notes chapter.
+@c From dev/PLAN.md sections 2 and 4 (D12).
+
+@node Porting notes
+@chapter Porting notes
+
+libdtfl is a port, not a reimplementation.  This chapter records how it
+relates to the Rust originals, for a reader who knows them.
+
+@section The pin is the API
+
+The port targets released code, not moving heads:
+
+@table @asis
+@item timely dataflow
+@code{timely-v0.31.0}.
+@item differential dataflow
+@code{differential-dataflow-v0.25.1}, which builds against timely 0.31.
+@item the diagnostics tools
+the @command{tdiag} computations, retargeted to read the timely 0.31 log
+format.
+@end table
+
+@strong{The pin is the API.}  Everything public at @code{timely-v0.31.0}
+is ported, @emph{including the operators upstream deleted after the
+pin}: @code{Notificator}, @code{FrontierNotificator}, @code{unary_notify},
+@code{binary_notify}, @code{delay}, @code{delay_total},
+@code{delay_batch}, @code{branch}, @code{branch_when}, @code{aggregate},
+@code{state_machine}, @code{accumulate}, @code{count}, @code{reclock},
+@code{iterator_source}, the @code{Result} stream helpers, and the
+@code{inspect} variants.  Code at the pin depends on them (differential's
+@code{Collection::delay} is built on @code{delay_batch}, which is built
+on @code{unary_notify}), and porting the upstream tests requires them.
+Where this manual shows one of these, it notes that it was removed
+upstream after timely 0.31.
+
+@section Mapping Rust idioms to C
+
+@table @asis
+@item Typed records become byte strings.
+Rust gets typed records from monomorphisation.  libdtfl represents a
+record as a byte string with a @code{dtfl_type} descriptor
+(@pxref{Records}); serialization for exchange is a @code{memcpy}, which
+removes Rust's @code{ExchangeData} bound and the cost of bincode.
+@item Closures become a function pointer and a context.
+Every operator that takes a closure in Rust takes a function pointer and
+a @code{dtfl_ctx} (a pointer plus an optional destructor) in C.  A
+context passed with a destructor is owned by the operator and freed when
+the operator is dropped.
+@item Ownership becomes explicit free functions.
+Each handle has exactly one function that frees or drops it:
+@code{dtfl_cap_drop}, @code{dtfl_collection_free},
+@code{dtfl_input_session_close}, @code{dtfl_arranged_free}, and so on.
+The @code{!Send} types of Rust become the worker-ownership rule of
+@ref{Threads}.
+@item The diff algebra is checked at build time.
+Rust enforces the trait bounds (Semigroup, Monoid, Abelian) at compile
+time.  libdtfl checks them when the dataflow is built and reports
+@code{DTFL_EALGEBRA}, naming the operator, when a diff class lacks an
+operation an operator needs.
+@end table
+
+@section Divergences from the pin
+
+The port matches the pin.  Where it does not, there are exactly two
+deliberate differences:
+
+@enumerate
+@item
+@strong{Byte aliasing.}  The byte-sharing code takes the aliasing and
+regeneration hardening from timely #821, which landed after the pin.
+#821 fixes a soundness hole in the Rust @code{Bytes} type; porting the
+pre-fix code on purpose would be porting a bug.
+@item
+@strong{Diagnostics bind address.}  The diagnostics WebSocket server
+binds @code{127.0.0.1} by default, where upstream binds @code{0.0.0.0}
+and so publishes operator names and timings to the network with no
+authentication.  The address is a parameter, so the upstream behavior is
+one argument away (@pxref{Diagnostics}).
+@end enumerate

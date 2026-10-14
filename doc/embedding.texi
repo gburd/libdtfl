@@ -1,0 +1,77 @@
+@c SPDX-License-Identifier: MIT
+@c doc/embedding.texi: the Embedding chapter.
+@c Summarizes dtfl_embedding(7).
+
+@node Embedding
+@chapter Embedding
+
+libdtfl is built to run inside a host program, such as a database
+server, that supplies its own memory, error reporting, logging and
+threads.  The four host hooks of @ref{Error handling} route each of
+those boundaries through the host.  This chapter shows the whole
+embedding, using PostgreSQL as the example host.
+
+@section Wiring the boundaries
+
+A host installs the hooks once, before starting any computation.  Each
+hook is a function the host provides plus an opaque context pointer.
+
+@example
+static void *pg_malloc(size_t n, void *c) @{ return palloc(n); @}
+static void *pg_realloc(void *p, size_t n, void *c)
+@{ return repalloc(p, n); @}
+static void pg_free(void *p, void *c) @{ pfree(p); @}
+
+/* longjmp out of the computation; never returns */
+static void pg_panic(const char *msg, void *c)
+@{ ereport(ERROR, errmsg("dtfl: %s", msg)); @}
+
+static void pg_log(dtfl_log_level lvl, const char *msg, void *c)
+@{ int e[] = @{ DEBUG1, LOG, WARNING, ERROR @}; elog(e[lvl], "%s", msg); @}
+
+dtfl_alloc_hooks ah = @{ pg_malloc, pg_realloc, pg_free, NULL @};
+dtfl_set_alloc_hooks(&ah);
+dtfl_set_panic_hook(pg_panic, NULL);
+dtfl_set_log_hook(pg_log, NULL);
+dtfl_set_thread_hooks(&bgworker_hooks);  /* or drive standalone */
+@end example
+
+The log levels map straight onto the host's own: @code{DTFL_LOG_DEBUG},
+@code{DTFL_LOG_INFO}, @code{DTFL_LOG_WARN} and @code{DTFL_LOG_ERROR}
+become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{ERROR}.  The
+panic hook is expected to @code{longjmp} (via @code{ereport(ERROR)}) out
+of the computation rather than return.
+
+@section Hosts that control their own threads
+
+A host that cannot hand libdtfl free-running threads has two ways to
+embed it.
+
+First, it can supply thread hooks whose @code{spawn} is backed by the
+host's own worker mechanism (a PostgreSQL background worker, for
+example).  @code{dtfl_execute} then starts and joins each worker through
+those hooks, and the rest of the program is unchanged.
+
+Second, and simplest when the host already has an event loop, it can
+avoid @code{dtfl_execute} entirely and drive a single worker
+cooperatively.  No thread is created, so no thread hook is needed; the
+host calls @code{dtfl_worker_step} from its own thread whenever it
+chooses, interleaving dataflow progress with its other work:
+
+@example
+dtfl_worker *w = dtfl_worker_new_standalone();
+dtfl_worker_dataflow(w, "my", tc, build, ctx);
+while (dtfl_worker_has_dataflows(w))
+        dtfl_worker_step(w);
+dtfl_worker_free(w);
+@end example
+
+@section What libdtfl never does
+
+libdtfl installs no signal handlers and calls no @code{getenv},
+@code{signal} or @code{getopt}.  When a host wants environment lookup, it
+passes a callback to @code{dtfl_config_from_env}; the library never
+reads the environment itself.  This keeps libdtfl safe to load into a
+host that owns those facilities.  The complete contract, including the
+per-thread ownership rules, is in @code{dtfl_embedding(7)} and
+@code{dtfl(7)}.

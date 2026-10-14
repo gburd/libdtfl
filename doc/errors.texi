@@ -1,0 +1,91 @@
+@c SPDX-License-Identifier: MIT
+@c doc/errors.texi: the Error handling chapter.
+@c From include/dtfl/base.h and dtfl(7).
+
+@node Error handling
+@chapter Error handling
+
+libdtfl separates two kinds of failure: @emph{errors}, which a caller is
+expected to handle, and @emph{contract violations}, which are bugs.
+
+@section Error codes
+
+A fallible function returns @code{0} (@code{DTFL_OK}) on success, or a
+non-zero @code{DTFL_E*} code:
+
+@table @code
+@item DTFL_EINVAL
+an invalid argument;
+@item DTFL_ENOMEM
+an allocation failed (only from a hook that may fail);
+@item DTFL_ERANGE
+a value outside a representable range;
+@item DTFL_ESTATE
+the operation is not valid in the current state;
+@item DTFL_EALGEBRA
+the diff class lacks an operation the operator needs
+(@pxref{Collections});
+@item DTFL_EIO
+an I/O or network failure;
+@item DTFL_EPROTO
+malformed wire data;
+@item DTFL_ENOTSUP
+not supported in this build;
+@item DTFL_EOF
+end of stream.
+@end table
+
+@code{dtfl_strerror} returns a static description of a code.
+@code{dtfl_last_error_detail} returns a human-readable string with
+context for the most recent error on the calling thread, or an empty
+string if there is none; it is valid until the next libdtfl call on the
+same thread.  A typical check:
+
+@example
+if (dtfl_execute(cfg, worker, ctx, NULL) != 0)
+        errx(1, "dtfl: %s", dtfl_last_error_detail());
+@end example
+
+@section Contract violations and the panic hook
+
+A contract violation (for example, using a capability for the wrong
+output, or stepping a worker from inside an operator) is a programming
+error, not a runtime condition.  It calls the @dfn{panic hook}, which
+must not return: the default prints the message to standard error and
+calls @code{abort}.  A host installs its own with
+@code{dtfl_set_panic_hook} to redirect the failure, for example a
+PostgreSQL extension that calls @code{ereport(ERROR)} to @code{longjmp}
+out of the computation.  Allocation failure also goes through the panic
+hook.
+
+@section The four host hooks
+
+The panic hook is one of four process-wide hooks that route libdtfl's
+boundaries through a host program.  All four have defaults, so a
+standalone program needs none of them, and all four must be installed
+before the first @code{dtfl_execute}.
+
+@table @code
+@item dtfl_set_alloc_hooks
+All memory libdtfl allocates comes from these @code{malloc}/@code{realloc}/
+@code{free} callbacks.  The default is the libc allocator.  This hook
+must be set before any libdtfl call allocates, and at most once.
+
+@item dtfl_set_panic_hook
+The contract-violation and allocation-failure handler described above.
+
+@item dtfl_set_log_hook
+Receives @emph{human-readable} diagnostics at @code{DTFL_LOG_DEBUG},
+@code{DTFL_LOG_INFO}, @code{DTFL_LOG_WARN} and @code{DTFL_LOG_ERROR}.
+With no hook set, libdtfl writes WARN and ERROR to standard error and
+drops the rest, so a library is quiet by default.  This is separate from
+the structured event logging (@pxref{Diagnostics}), which carries
+machine-readable events and is unaffected by this hook.
+
+@item dtfl_set_thread_hooks
+Spawn and join callbacks for the worker, network and connection threads.
+With no hooks set, libdtfl uses pthreads.  A host that supplies its own
+threads (a database background worker, say) routes thread creation
+through these; a host that cannot spawn threads at all drives a single
+worker cooperatively instead (@pxref{Embedding}).
+@end table

@@ -1,0 +1,157 @@
+@c SPDX-License-Identifier: MIT
+@c doc/concepts.texi: the Concepts chapter.
+@c Concepts drawn from dev/PLAN.md section 4 (D1, D3, D4) and the timely
+@c and differential mdbook introductions.
+
+@node Concepts
+@chapter Concepts
+
+@menu
+* Dataflow::                    Operators, streams and workers.
+* Records::                     The data model: bytes with a type.
+* Time and frontiers::          Logical time, partial orders, frontiers.
+* Progress::                    How the runtime knows a time is done.
+* Collections::                 Differential collections and diffs.
+@end menu
+
+@node Dataflow
+@section Dataflow
+
+A @dfn{timely dataflow} is a directed graph of @dfn{operators} connected
+by @dfn{streams}.  Each operator receives batches of records on its
+input streams and produces batches on its output streams.  The graph may
+contain cycles, so a computation can feed its output back into itself,
+which is how iteration works.
+
+A @dfn{worker} runs the whole dataflow graph.  A computation may run one
+worker on the calling thread, several workers in one process, or many
+workers across several processes; every worker runs the same dataflow
+and processes a share of the data.  Workers exchange records across the
+graph's partition boundaries through the communication layer selected by
+the @code{dtfl_config} (@pxref{Installation}).
+
+A program drives a worker explicitly: it builds dataflows with
+@code{dtfl_worker_dataflow}, feeds inputs, and calls
+@code{dtfl_worker_step} repeatedly.  Each step schedules the operators
+that have work and advances progress.  The convenience entry point
+@code{dtfl_execute} starts the configured workers, each on its own
+thread, and runs a worker function on each.
+
+@node Records
+@section Records
+
+Rust gets typed records from monomorphisation, which C cannot copy.
+libdtfl instead treats a record as a byte string, described by a
+@code{dtfl_type} descriptor (@pxref{API Reference}).  The descriptor
+says how long a value is, how two values compare, how a value hashes for
+exchange routing, and how to print one for debugging.
+
+The library never inspects record bytes directly.  It calls the
+descriptor's @code{cmp} (for arrangements, consolidation and the order
+in which @code{reduce} sees values) and @code{hash} (for exchange) and
+nothing else.  A descriptor's @code{cmp} must reproduce the Rust derived
+@code{Ord} of the type it models, because user reducers depend on the
+order their input arrives in.
+
+The built-in descriptors use order-preserving encodings, so their
+@code{cmp} is a byte comparison: the unsigned integers are big-endian;
+the signed integers are big-endian with the sign bit flipped; bytes and
+strings compare their raw payloads.  The accessors
+@code{dtfl_put_u64}, @code{dtfl_get_u64} and the rest hide the encoding,
+so callers always work with native values.  Composite descriptors
+(@code{dtfl_type_tuple}, @code{dtfl_type_pair}, @code{dtfl_type_option},
+@code{dtfl_type_vec}) build structured records from the built-ins.
+
+A key/value collection stores a record as @code{key || val}, the key
+concatenated with the value; the key descriptor's length gives the split
+point.
+
+@node Time and frontiers
+@section Time and frontiers
+
+Every record on a stream carries a @dfn{logical time}: the time at which
+that record takes effect.  A time is a short vector of @code{uint64_t}
+coordinates.  How many coordinates there are, and how two times compare,
+come from the stream's scope, which carries a @code{dtfl_time_class}
+(@pxref{API Reference}).
+
+Time is not always totally ordered.  The built-in classes are:
+
+@itemize @bullet
+@item
+the unit time (no coordinates; every time is equal), for a computation
+with a single logical moment;
+@item
+a totally ordered integer or @code{Duration} time (one coordinate), the
+usual choice for a stream of epochs;
+@item
+a product time @code{Product<outer, inner>}, which pairs an outer time
+with an inner one and orders them componentwise; iterative scopes use a
+product with a @code{u64} iteration counter;
+@item
+@code{AltNeu} and @code{PointStamp}, used by the worst-case-optimal
+joins and the dynamic scopes.
+@end itemize
+
+A product order is a @emph{partial} order: two times can be
+incomparable.  @code{dtfl_time_less_equal} tests the class's partial
+order; @code{dtfl_time_cmp} is the total word order that matches Rust's
+derived @code{Ord}.
+
+A @dfn{frontier} is an antichain of times: a set of pairwise
+incomparable times that marks the boundary between the past (times at or
+before some frontier element) and the possible future.  An operator sees
+its input's frontier; when the frontier passes a time, no more records
+can arrive at or before that time, so any computation waiting on that
+time may complete.
+
+@node Progress
+@section Progress
+
+@dfn{Progress tracking} is how the runtime discovers that a time is
+complete, even in a graph with cycles.  Each operator reports the times
+it still holds the right to send at (its outstanding @dfn{capabilities}),
+and the runtime combines those reports, following each stream's
+@dfn{path summary} (the minimum amount a time advances as it traverses
+the operator), to compute every input's frontier.
+
+A program observes progress with a @dfn{probe}.
+@code{dtfl_stream_probe_with} attaches a probe to a stream;
+@code{dtfl_probe_less_than} asks whether the stream's frontier is still
+behind a given time, and @code{dtfl_probe_done} asks whether the stream
+has drained completely.  A typical driver loop advances its input, then
+steps the worker until the probe reports that the input's time is
+complete:
+
+@example
+dtfl_input_session_advance_to(input, &next_epoch);
+dtfl_input_session_flush(input);
+while (dtfl_probe_less_than(probe, dtfl_input_session_time(input)))
+        dtfl_worker_step(w);
+@end example
+
+@node Collections
+@section Collections
+
+A @dfn{differential collection} is a multiset whose contents change over
+time.  Internally it is a timely stream whose records are @dfn{updates}:
+a @code{(record, time, diff)} triple.  The @var{record} is a byte string;
+the @var{time} is when the change takes effect; the @var{diff} says how
+the multiplicity of the record changes at that time.  Inserting a record
+is a diff of @code{+1}; removing it is @code{-1}.  The collection at any
+time is the sum of all diffs for each record at times at or before it.
+
+The diff is a value of the collection's @dfn{diff class}.  The default
+class is signed 64-bit (@code{dtfl_diff_i64}), which is @emph{Abelian}:
+it can negate, so it supports retraction.  Other classes trade capability
+for a weaker algebra: the unsigned classes are monoids (they add but do
+not negate); the @code{present} class only records presence.  An
+operator checks, when the dataflow is built, that the diff class has the
+algebra it needs, and names the operator if it does not.
+
+Because the contents are expressed as diffs, a change to an input flows
+through the dataflow as diffs: only the records whose multiplicity
+actually changed are recomputed.  This is what makes differential
+dataflow @emph{incremental}.  The collection operators (@code{map},
+@code{filter}, @code{join}, @code{reduce}, @code{iterate} and the rest)
+are covered in @ref{Differential Dataflow}.
