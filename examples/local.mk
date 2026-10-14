@@ -137,7 +137,8 @@ noinst_PROGRAMS += \
 	examples/dd/itembased_cf \
 	examples/dd/scc \
 	examples/dd/pagerank \
-	examples/dd/dynamic
+	examples/dd/dynamic \
+	examples/dd/cursors
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -187,6 +188,10 @@ examples_dd_dynamic_SOURCES = examples/dd/dynamic.c
 examples_dd_dynamic_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_dynamic_LDADD = $(EXAMPLE_LDADD)
 
+examples_dd_cursors_SOURCES = examples/dd/cursors.c
+examples_dd_cursors_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_cursors_LDADD = $(EXAMPLE_LDADD)
+
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
 # ----------------------------------------------------------------------
@@ -230,8 +235,8 @@ check_PROGRAMS += \
 	examples/dd/itembased_cf \
 	examples/dd/scc \
 	examples/dd/pagerank \
-	examples/dd/dynamic
-
+	examples/dd/dynamic \
+	examples/dd/cursors
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 
@@ -258,7 +263,8 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/itembased_cf.expected \
 	examples/dd/scc.expected \
 	examples/dd/pagerank.expected \
-	examples/dd/dynamic.expected
+	examples/dd/dynamic.expected \
+	examples/dd/cursors.expected
 
 # ----------------------------------------------------------------------
 # Diagnostics examples (P11).  smoke runs the full in-process path
