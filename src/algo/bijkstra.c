@@ -261,8 +261,11 @@ expand(bij_ctx *c, dtfl_collection *frontier, dtfl_collection *active,
 {
 	const dtfl_type *rd = c->rd;
 	const dtfl_type *ft = c->ft;
-	const dtfl_type *pairrec = dtfl_type_pair(
-	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), dtfl_type_u32());
+	/* dtfl_type_pair retains its fields, so the inner pair keeps its own
+	 * reference; hold it and free it with the outer one. */
+	const dtfl_type *rootpair =
+	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+	const dtfl_type *pairrec = dtfl_type_pair(rootpair, dtfl_type_u32());
 	dtfl_collection *rooted = dtfl_collection_map(frontier, ft, by_root,
 	    DTFL_NOCTX);
 	dtfl_collection *picked = dtfl_collection_semijoin(rooted, active,
@@ -291,6 +294,7 @@ expand(bij_ctx *c, dtfl_collection *frontier, dtfl_collection *active,
 	dtfl_diff_free(i64);
 	dtfl_type_free(mr);
 	dtfl_type_free(pairrec);
+	dtfl_type_free(rootpair);
 	return result;
 }
 
@@ -343,9 +347,13 @@ bij_build(dtfl_scope *inner, void *arg)
 	dtfl_collection *fwd_active, *rev_active, *fwd_next, *rev_next;
 	dtfl_collection *left;
 
-	/* reverse edges: (dst, src). */
-	rev_edges = dtfl_collection_map(edges, dtfl_type_pair(dtfl_type_u64(),
-	    dtfl_type_u64()), goal_dst_pair, DTFL_NOCTX);
+	/* reverse edges: (dst, src).  Hold the key type so the map's retain
+	 * is balanced and the pair is freed. */
+	const dtfl_type *revk = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	rev_edges = dtfl_collection_map(edges, revk, goal_dst_pair,
+	    DTFL_NOCTX);
+	dtfl_type_free(revk);
 
 	/* reached: forward join reverse by med, min, semijoin goals. */
 	met = dtfl_collection_join_map(fwd, rev, dtfl_type_u64(), rd, rd, rt,

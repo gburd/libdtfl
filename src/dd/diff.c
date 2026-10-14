@@ -13,8 +13,11 @@
  * wrap-around for both signed and unsigned classes.  Upstream's plain
  * integers panic on overflow in debug builds and wrap in release; this
  * port always wraps, and the wrapping classes differ from the plain
- * ones only in name and in which pairs multiply.  Vec<R> diffs are not
- * ported yet (fixed width only; see dd_int.h).
+ * ones only in name and in which pairs multiply.  Vec<R> diffs (the
+ * difference.rs vector module) have their algebra ported here as slice
+ * functions (__dtfl_diff_vec_*), but a Vec value is variable width and
+ * cannot yet sit in the fixed-width batch diff column, so there is no
+ * Vec diff class that flows through a dataflow (see dd_int.h).
  */
 #include "dd/dd_int.h"
 
@@ -410,4 +413,84 @@ __dtfl_diff_multiply(const __dtfl_diff_class *a, const __dtfl_diff_class *b,
 	if (out_cls != NULL)
 		*out_cls = oc;
 	return DTFL_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* Vec<R> difference algebra (difference.rs vector)                    */
+/* ------------------------------------------------------------------ */
+
+#define VEC_ELEM(elem, p, i) \
+	((unsigned char *)(p) + (i) * (elem)->width)
+#define VEC_CELEM(elem, p, i) \
+	((const unsigned char *)(p) + (i) * (elem)->width)
+
+/* Vec<R>::is_zero: iter().all(|x| x.is_zero()). */
+bool
+__dtfl_diff_vec_is_zero(const __dtfl_diff_class *elem, const void *acc,
+    size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		if (!elem->is_zero(elem, VEC_CELEM(elem, acc, i)))
+			return false;
+	}
+	return true;
+}
+
+/*
+ * Vec<R>::plus_equals(&[R]): apply updates to existing elements over the
+ * overlap, then clone the leftover elements from rhs.
+ */
+void
+__dtfl_diff_vec_plus_equals(const __dtfl_diff_class *elem, void *acc,
+    size_t *acc_len, const void *rhs, size_t rhs_len)
+{
+	size_t i;
+	size_t n = *acc_len < rhs_len ? *acc_len : rhs_len;
+
+	for (i = 0; i < n; i++)
+		elem->plus_equals(elem, VEC_ELEM(elem, acc, i),
+		    VEC_CELEM(elem, rhs, i));
+	while (*acc_len < rhs_len) {
+		memcpy(VEC_ELEM(elem, acc, *acc_len),
+		    VEC_CELEM(elem, rhs, *acc_len), elem->width);
+		(*acc_len)++;
+	}
+}
+
+/* Vec<R>::negate: iter_mut().for_each(|x| x.negate()). */
+void
+__dtfl_diff_vec_negate(const __dtfl_diff_class *elem, void *acc, size_t len)
+{
+	size_t i;
+
+	if (elem->negate == NULL)
+		__dtfl_panic("__dtfl_diff_vec_negate: %s is not Abelian",
+		    elem->name != NULL ? elem->name : "?");
+	for (i = 0; i < len; i++)
+		elem->negate(elem, VEC_ELEM(elem, acc, i));
+}
+
+/*
+ * Vec<R>::multiply(rhs): into_iter().map(|x| x.multiply(rhs)).collect().
+ * Writes `len` output-class elements to `out` and returns the output
+ * element class (the product of elem and scalar), or NULL when the
+ * element class has no Multiply with the scalar class.  `rhs` is the
+ * scalar value.
+ */
+const __dtfl_diff_class *
+__dtfl_diff_vec_multiply(const __dtfl_diff_class *elem,
+    const __dtfl_diff_class *scalar, const void *vec, size_t len,
+    const void *rhs, void *out)
+{
+	const __dtfl_diff_class *oc = __dtfl_diff_multiply_class(elem, scalar);
+	size_t i;
+
+	if (oc == NULL)
+		return NULL;
+	for (i = 0; i < len; i++)
+		__dtfl_diff_multiply(elem, scalar, VEC_CELEM(elem, vec, i),
+		    rhs, VEC_ELEM(oc, out, i), NULL);
+	return oc;
 }

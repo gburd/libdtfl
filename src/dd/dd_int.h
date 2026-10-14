@@ -128,6 +128,45 @@ int __dtfl_diff_multiply(const __dtfl_diff_class *a, const __dtfl_diff_class *b,
     const void *x, const void *y, void *out, const __dtfl_diff_class **out_cls);
 
 /* ------------------------------------------------------------------ */
+/* Vec<R> difference algebra (difference.rs vector)                    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The Semigroup/Monoid/Abelian/Multiply impls for Vec<R> from
+ * difference.rs.  A Vec<R> value is a count and `count` elements of a
+ * fixed-width element class `elem` laid out back to back; the vector
+ * itself is variable width, so it cannot yet sit in the fixed-width
+ * batch diff column (that needs an arena layout; see the __dtfl_diff_class
+ * `Limit` note).  These operate on caller-held element arrays so the
+ * algebra is usable and testable on its own.
+ *
+ * __dtfl_diff_vec_is_zero: every element is zero (an empty vector is
+ * zero).
+ *
+ * __dtfl_diff_vec_plus_equals: add rhs into acc element-wise over the
+ * overlap, then append rhs's leftover elements.  acc has room for at
+ * least max(acc_len, rhs_len) elements; *acc_len is updated.
+ *
+ * __dtfl_diff_vec_negate: negate every element in place (requires an
+ * Abelian element class).
+ *
+ * __dtfl_diff_vec_multiply: multiply every element of `vec` by the
+ * scalar value `rhs` of class `scalar`, writing the products to `out`
+ * (which has room for `len` output-class elements).  Returns the output
+ * element class, or NULL if the element class has no Multiply with
+ * `scalar`.
+ */
+bool __dtfl_diff_vec_is_zero(const __dtfl_diff_class *elem, const void *acc,
+    size_t len);
+void __dtfl_diff_vec_plus_equals(const __dtfl_diff_class *elem, void *acc,
+    size_t *acc_len, const void *rhs, size_t rhs_len);
+void __dtfl_diff_vec_negate(const __dtfl_diff_class *elem, void *acc,
+    size_t len);
+const __dtfl_diff_class *__dtfl_diff_vec_multiply(const __dtfl_diff_class *elem,
+    const __dtfl_diff_class *scalar, const void *vec, size_t len,
+    const void *rhs, void *out);
+
+/* ------------------------------------------------------------------ */
 /* Consolidation                                                       */
 /* ------------------------------------------------------------------ */
 

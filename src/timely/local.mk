@@ -212,3 +212,21 @@ TESTS += tests/unit/test_log_subscribe
 tests_unit_test_log_subscribe_SOURCES = tests/unit/test_log_subscribe.c
 tests_unit_test_log_subscribe_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_log_subscribe_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/timely/barrier
+TESTS += tests/upstream/timely/barrier
+tests_upstream_timely_barrier_SOURCES = tests/upstream/timely/barrier.c
+tests_upstream_timely_barrier_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_timely_barrier_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/timely/gh_523
+TESTS += tests/upstream/timely/gh_523
+tests_upstream_timely_gh_523_SOURCES = tests/upstream/timely/gh_523.c
+tests_upstream_timely_gh_523_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_timely_gh_523_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/timely/shape_scaling
+TESTS += tests/upstream/timely/shape_scaling
+tests_upstream_timely_shape_scaling_SOURCES = tests/upstream/timely/shape_scaling.c
+tests_upstream_timely_shape_scaling_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_timely_shape_scaling_LDADD = $(INTERNAL_LIBS)

@@ -1,0 +1,169 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 14, 2026
+.Dt DTFL_COLLECTION_CAPTURE 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_capture ,
+.Nm dtfl_cdc_log_new ,
+.Nm dtfl_cdc_log_free ,
+.Nm dtfl_cdc_log_len ,
+.Nm dtfl_cdc_log_kind ,
+.Nm dtfl_cdc_log_push_update ,
+.Nm dtfl_cdc_log_push_progress ,
+.Nm dtfl_cdc_log_append ,
+.Nm dtfl_cdc_iter_new ,
+.Nm dtfl_cdc_iter_free ,
+.Nm dtfl_cdc_iter_push ,
+.Nm dtfl_cdc_iter_next
+.Nd capture and replay a differential collection (CDC V2)
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dd_capture.h
+.Ft dtfl_cdc_log *
+.Fn dtfl_cdc_log_new "const dtfl_type *rec" "const dtfl_time_class *tc" "const dtfl_diff *diff"
+.Ft void
+.Fn dtfl_cdc_log_free "dtfl_cdc_log *log"
+.Ft size_t
+.Fn dtfl_cdc_log_len "const dtfl_cdc_log *log"
+.Ft dtfl_cdc_kind
+.Fn dtfl_cdc_log_kind "const dtfl_cdc_log *log" "size_t i"
+.Ft void
+.Fn dtfl_cdc_log_push_update "dtfl_cdc_log *log" "const void *rec" "size_t reclen" "const uint64_t *time" "const void *diff"
+.Ft void
+.Fn dtfl_cdc_log_push_progress "dtfl_cdc_log *log" "const uint64_t *lower" "size_t nlower" "const uint64_t *upper" "size_t nupper" "const uint64_t *count_times" "const size_t *counts" "size_t ncounts"
+.Ft void
+.Fn dtfl_cdc_log_append "dtfl_cdc_log *dst" "const dtfl_cdc_log *src" "size_t i"
+.Ft dtfl_collection *
+.Fn dtfl_collection_capture "dtfl_collection *c" "dtfl_cdc_log *log"
+.Ft dtfl_cdc_iter *
+.Fn dtfl_cdc_iter_new "const dtfl_type *rec" "const dtfl_time_class *tc" "const dtfl_diff *diff"
+.Ft void
+.Fn dtfl_cdc_iter_free "dtfl_cdc_iter *it"
+.Ft void
+.Fn dtfl_cdc_iter_push "dtfl_cdc_iter *it" "const dtfl_cdc_log *log" "size_t i"
+.Ft bool
+.Fn dtfl_cdc_iter_next "dtfl_cdc_iter *it" "dtfl_cdc_update_fn fn" "void *ctx" "const uint64_t **frontier" "size_t *nfrontier"
+.Sh DESCRIPTION
+These functions implement the CDC V2 protocol for capturing a differential
+collection to a message stream and replaying it, ported from
+.Pa differential-dataflow/src/capture.rs .
+The protocol records facts about the collection that, once true, stay true:
+.Em Updates
+messages, each an irrevocable
+.Pq data , time , diff
+change, and
+.Em Progress
+messages, each an exact count of distinct updates over a time interval.
+Because every message is a monotone statement, a replay reconstructs the
+original multiset even when the message stream between capture and replay
+duplicates and reorders messages.
+.Pp
+.Fn dtfl_cdc_log_new
+creates an empty message log for a collection of records
+.Fa rec ,
+times of class
+.Fa tc
+and diffs of class
+.Fa diff ,
+retaining all three descriptors.
+.Fn dtfl_cdc_log_free
+frees the log and everything in it.
+.Fn dtfl_cdc_log_len
+returns the number of recorded messages, and
+.Fn dtfl_cdc_log_kind
+the kind of message
+.Fa i :
+.Dv DTFL_CDC_UPDATES
+or
+.Dv DTFL_CDC_PROGRESS .
+.Pp
+.Fn dtfl_cdc_log_push_update
+appends an Updates message holding one
+.Pq record , time , diff
+triple, and
+.Fn dtfl_cdc_log_push_progress
+appends a Progress message over the interval
+.Pq lower , upper
+with the given exact per-time counts.
+.Fn dtfl_cdc_log_append
+copies message
+.Fa i
+of
+.Fa src
+onto the end of
+.Fa dst ,
+which is how a captured log is duplicated and reordered before replay.
+.Pp
+.Fn dtfl_collection_capture
+is the sink.
+It returns a new collection, identical to
+.Fa c ,
+whose updates and frontier advances are recorded into
+.Fa log
+as the dataflow runs; attach it to a probe and step the worker to drive the
+capture.
+The collection
+.Fa c
+must already be consolidated, since the sink does not consolidate and treats
+every record it sees as a true, irrevocable change; pass the output of
+.Fn dtfl_collection_consolidate .
+.Pp
+.Fn dtfl_cdc_iter_new
+creates the replay iterator, the deduplicating and reordering reader of CDC
+V2 messages.
+.Fn dtfl_cdc_iter_push
+pushes message
+.Fa i
+of
+.Fa log
+into the iterator; messages may be pushed in any order and with arbitrary
+duplication.
+.Fn dtfl_cdc_iter_next
+receives one reconstructed batch: it calls
+.Fa fn
+once per newly resolved update with its
+.Pq record , time , diff ,
+sets
+.Fa frontier
+and
+.Fa nfrontier
+to the batch's lower bound, and returns
+.Dv true ;
+it returns
+.Dv false
+when no new batch is ready.
+Call it repeatedly until it returns
+.Dv false .
+.Fn dtfl_cdc_iter_free
+frees the iterator.
+.Sh RETURN VALUES
+.Fn dtfl_cdc_log_new ,
+.Fn dtfl_cdc_iter_new
+and
+.Fn dtfl_collection_capture
+return a new handle the caller frees.
+.Fn dtfl_cdc_iter_next
+returns
+.Dv true
+if it produced a batch,
+.Dv false
+otherwise.
+.Sh NOTES
+The data-parallel
+.Fn source::build
+dataflow of
+.Pa capture.rs ,
+which reconstructs the stream across workers by running the same dedup and
+reorder logic inside four exchange-connected timely operators, is not ported;
+.Fn dtfl_cdc_iter
+is the single-worker reference it implements and covers the
+round-trip-under-duplication-and-reordering guarantee.
+.Sh SEE ALSO
+.Xr dtfl_collection_consolidate 3 ,
+.Xr dtfl_collection_new 3
+.Sh STANDARDS
+Ported from
+.Lk https://github.com/TimelyDataflow/differential-dataflow differential-dataflow
+.Pq differential-dataflow-v0.25.1 , src/capture.rs .
