@@ -34,5 +34,20 @@ if ! diff "$exp/smoke.expected" "$tmp/smoke.out" >/dev/null 2>&1; then
 	exit 1
 fi
 echo "[diag] PASS: smoke"
+
+bin="$bindir/scc-bench"
+if [ -x "$bin" ]; then
+	if ! timeout "$timeout_s" "$bin" >"$tmp/scc.out" 2>"$tmp/scc.err"; then
+		echo "[diag] FAIL: scc-bench crashed, hung or exited non-zero"
+		sed 's/^/    /' "$tmp/scc.err" | head -10
+		exit 1
+	fi
+	if ! diff "$exp/scc-bench.expected" "$tmp/scc.out" >/dev/null 2>&1; then
+		echo "[diag] FAIL: scc-bench output does not match scc-bench.expected"
+		diff "$exp/scc-bench.expected" "$tmp/scc.out" | head -10 | sed 's/^/    /'
+		exit 1
+	fi
+	echo "[diag] PASS: scc-bench"
+fi
 echo "[diag] all smoke tests passed"
 exit $fail

@@ -263,7 +263,8 @@ EXTRA_DIST += examples/timely/example_args.h \
 # ----------------------------------------------------------------------
 # Diagnostics examples (P11).  smoke runs the full in-process path
 # (session + WebSocket server + Frame stream) over a map/probe
-# dataflow; scc-bench is a stub blocked on the scc ord_neu fix.
+# dataflow; scc-bench runs strongly_connected (dtfl_algo_scc) under the
+# diagnostics server over a bounded hashed edge stream.
 # ----------------------------------------------------------------------
 DIAG_EXAMPLE_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 
@@ -275,10 +276,10 @@ examples_diag_scc_bench_SOURCES = examples/diag/scc-bench.c
 examples_diag_scc_bench_CFLAGS = $(DIAG_EXAMPLE_CFLAGS)
 examples_diag_scc_bench_LDADD = libdtfl.la
 
-check_PROGRAMS += examples/diag/smoke
+check_PROGRAMS += examples/diag/smoke examples/diag/scc-bench
 dist_check_SCRIPTS += tests/dist/test_examples_diag.sh
 TESTS += tests/dist/test_examples_diag.sh
-EXTRA_DIST += examples/diag/smoke.expected
+EXTRA_DIST += examples/diag/smoke.expected examples/diag/scc-bench.expected
 
 # ----------------------------------------------------------------------
 # Shared-dataflow plugins (P14).  The four example dd_server plugins
