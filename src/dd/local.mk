@@ -24,6 +24,7 @@ dd_sources = \
 	src/dd/join.c \
 	src/dd/iterate.c \
 	src/dd/dynamic.c \
+	src/dd/dd_server.c \
 	src/dd/wrap_int.h \
 	src/dd/trace/trace_int.h \
 	src/dd/trace/chunk_int.h \
@@ -50,6 +51,7 @@ dtflinclude_HEADERS += include/dtfl/collection.h
 dtflinclude_HEADERS += include/dtfl/arrange.h
 dtflinclude_HEADERS += include/dtfl/reduce.h
 dtflinclude_HEADERS += include/dtfl/iterate.h
+dtflinclude_HEADERS += include/dtfl/dd_server.h
 EXTRA_DIST += src/dd/exports.sym
 
 dist_man_MANS += man/man3/dtfl_collection_new.3
@@ -59,6 +61,7 @@ dist_man_MANS += man/man3/dtfl_collection_arrange_by_key.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
 dist_man_MANS += man/man3/dtfl_collection_join.3
 dist_man_MANS += man/man3/dtfl_collection_iterate.3
+dist_man_MANS += man/man3/dtfl_dd_server.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
 TESTS += tests/unit/test_diff tests/unit/test_consolidate

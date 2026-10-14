@@ -420,7 +420,7 @@ differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/serve
 differential-dataflow	server/dataflows/random_graph/src/lib.rs	195	examples/server/random_graph.c	P14	todo	built as dlopen(3) plugins
 differential-dataflow	server/dataflows/reachability/src/lib.rs	32	examples/server/reachability.c	P14	todo	built as dlopen(3) plugins
 differential-dataflow	server/src/bin/dd_server.rs	140	tools/dtfl-server/main.c	P14	todo	
-differential-dataflow	server/src/lib.rs	94	include/dtfl/server.h	P14	todo	
+differential-dataflow	server/src/lib.rs	94	include/dtfl/dd_server.h	P14	done	TraceHandler + Environment + static plugin registry; server.h is the DDIR server (P13), so this is dd_server.h
 differential-dataflow	tpchlike/src/bin/arrange.rs	246	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/bin/batch.rs	166	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/bin/just-arrange.rs	223	-	-	excluded	not a workspace member upstream
