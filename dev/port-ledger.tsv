@@ -222,14 +222,14 @@ differential-dataflow	differential-dataflow/examples/scc.rs	96	examples/dd/scc.c
 differential-dataflow	differential-dataflow/examples/spines.rs	179	bench/spines.c	P12	done	needs chunk spines; col mode subsumed (D2)
 differential-dataflow	differential-dataflow/examples/stackoverflow.rs	124	examples/dd/stackoverflow.c	P9	done	fixed temporal edge list in place of the SNAP file; same bfs over time, exact distance histogram
 differential-dataflow	differential-dataflow/src/algorithms/graphs/bfs.rs	44	src/algo/bfs.c	P9	done	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/bijkstra.rs	124	src/algo/bijkstra.c	P9	wip	ported, compiles; no end-to-end test on build
+differential-dataflow	differential-dataflow/src/algorithms/graphs/bijkstra.rs	124	src/algo/bijkstra.c	P9	done	bidirectional Dijkstra over arranged forward/reverse edges in an iterative scope; end-to-end test tests/upstream/dd/bijkstra.c vs a breadth-first oracle (fixed graph and diamond, reachable and unreachable goals)
 differential-dataflow	differential-dataflow/src/algorithms/graphs/mod.rs	6	include/dtfl/algo.h	P9	done	
 differential-dataflow	differential-dataflow/src/algorithms/graphs/propagate.rs	110	src/algo/propagate.c	P9	done	ported; propagate and propagate_at (log-bucketed enter_at); converges standalone and nested in an outer iterate after the ord_neu compaction fix (test_nested_iterate, scc)
 differential-dataflow	differential-dataflow/src/algorithms/graphs/scc.rs	85	src/algo/scc.c	P9	done	ported; strongly_connected and strongly_connected_at; scc tests pass against the Kosaraju oracle after the ord_neu compaction fix
 differential-dataflow	differential-dataflow/src/algorithms/graphs/sequential.rs	88	src/algo/sequential.c	P9	done	ported; sequence operator, no upstream #[test]
 differential-dataflow	differential-dataflow/src/algorithms/identifiers.rs	141	src/algo/identifiers.c	P9	done	
 differential-dataflow	differential-dataflow/src/algorithms/mod.rs	4	include/dtfl/algo.h	P9	done	
-differential-dataflow	differential-dataflow/src/algorithms/prefix_sum.rs	154	src/algo/prefix_sum.c	P9	wip	ported, compiles; no end-to-end test on build
+differential-dataflow	differential-dataflow/src/algorithms/prefix_sum.rs	154	src/algo/prefix_sum.c	P9	done	data-parallel exclusive prefix scan (aggregate + broadcast); end-to-end test tests/upstream/dd/prefix_sum.c vs a sequential scan (single key, two keys, sparse index)
 differential-dataflow	differential-dataflow/src/capture.rs	725	src/dd/capture.c	P10	todo	
 differential-dataflow	differential-dataflow/src/collection.rs	1413	src/dd/collection.c	P8	todo	linear methods land in P5, arrangement-backed ones in P7 and P8; the row is done in P8
 differential-dataflow	differential-dataflow/src/columnar/collection/builder.rs	83	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust

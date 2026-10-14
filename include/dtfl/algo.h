@@ -170,9 +170,10 @@ typedef void (*dtfl_algo_combine_fn)(void *ctx, const void *key, size_t klen,
  * prefix_sum (prefix_sum.rs): data-parallel prefix sum.  `c` is a
  * collection of ((u64 index, u64 key), u64 data) records; the result is
  * the same layout where each element's data is the combination of all
- * data at the same key with index less than or equal to its own.  `zero`
- * is the identity u64 value; `combine` is the associative combiner,
- * applied per key.  The sums are computed independently for each key.
+ * data at the same key with index strictly less than its own (an
+ * exclusive scan, as upstream computes).  `zero` is the identity u64
+ * value; `combine` is the associative combiner, applied per key.  The
+ * sums are computed independently for each key.
  */
 DTFL_API dtfl_collection *dtfl_algo_prefix_sum(dtfl_collection *c,
     uint64_t zero, dtfl_algo_combine_fn combine, dtfl_ctx ctx);

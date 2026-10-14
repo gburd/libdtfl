@@ -214,6 +214,20 @@ requests(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
 /* map ((pos, log, key), data) -> ((pos, log, key), zero): a zero range. */
 typedef struct zero_ctx { uint64_t zero; } zero_ctx;
 
+/*
+ * A heap copy of a zero_ctx, freed with __dtfl_free.  The map callbacks
+ * run during worker stepping, after prefix_broadcast has returned, so
+ * their context must outlive the stack frame that creates them.
+ */
+static zero_ctx *
+zero_ctx_new(uint64_t zero)
+{
+	zero_ctx *z = __dtfl_alloc(sizeof *z);
+
+	z->zero = zero;
+	return z;
+}
+
 static void
 to_zero_range(void *vctx, const void *rec, size_t len, dtfl_collection_emit *out)
 {
@@ -363,7 +377,6 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 	const dtfl_type *rt = range_type();
 	const dtfl_type *initrec = dtfl_type_pair(
 	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), dtfl_type_u64());
-	zero_ctx zc = { zero };
 	dtfl_diff *i64 = dtfl_diff_i64();
 	dtfl_collection *queries;
 	dtfl_collection *req_raw;
@@ -390,12 +403,12 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 
 	/* zero_ranges = -(full.map(to zero)) concat reqs.map(to zero). */
 	neg_full = dtfl_collection_map(full, rt, to_zero_range,
-	    DTFL_CTX(&zc, NULL));
+	    DTFL_CTX(zero_ctx_new(zero), __dtfl_free));
 	{
 		dtfl_collection *neg = dtfl_collection_negate(neg_full);
 
 		req_zero = dtfl_collection_map(reqs, rt, req_to_zero_range,
-		    DTFL_CTX(&zc, NULL));
+		    DTFL_CTX(zero_ctx_new(zero), __dtfl_free));
 		zero_ranges = dtfl_collection_concat(neg, req_zero);
 		dtfl_collection_free(neg);
 	}
@@ -403,7 +416,7 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 
 	/* init_states = queries.map(|(_, key)| ((0, key), zero)).distinct(). */
 	init_states = dtfl_collection_map(queries, initrec, query_init,
-	    DTFL_CTX(&zc, NULL));
+	    DTFL_CTX(zero_ctx_new(zero), __dtfl_free));
 	init_distinct = dtfl_collection_distinct(init_states, i64);
 
 	bc.used = used;

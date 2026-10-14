@@ -42,3 +42,15 @@ TESTS += tests/pbt/pbt_bfs
 tests_pbt_pbt_bfs_SOURCES = tests/pbt/pbt_bfs.c
 tests_pbt_pbt_bfs_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_bfs_LDADD = $(INTERNAL_PBT_LIBS)
+
+check_PROGRAMS += tests/upstream/dd/bijkstra
+TESTS += tests/upstream/dd/bijkstra
+tests_upstream_dd_bijkstra_SOURCES = tests/upstream/dd/bijkstra.c
+tests_upstream_dd_bijkstra_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_bijkstra_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/dd/prefix_sum
+TESTS += tests/upstream/dd/prefix_sum
+tests_upstream_dd_prefix_sum_SOURCES = tests/upstream/dd/prefix_sum.c
+tests_upstream_dd_prefix_sum_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_prefix_sum_LDADD = $(INTERNAL_LIBS)
