@@ -286,7 +286,7 @@ differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	s
 differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	done	
 differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/wrap_int.h	P7	done	
 differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	done	
-differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	todo	calls reduce_abelian (import.rs:63,142)
+differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	todo	calls reduce_abelian over an imported trace (import.rs:63,142).  The cross-dataflow import path works (verified by a minimal repro: concurrent, with retractions, and the completed-dataflow ordering all reach probe-done); the earlier assertion failure was in the departed worker's unfinished test, not the library.  Needs the four import__* tests written faithfully
 differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	done	
 differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	done	join_scale wired on count; keyed on a constant u8 since a unit (0-byte) join key does not match in the current join path
 differential-dataflow	differential-dataflow/tests/reduce_reference.rs	409	tests/upstream/dd/reduce_reference.c	P8	todo	
@@ -318,8 +318,8 @@ differential-dataflow	experiments/src/bin/graphs-interactive-neu-zwei.rs	330	-	-
 differential-dataflow	experiments/src/bin/graphs-interactive-neu.rs	395	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-interactive.rs	299	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-single.rs	145	-	-	deferred	not needed for the performance table
-differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import); blocked on the same cross-dataflow trace-import frontier bug that tests/upstream/dd/import.c exposes (probe stays below the next epoch after import).  bench/experiments/arrange.c is the working parity benchmark
-differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import); blocked on the same cross-dataflow trace-import frontier bug that tests/upstream/dd/import.c exposes.  bench/experiments/arrange.c is the working parity benchmark
+differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import).  The cross-dataflow import path works (verified by a minimal repro and the completed-dataflow ordering); needs the reach/bfs iterative dataflows written over the imported trace
+differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import).  The cross-dataflow import path works; needs the reach/bfs iterative dataflows written over the imported trace
 differential-dataflow	experiments/src/bin/graspan-interactive.rs	155	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan1.rs	97	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan2.rs	276	-	-	deferred	not needed for the performance table

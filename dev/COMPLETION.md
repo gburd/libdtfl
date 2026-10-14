@@ -112,12 +112,18 @@ Not started or partial -- MUST be finished before the project is done
         and stable DDIR programs SKIP on it.  Minimal repro in the
         p13-server report.  Distinct from the two bugs above; a backend
         convergence fix before 1.0.
-[ ] trace new_listener frontier-lag: a new trace listener seeds its
-        frontier from the last data batch's upper (src/dd/agent.c
-        new_listener), so peeking a derived trace that stopped changing
-        before the current epoch can hang.  P14 peek works around it
-        in-component (drains and stops when the frontier stalls); a
-        proper fix belongs in the P6/P7 trace layer.
+[x] trace new_listener frontier-lag: investigated and found NOT a bug.
+        new_listener seeds the listener frontier from the last batch's
+        upper, matching upstream agent.rs exactly; the writer then pushes
+        frontier advances to the registered listener as the source
+        advances.  A minimal cross-dataflow import repro (arrange ->
+        import -> reduce_abelian -> as_collection -> probe) reaches
+        probe-done in all orderings: concurrent, with cancelling
+        retractions, and the completed-dataflow ordering (dataflow 1
+        drained before the importer is built).  import.c, graphs.c and
+        graphs-static.c are therefore unblocked.  The P14 peek drain is
+        a safe belt for its own derived-trace peek, not a workaround for
+        a defect.
 [ ] reduce interesting-time assertion: rd_retire's output-tag match
         asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
         DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
