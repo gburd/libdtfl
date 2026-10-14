@@ -118,6 +118,20 @@ DTFL_API dtfl_arranged *dtfl_trace_import(dtfl_trace *t, dtfl_scope *scope,
 DTFL_API void dtfl_trace_free(dtfl_trace *t);
 
 /*
+ * Enumerates the full content of a trace (CursorDebug::to_vec): the
+ * callback fires once per (key, value, time, diff) across every batch
+ * currently in the trace, in key then value order.  `key` and `val` are
+ * the record bytes (klen, vlen); `time` is the time words; `diff` is the
+ * diff-class value.  This is a read-only snapshot for inspection or
+ * validation; it does not advance or compact the trace.  The trace
+ * handle remains the caller's.
+ */
+typedef void (*dtfl_trace_each_fn)(void *ctx, const void *key, size_t klen,
+    const void *val, size_t vlen, const uint64_t *time, const void *diff);
+DTFL_API void dtfl_trace_to_vec(dtfl_trace *t, dtfl_trace_each_fn fn,
+    dtfl_ctx ctx);
+
+/*
  * enter / leave: carry an arrangement across a scope boundary.  enter brings
  * it into `child`, a scope that directly refines the arrangement's scope,
  * lifting every time with to_inner; leave returns to the parent.

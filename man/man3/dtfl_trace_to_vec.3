@@ -1,0 +1,99 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 14, 2026
+.Dt DTFL_TRACE_TO_VEC 3
+.Os
+.Sh NAME
+.Nm dtfl_trace_to_vec
+.Nd enumerate the full content of a trace
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.Ft typedef void
+.Fo (*dtfl_trace_each_fn)
+.Fa "void *ctx" "const void *key" "size_t klen" "const void *val"
+.Fa "size_t vlen" "const uint64_t *time" "const void *diff"
+.Fc
+.Ft void
+.Fn dtfl_trace_to_vec "dtfl_trace *t" "dtfl_trace_each_fn fn" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+.Fn dtfl_trace_to_vec
+walks the entire content of a trace and calls
+.Fa fn
+once for every
+.Pq key , value , time , diff
+tuple across all of the trace's batches, in key then value order.
+This is the C form of the
+.Fn CursorDebug::to_vec
+method used to dump or validate an arrangement.
+.Pp
+For each call,
+.Fa key
+and
+.Fa val
+point to the record bytes with lengths
+.Fa klen
+and
+.Fa vlen ,
+.Fa time
+is the time words of the update, and
+.Fa diff
+points to the diff-class value.
+The diff bytes are the diff class's native representation; for the
+default
+.Vt int64_t
+diff, read it with a plain
+.Fn memcpy
+to an
+.Vt int64_t ,
+not with
+.Xr dtfl_get_i64 3
+(which decodes the big-endian record encoding).
+.Pp
+The walk is a read-only snapshot: it does not advance, compact, or
+otherwise change the trace, and the trace handle remains the caller's.
+Because a trace holds the batches at or after its logical compaction
+frontier, a key may appear with several
+.Pq time , diff
+entries whose diffs sum to the current multiplicity.
+.Pp
+If
+.Fa ctx
+carries a free function
+.Pq Fn DTFL_CTX ,
+it is run once after the walk completes.
+.Sh RETURN VALUES
+This function does not return a value.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void
+each(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, const uint64_t *time, const void *diff)
+{
+	int64_t d;
+	memcpy(&d, diff, sizeof d);
+	printf("%llu -> %llu @ %llu : %lld\\n",
+	    (unsigned long long)dtfl_get_u64(key),
+	    (unsigned long long)dtfl_get_u64(val),
+	    (unsigned long long)time[0], (long long)d);
+}
+
+dtfl_trace *t = dtfl_arranged_trace(arr);
+dtfl_trace_to_vec(t, each, DTFL_NOCTX);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_arranged_trace 3 ,
+.Xr dtfl_trace_import 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of differential dataflow's
+.Fn CursorDebug::to_vec
+over a
+.Vt TraceReader
+cursor
+.Pq Pa trace/cursor.rs .
+.Sh THREAD SAFETY
+The trace handle and the walk belong to the worker thread that holds the
+trace.
+A trace is worker-local; it is not shared across threads.

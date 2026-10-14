@@ -60,6 +60,7 @@ dist_man_MANS += man/man3/dtfl_collection_new.3
 dist_man_MANS += man/man3/dtfl_input_session_new.3
 dist_man_MANS += man/man3/dtfl_collection_arrange.3
 dist_man_MANS += man/man3/dtfl_collection_arrange_by_key.3
+dist_man_MANS += man/man3/dtfl_trace_to_vec.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
 dist_man_MANS += man/man3/dtfl_collection_join.3
 dist_man_MANS += man/man3/dtfl_collection_iterate.3
