@@ -248,3 +248,19 @@ TESTS += tests/unit/test_trace_compaction
 tests_unit_test_trace_compaction_SOURCES = tests/unit/test_trace_compaction.c
 tests_unit_test_trace_compaction_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_trace_compaction_LDADD = $(INTERNAL_LIBS)
+
+# The P14 plugin server: the degr_dist and reachability plugins run over a
+# fixed graph and match the hand count, and a shared arrangement is shown to
+# be genuinely shared (two importers see one trace).  The example plugin
+# sources compile into the test (the static-registration model: a plugin is
+# a struct of callbacks, dd_server.h), with examples/server on the include
+# path for plugins.h.
+check_PROGRAMS += tests/unit/test_dd_server
+TESTS += tests/unit/test_dd_server
+tests_unit_test_dd_server_SOURCES = tests/unit/test_dd_server.c \
+	examples/server/plugins.h \
+	examples/server/degr_dist.c \
+	examples/server/reachability.c
+tests_unit_test_dd_server_CFLAGS = $(TEST_CFLAGS) \
+	-I$(top_srcdir)/examples/server
+tests_unit_test_dd_server_LDADD = $(INTERNAL_LIBS)
