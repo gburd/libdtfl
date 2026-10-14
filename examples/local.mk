@@ -128,6 +128,7 @@ examples_timely_logging_send_LDADD = $(EXAMPLE_LDADD)
 noinst_PROGRAMS += \
 	examples/dd/degrees \
 	examples/dd/bfs \
+	examples/dd/monoid-bfs \
 	examples/dd/projekt \
 	examples/dd/compact \
 	examples/dd/stackoverflow \
@@ -148,6 +149,10 @@ examples_dd_degrees_LDADD = $(EXAMPLE_LDADD)
 examples_dd_bfs_SOURCES = examples/dd/bfs.c
 examples_dd_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_bfs_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_monoid_bfs_SOURCES = examples/dd/monoid-bfs.c
+examples_dd_monoid_bfs_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_monoid_bfs_LDADD = $(EXAMPLE_LDADD)
 
 examples_dd_projekt_SOURCES = examples/dd/projekt.c
 examples_dd_projekt_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -258,6 +263,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/logging-send.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
+	examples/dd/monoid-bfs.expected \
 	examples/dd/projekt.expected \
 	examples/dd/compact.expected \
 	examples/dd/stackoverflow.expected \

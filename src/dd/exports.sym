@@ -8,6 +8,7 @@ dtfl_diff_u32
 dtfl_diff_u16
 dtfl_diff_u8
 dtfl_diff_present
+dtfl_diff_new
 dtfl_diff_retain
 dtfl_diff_free
 dtfl_diff_width

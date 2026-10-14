@@ -41,7 +41,9 @@ __dtfl_diff_wrap(const __dtfl_diff_class *cls)
 	dtfl_diff *d = __dtfl_alloc(sizeof *d);
 
 	__dtfl_arc_init(&d->ref);
-	d->cls = cls;
+	/* The wrapper owns one reference to the class (a no-op retain for a
+	 * static built-in); dtfl_diff_free releases it. */
+	d->cls = __dtfl_diff_class_retain(cls);
 	return d;
 }
 
@@ -60,6 +62,110 @@ dtfl_diff *dtfl_diff_u32(void) { return diff_builtin(DTFL_DIFF_U32); }
 dtfl_diff *dtfl_diff_u16(void) { return diff_builtin(DTFL_DIFF_U16); }
 dtfl_diff *dtfl_diff_u8(void) { return diff_builtin(DTFL_DIFF_U8); }
 dtfl_diff *dtfl_diff_present(void) { return diff_builtin(DTFL_DIFF_PRESENT); }
+
+/*
+ * A user diff class forwards the internal callbacks (which take the
+ * __dtfl_diff_class) to the user ops (which take the ops' ctx).  The
+ * class's ctx holds the copied dtfl_diff_ops; thunk_* read the ops back
+ * out of it and call the user's function with ops->ctx.
+ */
+static void
+thunk_plus_equals(const __dtfl_diff_class *c, void *acc, const void *x)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	o->plus_equals(o->ctx, acc, x);
+}
+
+static bool
+thunk_is_zero(const __dtfl_diff_class *c, const void *x)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	return o->is_zero(o->ctx, x);
+}
+
+static int
+thunk_cmp(const __dtfl_diff_class *c, const void *a, const void *b)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	return o->cmp(o->ctx, a, b);
+}
+
+static void
+thunk_multiply(const __dtfl_diff_class *c, void *acc, const void *x)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	o->multiply(o->ctx, acc, x);
+}
+
+static void
+thunk_negate(const __dtfl_diff_class *c, void *x)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	o->negate(o->ctx, x);
+}
+
+static void
+thunk_zero(const __dtfl_diff_class *c, void *out)
+{
+	const dtfl_diff_ops *o = c->ctx;
+
+	o->zero(o->ctx, out);
+}
+
+/* Frees the class's ctx: the copied ops and its own user ctx. */
+static void
+user_ops_free(void *ctx)
+{
+	dtfl_diff_ops *o = ctx;
+
+	if (o->ctx_free != NULL)
+		o->ctx_free(o->ctx);
+	__dtfl_free(o);
+}
+
+dtfl_diff *
+dtfl_diff_new(const dtfl_diff_ops *ops)
+{
+	__dtfl_diff_class def = { 0 };
+	dtfl_diff_ops *copy;
+	const __dtfl_diff_class *cls;
+	dtfl_diff *d;
+
+	if (ops->plus_equals == NULL || ops->is_zero == NULL ||
+	    ops->cmp == NULL)
+		__dtfl_panic("dtfl_diff_new: %s lacks plus_equals, is_zero or "
+		    "cmp", ops->name != NULL ? ops->name : "?");
+	if (ops->negate != NULL && ops->zero == NULL)
+		__dtfl_panic("dtfl_diff_new: %s has negate but no zero",
+		    ops->name != NULL ? ops->name : "?");
+	copy = __dtfl_memdup(ops, sizeof *ops);
+	def.name = ops->name;
+	def.width = ops->width;
+	def.plus_equals = thunk_plus_equals;
+	def.is_zero = thunk_is_zero;
+	def.cmp = thunk_cmp;
+	def.multiply = ops->multiply != NULL ? thunk_multiply : NULL;
+	def.negate = ops->negate != NULL ? thunk_negate : NULL;
+	def.zero = ops->zero != NULL ? thunk_zero : NULL;
+	def.one = NULL;		/* a user class has no From<i8> one */
+	def.type = ops->type;
+	def.ctx = copy;
+	def.ctx_free = user_ops_free;
+	/*
+	 * class_new returns the class with one reference; the wrapper takes
+	 * its own with retain, so release the creation reference and leave
+	 * the wrapper the sole owner.
+	 */
+	cls = __dtfl_diff_class_new(&def);
+	d = __dtfl_diff_wrap(cls);
+	__dtfl_diff_class_free(cls);
+	return d;
+}
 
 dtfl_diff *
 dtfl_diff_retain(const dtfl_diff *d)
@@ -647,7 +753,7 @@ dtfl_collection_explode(dtfl_collection *c, const dtfl_type *out_type,
 	ec->user_free = ctx.free;
 	ec->in = c->diff->cls;
 	ec->factor = factor_diff->cls;
-	ec->out = out_cls;
+	ec->out = __dtfl_diff_class_retain(out_cls);
 	ec->depth = c->depth;
 	ec->in_dw = c->diff->cls->width;
 	ec->out_dw = out_cls->width;

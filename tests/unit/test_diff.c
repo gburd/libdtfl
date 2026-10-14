@@ -232,6 +232,18 @@ max_negate(const __dtfl_diff_class *c, void *x)
 	(void)c; (void)x;
 }
 
+/* A user min-plus Multiply<Self>: acc.value += x.value (saturating). */
+static void
+min_plus_multiply(const __dtfl_diff_class *c, void *acc, const void *x)
+{
+	uint32_t a, b;
+
+	(void)c;
+	memcpy(&a, acc, 4);
+	memcpy(&b, x, 4);
+	memcpy(acc, &(uint32_t){ a > UINT32_MAX - b ? UINT32_MAX : a + b }, 4);
+}
+
 static void
 count_free(void *ctx)
 {
@@ -265,6 +277,24 @@ DTFL_TEST(diff_user_class)
 	assert_null(__dtfl_diff_multiply_class(c, c));
 	__dtfl_diff_class_free(c);
 	assert_int(freed, ==, 1);
+
+	/* A user class with a multiply callback has Multiply<Self>. */
+	freed = 0;
+	def.multiply = min_plus_multiply;
+	c = __dtfl_diff_class_new(&def);
+	assert_ptr_equal(__dtfl_diff_multiply_class(c, c), c);
+	{
+		uint32_t p = 4, q = 5, o;
+		const __dtfl_diff_class *oc;
+
+		assert_int(__dtfl_diff_multiply(c, c, &p, &q, &o, &oc), ==,
+		    DTFL_OK);
+		assert_uint32(o, ==, 9);	/* 4 + 5, min-plus product */
+		assert_ptr_equal(oc, c);
+	}
+	__dtfl_diff_class_free(c);
+	assert_int(freed, ==, 1);
+	def.multiply = NULL;
 
 	def.negate = max_negate;
 	DTFL_EXPECT_PANIC(__dtfl_diff_class_new(&def));
