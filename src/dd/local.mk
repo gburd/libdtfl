@@ -21,6 +21,7 @@ dd_sources = \
 	src/dd/threshold.c \
 	src/dd/common.c \
 	src/dd/common_int.h \
+	src/dd/capture.c \
 	src/dd/join.c \
 	src/dd/iterate.c \
 	src/dd/dynamic.c \
@@ -51,6 +52,7 @@ dtflinclude_HEADERS += include/dtfl/collection.h
 dtflinclude_HEADERS += include/dtfl/arrange.h
 dtflinclude_HEADERS += include/dtfl/reduce.h
 dtflinclude_HEADERS += include/dtfl/iterate.h
+dtflinclude_HEADERS += include/dtfl/dd_capture.h
 dtflinclude_HEADERS += include/dtfl/dd_server.h
 EXTRA_DIST += src/dd/exports.sym
 
@@ -61,6 +63,7 @@ dist_man_MANS += man/man3/dtfl_collection_arrange_by_key.3
 dist_man_MANS += man/man3/dtfl_collection_reduce.3
 dist_man_MANS += man/man3/dtfl_collection_join.3
 dist_man_MANS += man/man3/dtfl_collection_iterate.3
+dist_man_MANS += man/man3/dtfl_collection_capture.3
 dist_man_MANS += man/man3/dtfl_dd_server.3
 
 check_PROGRAMS += tests/unit/test_diff tests/unit/test_consolidate
@@ -77,6 +80,12 @@ TESTS += tests/unit/test_collection
 tests_unit_test_collection_SOURCES = tests/unit/test_collection.c
 tests_unit_test_collection_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_collection_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/unit/test_dd_capture
+TESTS += tests/unit/test_dd_capture
+tests_unit_test_dd_capture_SOURCES = tests/unit/test_dd_capture.c
+tests_unit_test_dd_capture_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_dd_capture_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_update_align
 TESTS += tests/unit/test_update_align

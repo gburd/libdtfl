@@ -106,3 +106,15 @@ dtfl_dd_server_tick
 dtfl_dd_server_drop
 dtfl_dd_server_peek
 dtfl_dd_server_list
+dtfl_cdc_log_new
+dtfl_cdc_log_free
+dtfl_cdc_log_len
+dtfl_cdc_log_kind
+dtfl_cdc_log_push_update
+dtfl_cdc_log_push_progress
+dtfl_cdc_log_append
+dtfl_collection_capture
+dtfl_cdc_iter_new
+dtfl_cdc_iter_free
+dtfl_cdc_iter_push
+dtfl_cdc_iter_next
