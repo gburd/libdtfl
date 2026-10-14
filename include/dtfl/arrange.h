@@ -132,6 +132,20 @@ DTFL_API void dtfl_trace_to_vec(dtfl_trace *t, dtfl_trace_each_fn fn,
     dtfl_ctx ctx);
 
 /*
+ * Like dtfl_trace_to_vec, but enumerates only the batches a clean cut at
+ * `upper` selects (cursor_through): the trace content as of the frontier
+ * `upper` (an antichain of `nupper` time words, time words wide).  This
+ * reports the arrangement at a chosen query time, matching the
+ * TraceReader::cursor_through used to answer a point-in-time query.
+ * Returns true on success; false if `upper` has no clean cut in the
+ * trace (the requested frontier does not align with a batch boundary),
+ * in which case fn is not called.  A NULL or empty `upper` enumerates
+ * everything, like dtfl_trace_to_vec.
+ */
+DTFL_API bool dtfl_trace_to_vec_through(dtfl_trace *t, const uint64_t *upper,
+    size_t nupper, dtfl_trace_each_fn fn, dtfl_ctx ctx);
+
+/*
  * enter / leave: carry an arrangement across a scope boundary.  enter brings
  * it into `child`, a scope that directly refines the arrangement's scope,
  * lifting every time with to_inner; leave returns to the parent.

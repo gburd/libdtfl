@@ -17,6 +17,11 @@ Timely and differential dataflow library
 .Fc
 .Ft void
 .Fn dtfl_trace_to_vec "dtfl_trace *t" "dtfl_trace_each_fn fn" "dtfl_ctx ctx"
+.Ft bool
+.Fo dtfl_trace_to_vec_through
+.Fa "dtfl_trace *t" "const uint64_t *upper" "size_t nupper"
+.Fa "dtfl_trace_each_fn fn" "dtfl_ctx ctx"
+.Fc
 .Sh DESCRIPTION
 .Fn dtfl_trace_to_vec
 walks the entire content of a trace and calls
@@ -63,8 +68,41 @@ If
 carries a free function
 .Pq Fn DTFL_CTX ,
 it is run once after the walk completes.
+.Pp
+.Fn dtfl_trace_to_vec_through
+is the same walk restricted to the batches a clean cut at the frontier
+.Fa upper
+selects, so it reports the trace content as of a chosen query time
+(TraceReader::cursor_through).
+.Fa upper
+is an antichain of
+.Fa nupper
+time elements, each the time-class's word width.
+It returns
+.Dv true
+on success, or
+.Dv false
+if
+.Fa upper
+has no clean cut in the trace (the requested frontier does not align
+with a batch boundary), in which case
+.Fa fn
+is not called.
+A
+.Dv NULL
+or empty
+.Fa upper
+enumerates everything, like
+.Fn dtfl_trace_to_vec .
 .Sh RETURN VALUES
-This function does not return a value.
+.Fn dtfl_trace_to_vec
+does not return a value.
+.Fn dtfl_trace_to_vec_through
+returns
+.Dv true
+on success or
+.Dv false
+if the requested frontier has no clean cut.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 static void

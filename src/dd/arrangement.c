@@ -858,31 +858,64 @@ to_vec_time(const uint64_t *time, const void *diff, void *vctx)
 	c->fn(c->user, c->key, c->klen, c->val, c->vlen, time, diff);
 }
 
+/* Walk a built cursor list, firing fn for each (key, val, time, diff). */
+static void
+to_vec_walk(__dtfl_cursor_list *cl, dtfl_trace_each_fn fn, void *user)
+{
+	to_vec_ctx c;
+
+	c.fn = fn;
+	c.user = user;
+	while (__dtfl_cursor_list_key_valid(cl)) {
+		c.key = __dtfl_cursor_list_key(cl, &c.klen);
+		while (__dtfl_cursor_list_val_valid(cl)) {
+			c.val = __dtfl_cursor_list_val(cl, &c.vlen);
+			__dtfl_cursor_list_map_times(cl, to_vec_time, &c);
+			__dtfl_cursor_list_step_val(cl);
+		}
+		__dtfl_cursor_list_step_key(cl);
+	}
+}
+
 void
 dtfl_trace_to_vec(dtfl_trace *t, dtfl_trace_each_fn fn, dtfl_ctx ctx)
 {
 	__dtfl_cursor_list cl;
-	to_vec_ctx c;
 
 	if (t == NULL)
 		return;
 	/* The cursor list owns references to the trace's batches. */
 	__dtfl_trace_agent_cursor(&t->agent, &cl);
-
-	c.fn = fn;
-	c.user = ctx.ptr;
-	while (__dtfl_cursor_list_key_valid(&cl)) {
-		c.key = __dtfl_cursor_list_key(&cl, &c.klen);
-		while (__dtfl_cursor_list_val_valid(&cl)) {
-			c.val = __dtfl_cursor_list_val(&cl, &c.vlen);
-			__dtfl_cursor_list_map_times(&cl, to_vec_time, &c);
-			__dtfl_cursor_list_step_val(&cl);
-		}
-		__dtfl_cursor_list_step_key(&cl);
-	}
+	to_vec_walk(&cl, fn, ctx.ptr);
 	__dtfl_cursor_list_free(&cl);
 	if (ctx.free != NULL)
 		ctx.free(ctx.ptr);
+}
+
+bool
+dtfl_trace_to_vec_through(dtfl_trace *t, const uint64_t *upper, size_t nupper,
+    dtfl_trace_each_fn fn, dtfl_ctx ctx)
+{
+	__dtfl_cursor_list cl;
+	__dtfl_antichain cut;
+	bool ok;
+	size_t i;
+
+	if (t == NULL)
+		return false;
+	__dtfl_antichain_init(&cut, t->agent.tc);
+	for (i = 0; i < nupper; i++)
+		__dtfl_antichain_insert(&cut,
+		    upper + (size_t)t->agent.tc->depth * i);
+	ok = __dtfl_trace_agent_cursor_through(&t->agent, &cut, &cl);
+	__dtfl_antichain_free(&cut);
+	if (ok) {
+		to_vec_walk(&cl, fn, ctx.ptr);
+		__dtfl_cursor_list_free(&cl);
+	}
+	if (ctx.free != NULL)
+		ctx.free(ctx.ptr);
+	return ok;
 }
 
 /* The import source operator: drains its replay queue, emitting batches. */
