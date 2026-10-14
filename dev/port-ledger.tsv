@@ -169,9 +169,9 @@ timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	do
 timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	done	re-export umbrella: Barrier (dtfl_barrier_*) and Sequencer (dtfl_sequencer_*) exported
 timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	done	
 timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	done	Worker and Wrapper ported (worker.c engine + execute.c public dtfl_worker facade).  Config.set/get is a typed key-value registry with no in-tree consumer at the pin and is a dtfl_config/base concern, not ported in worker.c
-timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	todo	
-timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	todo	
-timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	todo	
+timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	done	barrier_sync at 1, 2 and 3 workers
+timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	done	
+timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	done	operator_scaling at 1, 10 and 100 operators; 1000 and above stay wip (too slow for CI)
 timely-dataflow	timely/tests/skeptic.rs	1	-	-	excluded	empty doctest runner; the doc snippet gate replaces it
 differential-dataflow	advent_of_code_2017/src/bin/day_01.rs	47	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/bin/day_02.rs	81	-	-	excluded	not a workspace member upstream
