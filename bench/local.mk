@@ -12,6 +12,13 @@ BENCH_LDADD = libdtfl_internal.la
 
 noinst_PROGRAMS += bench/chunk_bench bench/spines bench/trace_spill
 
+# The experiments benchmarks drive whole dataflows through the public API
+# (PLAN section 9 parity table), so they link the installed library.
+noinst_PROGRAMS += bench/experiments/arrange
+bench_experiments_arrange_SOURCES = bench/experiments/arrange.c
+bench_experiments_arrange_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+bench_experiments_arrange_LDADD = libdtfl.la
+
 bench_chunk_bench_SOURCES = bench/chunk_bench.c
 bench_chunk_bench_CFLAGS = $(BENCH_CFLAGS)
 bench_chunk_bench_LDADD = $(BENCH_LDADD)

@@ -309,7 +309,7 @@ differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.
 differential-dataflow	dogsdogsdogs/src/operators/validate.rs	39	src/dogs/validate.c	P9	done	
 differential-dataflow	dogsdogsdogs/tests/lookup_map_regression.rs	108	tests/upstream/dogs/lookup_map_regression.c	P9	done	
 differential-dataflow	doop/src/main.rs	1242	-	-	excluded	not a workspace member upstream
-differential-dataflow	experiments/src/bin/arrange.rs	227	bench/experiments/arrange.c	P15	todo	performance parity table (PLAN section 9)
+differential-dataflow	experiments/src/bin/arrange.rs	227	bench/experiments/arrange.c	P15	done	the arrange throughput experiment: loads recs records at random keys (LOADING rate), then rate insert/remove pairs per round for a bounded window (THROUGHPUT); comp selects nothing/arrange/count/distinct.  Public API, deterministic xorshift RNG, ASan-clean; runs on a dedicated host (not CI).  The open-loop mode and the exchange arm are subsumed
 differential-dataflow	experiments/src/bin/attend.rs	60	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/deals-interactive.rs	291	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/deals.rs	138	-	-	deferred	not needed for the performance table
@@ -318,8 +318,8 @@ differential-dataflow	experiments/src/bin/graphs-interactive-neu-zwei.rs	330	-	-
 differential-dataflow	experiments/src/bin/graphs-interactive-neu.rs	395	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-interactive.rs	299	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-single.rs	145	-	-	deferred	not needed for the performance table
-differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	todo	performance parity table (PLAN section 9)
-differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	todo	performance parity table (PLAN section 9)
+differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import); blocked on the same cross-dataflow trace-import frontier bug that tests/upstream/dd/import.c exposes (probe stays below the next epoch after import).  bench/experiments/arrange.c is the working parity benchmark
+differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	todo	multi-phase workload sharing a arrange_by_key().trace across dataflows (load graph, then reach, then bfs via trace.import); blocked on the same cross-dataflow trace-import frontier bug that tests/upstream/dd/import.c exposes.  bench/experiments/arrange.c is the working parity benchmark
 differential-dataflow	experiments/src/bin/graspan-interactive.rs	155	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan1.rs	97	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan2.rs	276	-	-	deferred	not needed for the performance table
