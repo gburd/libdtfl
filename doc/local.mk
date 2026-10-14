@@ -29,4 +29,12 @@ libdtfl_TEXINFOS = \
 	doc/timely/chapter_3.texi \
 	doc/timely/chapter_4.texi \
 	doc/timely/chapter_5.texi \
-	doc/differential/manual.texi
+	doc/differential/manual.texi \
+	doc/differential/introduction.texi \
+	doc/differential/chapter_0.texi \
+	doc/differential/chapter_a.texi \
+	doc/differential/chapter_2.texi \
+	doc/differential/chapter_3.texi \
+	doc/differential/chapter_4.texi \
+	doc/differential/chapter_5.texi \
+	doc/differential/chapter_6.texi

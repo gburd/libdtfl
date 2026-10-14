@@ -1,0 +1,45 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_4.texi: ports differential-dataflow
+@c mdbook/src/chapter_4/* (Graph Computation, Interactive Queries,
+@c Real-time Streaming Input).
+
+@node Differential Examples
+@section Example applications
+
+The operators of the previous sections combine into real applications.
+libdtfl ships the differential graph and sequence algorithms built from
+them, in @code{dtfl/algo.h}.
+
+@subsection Graph computation
+
+A graph is a collection of edge records; a graph algorithm is a
+differential program over it, so the result is maintained as edges are
+added and removed.  @code{dtfl_algo_bfs} labels each node with its
+breadth-first distance from a set of roots: it seeds the roots at
+distance zero and iterates, joining each labelled node against outgoing
+edges to reach the destination at distance plus one, concatenating the
+roots back in, and reducing to keep the minimum distance per node.
+@code{dtfl_algo_scc} keeps only the edges inside a strongly connected
+component; @code{dtfl_algo_propagate} assigns each node the minimum
+label reachable along directed edges.  Each takes collections of
+@code{u64} node records and @code{(u64, u64)} edge records with the
+signed default diff class, and returns a new collection
+(@pxref{API Reference}).
+
+@subsection Interactive queries
+
+Because a differential computation is maintained, not recomputed, it
+serves interactive queries cheaply: build and maintain a large changing
+collection once, and let many later queries read it.  The mechanism is a
+shared arrangement whose trace outlives the dataflow that built it
+(@pxref{Arrangements}); a query imports the trace into its own dataflow
+and reads it without re-indexing the data.
+
+@subsection Real-time streaming input
+
+Real-time input is the same input session driven by events as they
+arrive: insert and remove records as the world changes, advance the
+epoch to mark a batch complete, flush, and step.  The frontier a probe
+reports tells the program which output is final as of which time, so a
+consumer can act on settled results while later times are still in
+flight.
