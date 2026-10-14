@@ -69,6 +69,7 @@ run unionfind unionfind.expected cat
 run pagerank pagerank.expected cat
 run hashjoin hashjoin.expected cat
 run capture capture.expected sort
+run logging-send logging-send.expected sort
 
 # Multi-worker runs: exercise real cross-thread execution, output varies,
 # so only require a clean exit (the point is no crash, no hang, no leak).
