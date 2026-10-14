@@ -241,3 +241,20 @@ check_PROGRAMS += examples/diag/smoke
 dist_check_SCRIPTS += tests/dist/test_examples_diag.sh
 TESTS += tests/dist/test_examples_diag.sh
 EXTRA_DIST += examples/diag/smoke.expected
+
+# ----------------------------------------------------------------------
+# Shared-dataflow plugins (P14).  The four example dd_server plugins
+# (degr_dist, reachability, neighborhood, random_graph).  Divergence from
+# upstream: a plugin is a statically registered dtfl_dataflow_plugin
+# (name + build callback), not a dlopened shared object, since library
+# code may not dlopen (AGENTS.md section 5, dtfl/dd_server.h).  So the
+# plugins are not standalone programs; their sources compile into the
+# dtfl-server tool (tools/dtfl-server/local.mk) and the P14 unit test
+# (src/dd/local.mk).  Listed here so they ship in a dist tarball even if
+# the tool is removed, matching the examples/ layout (AGENTS.md 11).
+EXTRA_DIST += \
+	examples/server/plugins.h \
+	examples/server/degr_dist.c \
+	examples/server/reachability.c \
+	examples/server/neighborhood.c \
+	examples/server/random_graph.c
