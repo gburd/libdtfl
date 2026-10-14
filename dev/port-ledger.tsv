@@ -30,39 +30,39 @@ timely-dataflow	communication/src/networking.rs	172	src/comm/networking.c	P2	don
 timely-dataflow	container/src/lib.rs	294	src/base/batch.c	P1	done	the record batch is the only container (D2)
 timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	done	
 timely-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	todo	
+timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	done	manual skeleton and menu
+timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	done	
 timely-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 timely-dataflow	timely/examples/barrier.rs	30	examples/timely/barrier.c	P4	done	
 timely-dataflow	timely/examples/bfs.rs	139	examples/timely/bfs.c	P4	done	fixed small graph for a checkable reachable set; single worker
@@ -99,7 +99,7 @@ timely-dataflow	timely/src/dataflow/channels/pushers/exchange.rs	149	src/timely/
 timely-dataflow	timely/src/dataflow/channels/pushers/mod.rs	13	src/timely/timely_int.h	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pushers/progress.rs	71	src/timely/push_progress.c	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pushers/tee.rs	151	src/timely/push_tee.c	P4	done	
-timely-dataflow	timely/src/dataflow/mod.rs	27	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/mod.rs	27	include/dtfl/timely.h	P4	done	re-export umbrella: Stream/StreamVec (dtfl_stream), Scope (dtfl_scope), InputHandle/InputHandleVec (dtfl_input), ProbeHandle (dtfl_probe) all declared/exported; OperatorSlot is the C builder's reserve/install, subsumed
 timely-dataflow	timely/src/dataflow/operators/capability.rs	546	src/timely/capability.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/capture/capture.rs	151	src/timely/capture.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	307	src/timely/event.c	P3	done	BatchLogger needs Event; bincode framing (D9)
@@ -114,7 +114,7 @@ timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_f
 timely-dataflow	timely/src/dataflow/operators/core/input.rs	538	src/timely/ops_input.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/inspect.rs	156	src/timely/ops_inspect.c	P4	done	inspect_time, inspect_batch, inspect_container are public API at the pin; removed upstream later (#817)
 timely-dataflow	timely/src/dataflow/operators/core/map.rs	172	src/timely/ops_map.c	P4	done	
-timely-dataflow	timely/src/dataflow/operators/core/mod.rs	35	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/mod.rs	35	include/dtfl/timely.h	P4	done	re-export umbrella: every core operator trait (Capture/Concat/Enter/Leave/Exchange/Feedback/Filter/Input/Inspect/Map/OkErr/Partition/Probe/ToStream/Reclock/UnorderedInput) reaches an exported dtfl_* function
 timely-dataflow	timely/src/dataflow/operators/core/ok_err.rs	85	src/timely/ops_ok_err.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/partition.rs	87	src/timely/ops_partition.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/probe.rs	236	src/timely/ops_probe.c	P4	done	
@@ -126,13 +126,13 @@ timely-dataflow	timely/src/dataflow/operators/generic/builder_raw.rs	250	src/tim
 timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	359	src/timely/builder.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/builder_ref.rs	5	-	-	excluded	TODO stub upstream, not compiled
 timely-dataflow	timely/src/dataflow/operators/generic/handles.rs	194	src/timely/handles.c	P4	done	
-timely-dataflow	timely/src/dataflow/operators/generic/mod.rs	15	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/generic/mod.rs	15	include/dtfl/timely.h	P4	done	re-export umbrella: Operator/source (dtfl_op_builder_*, dtfl_stream_unary_notify), Notificator/FrontierNotificator (dtfl_notificator_*), OperatorInfo, and the handle types (InputHandleCore/OutputBuilder/Session -> dtfl_op_input_*/dtfl_op_session) all reachable
 timely-dataflow	timely/src/dataflow/operators/generic/notificator.rs	442	src/timely/notificator.c	P4	done	public API at the pin; removed upstream later (#819)
 timely-dataflow	timely/src/dataflow/operators/generic/operator.rs	588	src/timely/operator.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/operator_info.rs	23	include/dtfl/timely.h	P4	done	
-timely-dataflow	timely/src/dataflow/operators/mod.rs	43	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/mod.rs	43	include/dtfl/timely.h	P4	done	re-export umbrella: Inspect/InspectCore/Exchange/Operator/Notificator/FrontierNotificator/Reclock/Enter/Leave/Feedback/Concat/Concatenate/Probe/Capture/OkErr/ToStream/Input and the Capability family all reach exported dtfl_* API
 timely-dataflow	timely/src/dataflow/operators/vec/aggregation/aggregate.rs	105	src/timely/ops_aggregate.c	P4	done	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/mod.rs	18	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/mod.rs	18	include/dtfl/timely.h	P4	done	re-export umbrella: Aggregate (dtfl_stream_aggregate) and StateMachine (dtfl_stream_state_machine) exported
 timely-dataflow	timely/src/dataflow/operators/vec/aggregation/state_machine.rs	110	src/timely/ops_state_machine.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/branch.rs	128	src/timely/ops_branch.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/broadcast.rs	36	src/timely/ops_broadcast.c	P4	done	vec and core variants collapse into one (D2)
@@ -142,33 +142,33 @@ timely-dataflow	timely/src/dataflow/operators/vec/filter.rs	38	src/timely/ops_fi
 timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	done	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	done	re-export umbrella: Input/UnorderedInput/Partition/Map/Filter/Delay/Broadcast/Branch/BranchWhen/ResultStream/ToStream all reach exported dtfl_* functions
 timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	done	public API at the pin; removed upstream later (#818)
 timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	done	vec and core variants collapse into one (D2)
 timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	done	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	worker.rs and scope.rs import each other
+timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	done	worker.rs and scope.rs import each other; Scope and OperatorSlot ported (scope.c + __dtfl_slot); scoped_raw/region_named collapse into dtfl_scope_scoped
 timely-dataflow	timely/src/dataflow/stream.rs	134	src/timely/stream.c	P4	done	
-timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	todo	
-timely-dataflow	timely/src/lib.rs	177	include/dtfl/timely.h	P3	todo	
+timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	done	execute/execute_directly/execute_from ported; example is one-line sugar over execute_directly + dataflow; execute_from_args is getopts (config.c from_args), excluded in library code (AGENTS 5.2)
+timely-dataflow	timely/src/lib.rs	177	include/dtfl/timely.h	P3	done	crate-root re-exports: execute/execute_directly/example in timely.h; PartialOrder (time.h), Config/CommunicationConfig/WorkerConfig (config.h), Accountable/Container/ContainerBuilder (batch.h), ExchangeData/Bincode (record.h, D1) are published through the matching base/comm public headers
 timely-dataflow	timely/src/logging.rs	269	src/timely/timely_log.c	P3	done	TimelyEvent encoder (byte-identical to Rust bincode, tests/interop/test_log_stream.c) plus the fixint-LE readers behind the public subscriber decoder (src/timely/log.c).
 timely-dataflow	timely/src/logging.rs	269	include/dtfl/log.h	P11	done	public structured-logging subscriber API: dtfl_worker_log_subscribe / dtfl_config_log_subscribe and the dtfl_log_batch accessors (the C form of worker.log_register().insert_logger with decoded batches); covers TimelyEvent, DifferentialEvent and CommunicationEvent variants.
 timely-dataflow	timely/src/logging.rs	269	src/timely/log.c	P11	done	the subscriber glue and the fixint-LE decoder (inverse of timely_log.c / dd_log.c / comm_log.c); routes the worker's loggers to registered subscribers and decodes each record into dtfl_log_batch; prerequisite for P11 diagnostics.
 timely-dataflow	timely/src/order.rs	263	src/progress/time.c	P1	done	coordinate-vector times (D3)
-timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P3	todo	
+timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P3	wip	Progcaster new/send/recv ported with the libdtfl wire encoding (D9) in place of bincode; the data plane is complete and runs every test.  Unported: the optional per-message progress logging (progress_logging.map(|l| l.log(TimelyProgressEvent{...})) in send and recv).  TimelyProgressEvent<T> is a separate T-parameterized logger (TimelyProgressLogger), not part of the fixed TimelyEvent enum the C logging model ports, and has no consumer in libdtfl (diag subscribes only to the timely and differential/arrange streams); lands if a T-parameterized progress stream is added for diagnostics
 timely-dataflow	timely/src/progress/change_batch.rs	321	src/progress/change_batch.c	P1	done	
 timely-dataflow	timely/src/progress/frontier.rs	869	src/progress/antichain.c	P1	done	
-timely-dataflow	timely/src/progress/mod.rs	106	src/progress/progress_int.h	P3	todo	Location, Source, Target
+timely-dataflow	timely/src/progress/mod.rs	106	src/progress/operate_int.h	P3	done	Location, Source, Target collapse into __dtfl_location (node, port, source flag) in operate_int.h; Port encoded as the source flag; Operate/Subgraph/Timestamp/PathSummary/ChangeBatch/Antichain re-exports all ported in progress/
 timely-dataflow	timely/src/progress/operate.rs	206	src/progress/operate.c	P3	done	
 timely-dataflow	timely/src/progress/reachability.rs	1116	src/progress/reachability.c	P3	done	
-timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	todo	
+timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	done	SubgraphBuilder, Subgraph (schedule/activate_child/accept_frontier/harvest_inputs/propagate_pointstamps/send_progress), Operate impl and PerOperatorState (new/schedule/shut_down/extract_progress/validate_progress) all ported
 timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	done	coordinate-vector times (D3)
-timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	todo	
-timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/timely_int.h	P3	todo	
+timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	done	Activations/Activator/SyncActivations/SyncActivator ported.  map_active has zero callers in upstream; activate_batch is subsumed by __dtfl_sync_activations_push (its only caller is SyncActivations::activate); ActivateOnDrop is realized where used (ops_unordered_input.c)
+timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/activate.c	P3	done	re-exports Activations/Activator/ActivateOnDrop/SyncActivator (activate.c) and the Schedule trait (__dtfl_schedule in operate_int.h)
 timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	done	
-timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	todo	
+timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	done	re-export umbrella: Barrier (dtfl_barrier_*) and Sequencer (dtfl_sequencer_*) exported
 timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	done	
-timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	todo	
+timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	done	Worker and Wrapper ported (worker.c engine + execute.c public dtfl_worker facade).  Config.set/get is a typed key-value registry with no in-tree consumer at the pin and is a dtfl_config/base concern, not ported in worker.c
 timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	todo	
 timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	todo	
 timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	todo	
@@ -371,49 +371,49 @@ differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	do
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	wip	registry + lifecycle (install/feed/tick/drop/peek/list); single in-process worker, commands on the calling thread; shared traces across installs; generated/iota/clock sources; multi-worker Sequencer deferred; no trace compaction (public handle lacks the setter)
 differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	todo	
+differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	done	manual skeleton and menu
+differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	done	
 differential-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	server/dataflows/degr_dist/src/lib.rs	25	examples/server/degr_dist.c	P14	done	static plugin (not dlopen); publishes <graph>-degrees for peek
 differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/server/neighborhood.c	P14	done	static plugin (not dlopen); three-hop, inspect to stdout

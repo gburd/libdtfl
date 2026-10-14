@@ -1,0 +1,89 @@
+@c SPDX-License-Identifier: MIT
+@c doc/installation.texi: the Installation chapter.
+
+@node Installation
+@chapter Installation
+
+libdtfl uses the GNU build system.  From a release tarball:
+
+@example
+./configure
+make
+make install
+@end example
+
+From a git checkout, generate the build system first with the bundled
+bootstrap script, which runs the autotools:
+
+@example
+./bootstrap
+./configure
+make
+make install
+@end example
+
+@command{make} builds the shared library @file{libdtfl.so}, the
+command-line tools @command{dtfl-diag} and @command{dtfl-ddir}, this
+manual (@file{libdtfl.info}), and the manual pages.  @command{make
+install} installs the library, the public headers under
+@file{dtfl/}, the @file{dtfl.pc} pkg-config file, the tools, the info
+manual and the manual pages.
+
+@section Configure options
+
+@table @option
+@item --with-hegel[=DIR]
+Build and run the property-based tests, which use the Hegel testing
+library.  Without it, the property tests report SKIP.  Give the install
+prefix as @var{DIR}, or rely on @command{pkg-config} finding it.
+
+@item --enable-debug
+Build with assertions and the debug-only contract checks (the
+worker-ownership checks of @ref{Threads}).
+
+@item --enable-asan
+@itemx --enable-ubsan
+@itemx --enable-tsan
+Build with the AddressSanitizer, UndefinedBehaviorSanitizer or
+ThreadSanitizer.  ThreadSanitizer verifies the thread-safety contract
+over the multi-worker suites.
+
+@item --enable-diag
+@itemx --enable-ddir
+@itemx --enable-server
+Build the diagnostics console, the DDIR language and tooling, and the
+diagnostics server component.  Each is on by default where its
+prerequisites are present.
+@end table
+
+Link a program with @option{-ldtfl}, or let pkg-config supply the flags:
+
+@example
+cc myprog.c $(pkg-config --cflags --libs dtfl)
+@end example
+
+@section Running the test suite
+
+@command{make check} runs the unit, property-based and distribution
+tests.  The project's full gate, @command{dev/check-all}, builds and
+tests six configurations, each in its own build directory:
+
+@table @asis
+@item default
+assertions on (@option{--enable-debug}).
+@item asan
+AddressSanitizer and UndefinedBehaviorSanitizer
+(@option{--enable-asan --enable-ubsan}).
+@item hegel
+the property tests enabled (@option{--with-hegel}).
+@item hegel-asan
+the property tests under ASan and UBSan.
+@item tsan
+ThreadSanitizer (@option{--enable-tsan}).
+@item distcheck
+@command{make distcheck}: builds a distribution tarball and checks that
+it unpacks, configures, builds, tests and ships the manual and the
+manual pages.
+@end table
+
+A phase of the project is not finished until all six pass.

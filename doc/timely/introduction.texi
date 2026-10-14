@@ -1,0 +1,61 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/introduction.texi: ports timely-dataflow
+@c mdbook/src/introduction.md and chapter_0/chapter_0.md.
+
+@node Timely Motivation
+@section Motivation
+
+Timely dataflow is a system for implementing data-parallel streaming
+computation, and, viewed from the right angle, a way to structure
+computation generally.  It arose from work on scalable, distributed data
+processing platforms whose goal was to provide both @emph{expressive
+computation} and @emph{high performance} at once: sophisticated
+streaming computations, including iterative control flow, that
+nonetheless execute with only a small amount of overhead and
+synchronization.
+
+A timely dataflow program is a graph of operators connected by streams.
+Three properties make the model worth adopting:
+
+@itemize @bullet
+@item
+@strong{Data parallelism.}  Operators are largely data-parallel: they
+operate on independent parts of the data concurrently.  The runtime
+distributes a computation across parallel workers, whether threads on
+one machine or threads across a cluster, which raises throughput and
+lets a program scale to larger problems.
+@item
+@strong{Streaming data.}  The core data type is a @emph{stream}: an
+unbounded sequence of data that arrives as the computation proceeds, not
+all at once.  A streaming program explains both how to respond to a
+static input (feed it all in at once) and how to react to data that
+arrives later.
+@item
+@strong{Expressivity.}  Timely dataflow adds higher-level control
+constructs, chiefly iteration, over a traditional stream processor.
+This moves a stream computation from straight-line code to the world of
+algorithms.
+@end itemize
+
+@subsection When to use timely dataflow
+
+Reach for timely dataflow when streaming and scalability matter: a
+scalable monitoring application, a big-data computation over more data
+than fits in memory, or an incremental iterative computation over a
+large graph or matrix.  Even a program as simple as @command{grep}, when
+stated as a dataflow computation, scales out to multiple threads and
+across machines for free.
+
+@subsection When not to use timely dataflow
+
+Timely dataflow is a @emph{dataflow} system: at its core it moves data
+around.  That makes it a poor fit for problems that would rather not
+move data, such as sorting a single in-memory slice, where a data-
+parallel library like a work-stealing thread pool suits better.  It is
+also a poor fit for algorithms that are correct only because one step
+happens strictly before another, such as depth-first search, unless you
+are willing to re-imagine the algorithm as the movement of data.
+Finally, timely dataflow sits between a language library and a runtime
+system, so it offers neither the stability of a plain library call nor
+the surrounding infrastructure of a managed cluster framework; some of
+that burden passes to you.

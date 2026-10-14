@@ -1,0 +1,31 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/manual.texi: the Timely Dataflow tutorial (wrapper chapter).
+@c Ports the timely-dataflow mdbook (timely-v0.31.0) to C.
+
+@node Timely Dataflow
+@chapter Timely Dataflow
+
+This chapter is a port of the timely dataflow book to C.  Where a
+passage of the book relies on a Rust feature libdtfl exposes
+differently, it describes the C way; where it relies on something not
+yet on the pin, it says so in a sentence rather than show code that
+would not compile.  Every example here is a complete C program that
+compiles against the installed headers.
+
+@menu
+* Timely Motivation::           What timely dataflow is for.
+* Timely Core Concepts::        A first dataflow, and a reactive one.
+* Timely Dataflow Model::       Dataflow, timestamps and progress.
+* Building Timely Dataflows::   Inputs, outputs and operators.
+* Running Timely Dataflows::    Driving a worker.
+* Advanced Timely::             Scopes, iteration, capture.
+* Timely Internals::            Communication, progress, logging.
+@end menu
+
+@include timely/introduction.texi
+@include timely/chapter_0.texi
+@include timely/chapter_1.texi
+@include timely/chapter_2.texi
+@include timely/chapter_3.texi
+@include timely/chapter_4.texi
+@include timely/chapter_5.texi

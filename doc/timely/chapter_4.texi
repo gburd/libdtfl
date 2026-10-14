@@ -1,0 +1,100 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_4.texi: ports timely-dataflow
+@c mdbook/src/chapter_4/chapter_4.md (Advanced), chapter_4_1.md (Scopes),
+@c chapter_4_2.md (Iteration), chapter_4_3.md (Flow Control),
+@c chapter_4_4.md (Capture and Replay), chapter_4_5.md (Custom Datatypes).
+
+@node Advanced Timely
+@section Scopes, iteration and capture
+
+The advanced features look like @emph{control flow}: dataflow patterns
+that reshape how a computation runs, using progress information to
+change what work happens.
+
+@subsection Scopes
+
+A scope is a region of dataflow, like a block in an imperative language.
+@code{dtfl_scope_scoped} creates a nested scope; what a scope buys you is
+the chance to @emph{enrich} the timestamp of the streams brought into
+it.  An outer scope might carry a @code{u64} time; a nested scope can
+augment it to a product of @code{u64} and an iteration counter
+(@pxref{Concepts}), so operators inside react to the richer time without
+troubling the operators outside.
+
+A stream must be carried across a scope boundary explicitly, because the
+two scopes have different time types.  @code{dtfl_stream_enter} brings a
+parent stream into a child scope; @code{dtfl_stream_leave} returns a
+child stream to its parent.  @code{dtfl_scope_region} makes a child with
+the same time class (a grouping and logging boundary that needs no time
+transform); @code{dtfl_scope_iterative} makes a child whose inner time
+is a @code{u64} loop counter.
+
+@subsection Iteration
+
+Iteration is the signature advanced feature: because progress tracking
+follows timestamps around cycles, a dataflow can contain a loop,
+circulate data within it, and still let downstream operators judge their
+input's progress.
+
+The tool is a @dfn{feedback} stream, whose contents are not yet defined
+when you start using it.  @code{dtfl_feedback_new} creates one, taking a
+path summary that says how much to advance the time each time around the
+loop (@pxref{Concepts}); @code{dtfl_feedback_connect} later binds its
+contents.  As a worked example, the Collatz conjecture: divide an even
+number by two, triple an odd number and add one, and every start
+eventually reaches one.
+
+@example
+dtfl_summary_default(dtfl_scope_time_class(scope), summary);
+summary[0] = 1;                 /* advance the loop coordinate by one */
+cycle = dtfl_feedback_new(scope, dtfl_type_u64(), summary, &handle);
+step = dtfl_stream_concat(in, cycle);
+step = dtfl_stream_flat_map(step, dtfl_type_u64(), collatz, DTFL_NOCTX);
+step = dtfl_stream_inspect(step, show, DTFL_NOCTX);
+step = dtfl_stream_filter(step, greater_than_one, DTFL_NOCTX);
+dtfl_feedback_connect(handle, step);
+@end example
+
+The input is concatenated with the feedback stream, so the Collatz step
+applies both to the start value and to everything that comes back around
+the loop; values that reach one are filtered out, and the survivors feed
+back.  The complete program is in @file{doc/snippets/timely_iterate.c};
+starting from nine, it prints the 19 steps down to one.  A program may
+hold as many feedback streams as it likes, which is how you express
+mutual recursion (an even loop and an odd loop, say).
+
+@subsection Flow control
+
+Flow control is about @emph{when} data flow, not where.  A stream that
+expands each input into many outputs (every number less than it, say)
+can produce far more data than it consumes, which may overwhelm a
+downstream operator.  @code{dtfl_iterator_source} is the flow-controlled
+source: it emits records with times the program chooses, holding back
+while a probe shows the computation is behind, so the volume in flight
+stays bounded.
+
+@subsection Capture and replay
+
+@code{dtfl_stream_capture_into} records everything about a stream: the
+data that arrive and every change in the frontier.  The record is a
+sequence of events delivered to an event pusher.  An event link
+(@code{dtfl_event_link_new}) is an in-memory log of those events; its
+synchronized form may be pushed on one thread and replayed on another.
+@code{dtfl_event_link_replay} re-introduces a captured stream into a new
+dataflow, and @code{dtfl_event_link_extract} collects the captured
+@code{(time, record)} pairs after the computation finishes, sorted,
+which is how a test asserts a stream's contents.  For transport beyond
+one process, @code{dtfl_event_writer_new} and
+@code{dtfl_event_reader_replay} write and read the events on a file
+descriptor.
+
+@subsection Custom datatypes
+
+Rust lets an operator carry any @code{Clone} type, and exchange any type
+that also serializes.  libdtfl has no type parameters: a record is a
+byte string with a @code{dtfl_type} descriptor (@pxref{Records}).  A
+custom datatype is therefore a custom descriptor: supply @code{cmp},
+@code{hash} and @code{fmt} callbacks (or rely on the defaults) and wrap
+it with @code{dtfl_type_new}.  Because records are already bytes,
+exchange is a @code{memcpy}; there is no separate serialization step and
+no @code{ExchangeData} bound to satisfy.

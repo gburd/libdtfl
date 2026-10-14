@@ -1,0 +1,5 @@
+manager 0 -> managee 0
+manager 1 -> managee 2
+manager 2 -> managee 4
+manager 3 -> managee 6
+manager 4 -> managee 8

@@ -1,0 +1,42 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/manual.texi: the Differential Dataflow tutorial.
+@c Ports the differential-dataflow mdbook (differential-dataflow-v0.25.1)
+@c to C.
+
+@node Differential Dataflow
+@chapter Differential Dataflow
+
+Differential dataflow is a layer on top of timely dataflow for
+performing computations over large collections and @emph{maintaining}
+them as the collections change.  A program is written in two easy steps:
+write a program against apparently static collections (using idioms that
+look like SQL or MapReduce), and then change the inputs.  Differential
+dataflow promptly shows the matching changes in the outputs, often in
+milliseconds.
+
+As in the timely chapter, every code example here is a complete C
+program that compiles against the installed headers; where a book
+passage relies on something libdtfl exposes differently, the C way is
+described plainly.
+
+@menu
+* Differential Motivation::     What differential dataflow is.
+* Differential First Program::  Write a program, change its input.
+* Scaling Up::                  Scale, parallelism, interactivity.
+* Building Differential Dataflows:: The skeleton, inputs, iteration.
+* Differential Operators::      Map, filter, join, reduce, iterate.
+* Differential Interactions::   Inputs, changes, time, probes.
+* Differential Examples::       Graph and interactive computations.
+* Arrangements::                Shared indexed collections.
+* Windowed Computations::       Time-windowed collections.
+@end menu
+
+@include differential/introduction.texi
+@include differential/chapter_0.texi
+@include differential/chapter_a.texi
+@include differential/chapter_1.texi
+@include differential/chapter_2.texi
+@include differential/chapter_3.texi
+@include differential/chapter_4.texi
+@include differential/chapter_5.texi
+@include differential/chapter_6.texi

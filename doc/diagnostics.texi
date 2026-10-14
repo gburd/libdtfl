@@ -1,0 +1,73 @@
+@c SPDX-License-Identifier: MIT
+@c doc/diagnostics.texi: the Diagnostics chapter.
+@c From include/dtfl/log.h, include/dtfl/diag.h, dtfl-diag(1).
+
+@node Diagnostics
+@chapter Diagnostics
+
+libdtfl carries a port of the timely diagnostics tools: a live console
+that reconstructs the operator graph, scheduling and arrangement sizes
+of a running computation.  It is built on the structured event logging
+every worker produces.
+
+@section Structured event logging
+
+A worker emits structured events on named streams: @code{"timely"} (the
+dataflow structure and scheduling), @code{"differential/arrange"}
+(arrangement batch, merge and trace events) and @code{"communication"}
+(message send and receive, thread state).  This is distinct from the
+human-readable diagnostic sink of @code{dtfl_set_log_hook}
+(@pxref{Error handling}); the structured log carries machine-readable
+events.
+
+A program subscribes to a stream and receives each batch of events
+already decoded, so a C caller never touches the wire bytes.  Register
+before the workers start with @code{dtfl_config_log_subscribe}, so every
+worker installs the subscriber as it comes up, or on a single worker you
+own with @code{dtfl_worker_log_subscribe}.  The subscriber is called on
+the worker thread with a @code{dtfl_log_batch}; the accessors
+(@code{dtfl_log_batch_len}, @code{dtfl_log_event_kind_at} and the
+per-event field readers) read it.  The batch and every pointer it hands
+out are valid only for the duration of the call.
+
+@section The in-process console
+
+The diagnostics session subscribes to a worker's @code{"timely"} and
+@code{"differential/arrange"} streams, keeps the live set of operators,
+channels and statistics, and serves them to browser clients over a
+WebSocket as a stream of JSON frames.  The upstream console renders the
+frames unmodified.
+
+@example
+dtfl_diag_session *s = dtfl_diag_session_new(worker);
+dtfl_diag_server *srv = NULL;
+if (dtfl_worker_index(worker) == 0)
+        dtfl_diag_server_start(s, "127.0.0.1", 51371, &srv);
+/* build and run the user dataflow; step the worker as usual */
+dtfl_diag_server_stop(srv);
+dtfl_diag_session_free(s);
+@end example
+
+The session is worker-owned: create it, pump it and free it on the
+worker thread.  The server runs its accept and send loop on a background
+thread and talks to the session through an internal queue, so no session
+handle crosses the thread boundary.
+
+By default the server binds @code{127.0.0.1}, so operator names and
+timings are not published to the network without authentication; this is
+a deliberate divergence from the upstream default of @code{0.0.0.0}
+(@pxref{Porting notes}).  Pass a different interface to
+@code{dtfl_diag_server_start} to restore the upstream behavior.
+
+@section The command-line tool
+
+@command{dtfl-diag} is the out-of-process counterpart, the C port of
+timely's @command{tdiag}.  It reconstructs the operator graph
+(@command{graph}), the timing profile (@command{profile}) or the
+arrangement sizes (@command{arrangements}) of a computation, from log
+streams the source program ships to it over TCP, or from a recorded
+stream read with @option{-f}.  A source program connects its loggers to
+the address @command{dtfl-diag} listens on through
+@code{dtfl_config_from_env}, which reads @env{TIMELY_WORKER_LOG_ADDR}
+and @env{DIFFERENTIAL_LOG_ADDR}.  See @code{dtfl-diag(1)} for the full
+set of options.
