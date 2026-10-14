@@ -840,6 +840,51 @@ dtfl_trace_free(dtfl_trace *t)
 	__dtfl_free(t);
 }
 
+/* Threads the user callback plus the current key/val into map_times. */
+typedef struct to_vec_ctx {
+	dtfl_trace_each_fn fn;
+	void *user;
+	const void *key;
+	size_t klen;
+	const void *val;
+	size_t vlen;
+} to_vec_ctx;
+
+static void
+to_vec_time(const uint64_t *time, const void *diff, void *vctx)
+{
+	to_vec_ctx *c = vctx;
+
+	c->fn(c->user, c->key, c->klen, c->val, c->vlen, time, diff);
+}
+
+void
+dtfl_trace_to_vec(dtfl_trace *t, dtfl_trace_each_fn fn, dtfl_ctx ctx)
+{
+	__dtfl_cursor_list cl;
+	to_vec_ctx c;
+
+	if (t == NULL)
+		return;
+	/* The cursor list owns references to the trace's batches. */
+	__dtfl_trace_agent_cursor(&t->agent, &cl);
+
+	c.fn = fn;
+	c.user = ctx.ptr;
+	while (__dtfl_cursor_list_key_valid(&cl)) {
+		c.key = __dtfl_cursor_list_key(&cl, &c.klen);
+		while (__dtfl_cursor_list_val_valid(&cl)) {
+			c.val = __dtfl_cursor_list_val(&cl, &c.vlen);
+			__dtfl_cursor_list_map_times(&cl, to_vec_time, &c);
+			__dtfl_cursor_list_step_val(&cl);
+		}
+		__dtfl_cursor_list_step_key(&cl);
+	}
+	__dtfl_cursor_list_free(&cl);
+	if (ctx.free != NULL)
+		ctx.free(ctx.ptr);
+}
+
 /* The import source operator: drains its replay queue, emitting batches. */
 typedef struct import_ctx {
 	__dtfl_replay_queue *queue;	/* retained (strong reference) */
