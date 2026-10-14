@@ -1,0 +1,69 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_1.texi: ports differential-dataflow
+@c mdbook/src/chapter_1/chapter_1.md (Building Differential Dataflows),
+@c chapter_1_0.md (Timely Skeleton), chapter_1_1.md (Input Collections),
+@c chapter_1_2.md (Operators), chapter_1_3.md (Iteration).
+
+@node Building Differential Dataflows
+@section Building a differential computation
+
+Differential dataflow is meant to be usable without understanding how it
+works underneath.  This section covers the mechanics of putting a
+computation together, before the next surveys the operators in depth.
+
+@subsection The timely skeleton
+
+A differential computation is a timely computation with a convenient set
+of operators layered on top, so it needs a timely skeleton first: an
+execution, a worker, and a dataflow built inside it.  The skeleton is
+exactly the timely driver of @ref{Running Timely Dataflows}:
+@code{dtfl_execute} (or @code{dtfl_execute_directly}) runs the worker;
+@code{dtfl_worker_dataflow} builds the dataflow; the build function
+creates the inputs, assembles the operators, and the driver advances the
+inputs and steps the worker.
+
+@subsection Input collections
+
+Every differential computation starts from a user-controlled input
+collection, which you can think of as a multiset: a bag of records that
+may contain duplicates.  A @code{dtfl_input_session} drives one
+(@pxref{Differential Interactions}): create it over a record type and a
+diff class, add it to the scope with
+@code{dtfl_input_session_to_collection}, and the collection it returns is
+where the operators attach.  Changes made to the session, inserts and
+removes at an advancing epoch, flow into the computation.
+
+@subsection Operators, in brief
+
+The operators build collections from collections.
+@code{dtfl_collection_map} transforms each record (also the database
+"projection": keep only the fields a later step needs, as early as
+possible).  @code{dtfl_collection_filter} keeps the records a predicate
+accepts; a @code{count} followed by a @code{filter} on the count can
+change far less often than its input, since it reports only when a
+count crosses the threshold.  @code{dtfl_collection_concat} merges two
+collections, adding the multiplicities of each record.  The next section
+covers these and the rest in full (@pxref{Differential Operators}).
+
+@subsection Iteration, in brief
+
+The signature feature is iteration.  @code{dtfl_collection_iterate}
+takes a collection and a closure describing one step, and applies the
+step to a fixed point.  To compute the transitive management relation,
+the step joins the relation with itself to add one hop:
+
+@example
+/* if x manages y and y manages z, then x manages z */
+swap  = dtfl_collection_map(manages, pair, swap_pair, DTFL_NOCTX);
+hop   = dtfl_collection_join_map(swap, manages, u64, u64, u64,
+            pair, drop_middle, DTFL_NOCTX);
+return dtfl_collection_concat(hop, manages);   /* then distinct */
+@end example
+
+For iteration with several inputs, several loop variables, or several
+outputs, build the iterative scope by hand: @code{dtfl_scope_iterative}
+creates a subscope whose time adds a @code{u64} round counter,
+@code{dtfl_collection_enter} brings an outer collection in, a
+@code{dtfl_variable} carries each recursively defined collection, and
+@code{dtfl_collection_leave} returns the result
+(@pxref{Differential Operators}).

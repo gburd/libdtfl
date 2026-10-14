@@ -23,6 +23,7 @@ described plainly.
 * Differential Motivation::     What differential dataflow is.
 * Differential First Program::  Write a program, change its input.
 * Scaling Up::                  Scale, parallelism, interactivity.
+* Building Differential Dataflows:: The skeleton, inputs, iteration.
 * Differential Operators::      Map, filter, join, reduce, iterate.
 * Differential Interactions::   Inputs, changes, time, probes.
 * Differential Examples::       Graph and interactive computations.
@@ -33,6 +34,7 @@ described plainly.
 @include differential/introduction.texi
 @include differential/chapter_0.texi
 @include differential/chapter_a.texi
+@include differential/chapter_1.texi
 @include differential/chapter_2.texi
 @include differential/chapter_3.texi
 @include differential/chapter_4.texi

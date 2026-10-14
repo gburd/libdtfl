@@ -33,6 +33,7 @@ libdtfl_TEXINFOS = \
 	doc/differential/introduction.texi \
 	doc/differential/chapter_0.texi \
 	doc/differential/chapter_a.texi \
+	doc/differential/chapter_1.texi \
 	doc/differential/chapter_2.texi \
 	doc/differential/chapter_3.texi \
 	doc/differential/chapter_4.texi \
