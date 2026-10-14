@@ -21,6 +21,9 @@
  * Messages is the time words then the batch encoding (batch_int.h).
  * Only libdtfl reads these bytes, so the T and C encodings are libdtfl's.
  */
+#include <errno.h>
+#include <unistd.h>
+
 #include "timely/capture_int.h"
 
 #include "timely/log_codec_int.h"
@@ -179,6 +182,111 @@ dtfl_event_link_pusher(dtfl_event_link *l)
 	p.progress = link_push_progress;
 	p.messages = link_push_messages;
 	p.ctx = l;
+	return p;
+}
+
+/* ------------------------------------------------------------------ */
+/* Binary EventWriter (capture/event.rs binary::EventWriter)           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A writer wraps a file descriptor.  Its pusher encodes each event
+ * (u64 LE length then the body) and writes the whole frame.  The writer
+ * does not own the fd.  push has no way to report an error, so a write
+ * failure panics, as upstream unwraps.
+ */
+struct dtfl_event_writer {
+	int fd;				/* not owned */
+	const dtfl_time_class *tc;	/* retained */
+	const dtfl_type *type;		/* retained */
+};
+
+dtfl_event_writer *
+dtfl_event_writer_new(int fd, const dtfl_time_class *tc, const dtfl_type *type)
+{
+	dtfl_event_writer *w = __dtfl_calloc(1, sizeof *w);
+
+	w->fd = fd;
+	w->tc = dtfl_time_class_retain(tc);
+	w->type = dtfl_type_retain(type);
+	return w;
+}
+
+void
+dtfl_event_writer_free(dtfl_event_writer *w)
+{
+	if (w == NULL)
+		return;
+	dtfl_time_class_free(w->tc);
+	dtfl_type_free(w->type);
+	__dtfl_free(w);
+}
+
+/* Writes the whole frame to the fd, retrying EINTR and short writes. */
+static void
+writer_write_frame(int fd, const unsigned char *buf, size_t len)
+{
+	size_t off = 0;
+	ssize_t n;
+
+	while (off < len) {
+		do {
+			n = write(fd, buf + off, len - off);
+		} while (n < 0 && errno == EINTR);
+		if (n < 0)
+			__dtfl_panic("dtfl_event_writer: write failed");
+		off += (size_t)n;
+	}
+}
+
+static void
+writer_push_progress(void *ctx, const uint64_t *times, const int64_t *diffs,
+    size_t n)
+{
+	dtfl_event_writer *w = ctx;
+	dtfl_event e;
+	__dtfl_vec out;
+	size_t i;
+
+	e.tag = DTFL_EVENT_PROGRESS;
+	e.depth = w->tc->depth;
+	__dtfl_cb_init(&e.u.progress, w->tc->depth);
+	for (i = 0; i < n; i++)
+		__dtfl_cb_update(&e.u.progress, times + (size_t)e.depth * i,
+		    diffs[i]);
+	__dtfl_vec_init(&out, 1);
+	__dtfl_event_encode(w->tc, &e, &out);
+	writer_write_frame(w->fd, out.data, out.len);
+	__dtfl_vec_free(&out);
+	__dtfl_event_clear(&e);
+}
+
+static void
+writer_push_messages(void *ctx, const uint64_t *time, const dtfl_message *msg)
+{
+	dtfl_event_writer *w = ctx;
+	dtfl_event e;
+	__dtfl_vec out;
+
+	e.tag = DTFL_EVENT_MESSAGES;
+	e.depth = w->tc->depth;
+	__dtfl_time_copy(w->tc, e.u.messages.time, time);
+	e.u.messages.data = __dtfl_batch_retain(msg->data);
+	__dtfl_vec_init(&out, 1);
+	__dtfl_event_encode(w->tc, &e, &out);
+	writer_write_frame(w->fd, out.data, out.len);
+	__dtfl_vec_free(&out);
+	__dtfl_event_clear(&e);
+}
+
+dtfl_event_pusher
+dtfl_event_writer_pusher(dtfl_event_writer *w)
+{
+	dtfl_event_pusher p;
+
+	p.progress = writer_push_progress;
+	p.messages = writer_push_messages;
+	p.ctx = w;
 	return p;
 }
 

@@ -66,8 +66,8 @@ timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	don
 timely-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 timely-dataflow	timely/examples/barrier.rs	30	examples/timely/barrier.c	P4	done	
 timely-dataflow	timely/examples/bfs.rs	139	examples/timely/bfs.c	P4	done	fixed small graph for a checkable reachable set; single worker
-timely-dataflow	timely/examples/capture_recv.rs	27	examples/timely/capture_recv.c	P4	todo	needs the binary EventReader transport (dtfl_event_reader_replay, declared in timely_ops.h but unimplemented) and TimelySetup/TimelyEvent; lands with the comm TCP/cluster work.  In-process capture round trip covered by examples/timely/capture.c
-timely-dataflow	timely/examples/capture_send.rs	18	examples/timely/capture_send.c	P4	todo	needs the binary EventWriter transport (dtfl_event_writer_*, declared in timely_ops.h but unimplemented); lands with the comm TCP/cluster work.  In-process capture round trip covered by examples/timely/capture.c
+timely-dataflow	timely/examples/capture_recv.rs	27	examples/timely/capture_recv.c	P4	done	listens on 127.0.0.1:(8000+i) per source worker, accepts one connection each, replays all into one dataflow via dtfl_event_reader_replay; runs end to end against capture_send (0..9 replayed).  Binds loopback (D12)
+timely-dataflow	timely/examples/capture_send.rs	18	examples/timely/capture_send.c	P4	done	connects to 127.0.0.1:(8000+index), streams 0..10 captured into a dtfl_event_writer over the socket; the transport (dtfl_event_writer_*/dtfl_event_reader_replay) is implemented in event.c/replay.c and covered by the binary round trip in tests/unit/test_capture.c
 timely-dataflow	timely/examples/columnar.rs	250	-	-	subsumed	D2: records are byte strings in refcounted batches; custom containers and Rc sharing have no C counterpart
 timely-dataflow	timely/examples/distinct.rs	56	examples/timely/distinct.c	P4	done	
 timely-dataflow	timely/examples/event_driven.rs	54	examples/timely/event_driven.c	P4	done	bounded round cap

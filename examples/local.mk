@@ -29,7 +29,9 @@ noinst_PROGRAMS += \
 	examples/timely/pagerank \
 	examples/timely/wordcount \
 	examples/timely/hashjoin \
-	examples/timely/logging-send
+	examples/timely/logging-send \
+	examples/timely/capture_send \
+	examples/timely/capture_recv
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -62,6 +64,14 @@ examples_timely_unordered_input_LDADD = $(EXAMPLE_LDADD)
 examples_timely_capture_SOURCES = examples/timely/capture.c
 examples_timely_capture_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_capture_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_capture_send_SOURCES = examples/timely/capture_send.c
+examples_timely_capture_send_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_capture_send_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_capture_recv_SOURCES = examples/timely/capture_recv.c
+examples_timely_capture_recv_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_capture_recv_LDADD = $(EXAMPLE_LDADD)
 
 examples_timely_sequence_SOURCES = examples/timely/sequence.c
 examples_timely_sequence_CFLAGS = $(EXAMPLE_CFLAGS)

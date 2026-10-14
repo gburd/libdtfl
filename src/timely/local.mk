@@ -96,6 +96,7 @@ dist_man_MANS += man/man3/dtfl_iterator_source.3
 dist_man_MANS += man/man3/dtfl_stream_capture.3
 dist_man_MANS += man/man3/dtfl_event_link_replay.3
 dist_man_MANS += man/man3/dtfl_event_link_extract.3
+dist_man_MANS += man/man3/dtfl_event_writer_new.3
 dist_man_MANS += man/man3/dtfl_stream_enter.3
 dist_man_MANS += man/man3/dtfl_stream_result.3
 dist_man_MANS += man/man3/dtfl_barrier.3

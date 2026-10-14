@@ -46,9 +46,15 @@ Not started or partial -- MUST be finished before the project is done
         initialize.  DONE (feat/tcp): test_tcp drives a loopback mesh;
         Cluster is wired into dtfl_execute; TSan clean.  (comm_hello the
         example and comm_log emission remain, tracked separately.)
-[ ] Binary capture transport: dtfl_event_writer_* / dtfl_event_reader_*
-        (declared in timely_ops.h, unimplemented).  Unblocks the
-        capture_send/capture_recv timely examples.
+[x] Binary capture transport: dtfl_event_writer_* / dtfl_event_reader_*
+        DONE: implemented in src/timely/event.c (the EventWriter, a
+        pusher that frames each event as a u64 LE length plus the encoded
+        body and writes it to the fd) and src/timely/replay.c (the
+        EventReader replay operator, one initial capability per fd).
+        Proven two ways: the in-process pipe round trip in
+        tests/unit/test_capture.c and the capture_send/capture_recv
+        examples running end to end over a loopback socket (0..9
+        replayed).
 [x] Public timely/differential logging subscriber API (dtfl/log.h).
         DONE (feat/log-subscriber): a subscriber receives decoded
         timely/differential/communication event batches; the P11

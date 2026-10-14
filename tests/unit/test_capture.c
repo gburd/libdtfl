@@ -22,6 +22,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define MAX_OUT 512
 
@@ -213,9 +214,151 @@ DTFL_TEST(dataflow_operators_core_capture__round_trip_times)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Binary EventWriter / EventReader round-trip over a pipe             */
+/* ------------------------------------------------------------------ */
+
+typedef struct writer_build {
+	feeder_ctx *feeder;
+	dtfl_event_writer *w;
+} writer_build;
+
+static void
+build_capture_writer(dtfl_scope *scope, void *arg)
+{
+	writer_build *c = arg;
+	dtfl_stream *s = make_feeder(scope, c->feeder);
+
+	dtfl_stream_capture_into(s, dtfl_event_writer_pusher(c->w), DTFL_NOCTX);
+}
+
+typedef struct reader_build {
+	int fd;
+	dtfl_event_pusher pusher;
+} reader_build;
+
+static void
+build_replay_reader(dtfl_scope *scope, void *arg)
+{
+	reader_build *c = arg;
+	int fds[1] = { c->fd };
+	dtfl_stream *s = dtfl_event_reader_replay(fds, 1, scope,
+	    dtfl_type_u64());
+
+	dtfl_stream_capture_into(s, c->pusher, DTFL_NOCTX);
+}
+
+/*
+ * The same round trip as run_round_trip, but through the binary wire
+ * format over a pipe: capture to an EventWriter on the write end, then
+ * replay from an EventReader on the read end.  10 small records fit the
+ * pipe buffer, so writing the whole capture before replaying does not
+ * deadlock.
+ */
+static void
+run_binary_round_trip(const uint64_t *vals, const uint64_t *times, size_t n,
+    collected *out)
+{
+	int fds[2];
+	dtfl_worker *w1, *w2;
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_event_writer *ew;
+	dtfl_event_link *l2 = dtfl_event_link_new(tc, dtfl_type_u64());
+	feeder_ctx f = { vals, times, n };
+	writer_build wb;
+	reader_build rb;
+
+	assert_int(pipe(fds), ==, 0);
+	ew = dtfl_event_writer_new(fds[1], tc, dtfl_type_u64());
+
+	/* First worker: capture into the writer, drain fully, then flush. */
+	w1 = dtfl_worker_new_standalone();
+	wb.feeder = &f;
+	wb.w = ew;
+	assert_int(dtfl_worker_dataflow(w1, "capture", tc,
+	    build_capture_writer, &wb), ==, 0);
+	while (dtfl_worker_step(w1))
+		;
+	dtfl_worker_free(w1);
+	dtfl_event_writer_free(ew);
+	close(fds[1]);		/* EOF for the reader */
+
+	/* Second worker: replay from the read end, capture into l2. */
+	w2 = dtfl_worker_new_standalone();
+	rb.fd = fds[0];
+	rb.pusher = dtfl_event_link_pusher(l2);
+	assert_int(dtfl_worker_dataflow(w2, "replay", tc,
+	    build_replay_reader, &rb), ==, 0);
+	while (dtfl_worker_step(w2))
+		;
+	dtfl_event_link_extract(l2, extract_each, out);
+
+	close(fds[0]);
+	dtfl_event_link_free(l2);
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w2);
+}
+
+/* The 0..10 doctest, now through the binary wire format. */
+DTFL_TEST(dataflow_operators_core_capture__binary_round_trip)
+{
+	uint64_t vals[10], times[10];
+	collected out;
+	uint64_t pairs[10][2];
+	size_t i;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	for (i = 0; i < 10; i++) {
+		vals[i] = i;
+		times[i] = 0;
+	}
+	run_binary_round_trip(vals, times, 10, &out);
+
+	assert_size(out.n, ==, 10);
+	for (i = 0; i < 10; i++) {
+		pairs[i][0] = out.times[i];
+		pairs[i][1] = out.vals[i];
+	}
+	qsort(pairs, out.n, sizeof pairs[0], cmp_pair);
+	for (i = 0; i < 10; i++) {
+		assert_uint64(pairs[i][0], ==, 0);
+		assert_uint64(pairs[i][1], ==, i);
+	}
+	return MUNIT_OK;
+}
+
+/* Binary round trip preserves records at distinct times. */
+DTFL_TEST(dataflow_operators_core_capture__binary_round_trip_times)
+{
+	static const uint64_t vals[] = { 10, 11, 20, 21, 22, 30 };
+	static const uint64_t times[] = { 1, 1, 2, 2, 2, 3 };
+	collected out;
+	uint64_t pairs[6][2];
+	size_t i;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	run_binary_round_trip(vals, times, 6, &out);
+
+	assert_size(out.n, ==, 6);
+	for (i = 0; i < 6; i++) {
+		pairs[i][0] = out.times[i];
+		pairs[i][1] = out.vals[i];
+	}
+	qsort(pairs, out.n, sizeof pairs[0], cmp_pair);
+	for (i = 0; i < 6; i++) {
+		assert_uint64(pairs[i][0], ==, times[i]);
+		assert_uint64(pairs[i][1], ==, vals[i]);
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(dataflow_operators_core_capture__round_trip),
 	DTFL_T(dataflow_operators_core_capture__round_trip_times),
+	DTFL_T(dataflow_operators_core_capture__binary_round_trip),
+	DTFL_T(dataflow_operators_core_capture__binary_round_trip_times),
 	DTFL_T_END
 };
 
