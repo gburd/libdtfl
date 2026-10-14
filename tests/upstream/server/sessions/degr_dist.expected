@@ -1,0 +1,19 @@
+loaded "graph" (random_graph)
+loaded "dd" (degr_dist)
+tick -> epoch 1
+peek "graph" @ epoch 1:
+  (0, 1) : 1
+  (1, 0) : 3
+  (1, 1) : 2
+  (2, 4) : 1
+  (3, 0) : 1
+peek "graph-degrees" @ epoch 1:
+  (1, 3) : 1
+  (5, 1) : 1
+epoch 1
+traces (2):
+  graph
+  graph-degrees
+instances (2):
+  graph
+  dd

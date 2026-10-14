@@ -419,7 +419,7 @@ differential-dataflow	server/dataflows/degr_dist/src/lib.rs	25	examples/server/d
 differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/server/neighborhood.c	P14	done	static plugin (not dlopen); three-hop, inspect to stdout
 differential-dataflow	server/dataflows/random_graph/src/lib.rs	195	examples/server/random_graph.c	P14	done	static plugin; deterministic finite initial graph only (open-loop timed source dropped; rate ignored)
 differential-dataflow	server/dataflows/reachability/src/lib.rs	32	examples/server/reachability.c	P14	done	static plugin (not dlopen); publishes <graph>-reach for peek
-differential-dataflow	server/src/bin/dd_server.rs	140	tools/dtfl-server/main.c	P14	todo	
+differential-dataflow	server/src/bin/dd_server.rs	140	tools/dtfl-server/main.c	P14	done	static plugin table (not dlopen); session replay matches
 differential-dataflow	server/src/lib.rs	94	include/dtfl/dd_server.h	P14	done	TraceHandler + Environment + static plugin registry; server.h is the DDIR server (P13), so this is dd_server.h
 differential-dataflow	tpchlike/src/bin/arrange.rs	246	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/bin/batch.rs	166	-	-	excluded	not a workspace member upstream

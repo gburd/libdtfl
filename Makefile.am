@@ -83,6 +83,7 @@ include bench/local.mk
 # only.  Included after the src fragments so the library exists to link.
 include tools/local.mk
 include tools/dtfl-ddir/local.mk
+include tools/dtfl-server/local.mk
 
 # Examples (noinst): included after the src fragments so the library and
 # its public headers exist to link against (AGENTS.md section 11).
