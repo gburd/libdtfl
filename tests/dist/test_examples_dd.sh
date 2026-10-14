@@ -65,6 +65,7 @@ run() {
 # Deterministic single-worker outputs over fixed inputs.
 run dd degrees degrees.expected sort
 run dd bfs bfs.expected sort
+run dd monoid-bfs monoid-bfs.expected sort
 run dd projekt projekt.expected sort
 run dd compact compact.expected cat
 run dd stackoverflow stackoverflow.expected sort
