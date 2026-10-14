@@ -336,9 +336,10 @@ bcast_logic(void *vctx, dtfl_scope *inner, dtfl_collection *states)
 	    dtfl_type_u64());			/* (log, data) */
 	const dtfl_type *statev = dtfl_type_u64();
 	const dtfl_type *outrec = dtfl_type_pair(contribk, statev);
+	const dtfl_type *contribrec = dtfl_type_pair(contribk, contribv);
 	dtfl_collection *used = dtfl_collection_enter(c->used, inner);
-	dtfl_collection *contrib = dtfl_collection_map(used, dtfl_type_pair(
-	    contribk, contribv), range_contrib, DTFL_NOCTX);
+	dtfl_collection *contrib = dtfl_collection_map(used, contribrec,
+	    range_contrib, DTFL_NOCTX);
 	dtfl_collection *joined = dtfl_collection_join_map(contrib, states,
 	    contribk, contribv, statev, outrec,
 	    extend_state, DTFL_CTX(comb_ctx_new(&c->comb), __dtfl_free));
@@ -356,6 +357,7 @@ bcast_logic(void *vctx, dtfl_scope *inner, dtfl_collection *states)
 	dtfl_type_free(outrec);
 	dtfl_type_free(contribv);
 	dtfl_type_free(contribk);
+	dtfl_type_free(contribrec);
 	return result;
 }
 
@@ -375,8 +377,10 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 	    dtfl_type_u64(), dtfl_type_u64(), dtfl_type_u64() }, 3);
 	const dtfl_type *rangek = reqrec;	/* (pos, log, key) */
 	const dtfl_type *rt = range_type();
-	const dtfl_type *initrec = dtfl_type_pair(
-	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), dtfl_type_u64());
+	/* dtfl_type_pair retains its fields; hold the inner pair to free it. */
+	const dtfl_type *initinner =
+	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+	const dtfl_type *initrec = dtfl_type_pair(initinner, dtfl_type_u64());
 	dtfl_diff *i64 = dtfl_diff_i64();
 	dtfl_collection *queries;
 	dtfl_collection *req_raw;
@@ -426,9 +430,11 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 	    DTFL_CTX(&bc, NULL));
 
 	/* restrict to the queries. */
-	result = dtfl_collection_semijoin(expanded, queries,
-	    dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64()), dtfl_type_u64(),
-	    initrec);
+	const dtfl_type *qkey = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	result = dtfl_collection_semijoin(expanded, queries, qkey,
+	    dtfl_type_u64(), initrec);
+	dtfl_type_free(qkey);
 
 	dtfl_collection_free(expanded);
 	dtfl_collection_free(init_distinct);
@@ -443,6 +449,7 @@ prefix_broadcast(dtfl_collection *ranges, dtfl_collection *values,
 	dtfl_collection_free(queries);
 	dtfl_diff_free(i64);
 	dtfl_type_free(initrec);
+	dtfl_type_free(initinner);
 	dtfl_type_free(rt);
 	dtfl_type_free(reqrec);
 	dtfl_type_free(qt);
