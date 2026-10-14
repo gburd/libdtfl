@@ -134,13 +134,13 @@ present_cmp(const __dtfl_diff_class *c, const void *a, const void *b)
 
 #define SIGNED(n, w) { n, w, int_plus_equals, int_is_zero, int_zero,	\
 	int_negate, int_one, NULL, signed_cmp, NULL, NULL, NULL,	\
-	DTFL_DIFF_KIND_SIGNED, 0, { NULL }, { 0 } }
+	DTFL_DIFF_KIND_SIGNED, 0, { NULL }, { 0 }, { 0 } }
 #define UNSIGNED(n, w) { n, w, int_plus_equals, int_is_zero, int_zero,	\
 	NULL, int_one, NULL, unsigned_cmp, NULL, NULL, NULL,		\
-	DTFL_DIFF_KIND_UNSIGNED, 0, { NULL }, { 0 } }
+	DTFL_DIFF_KIND_UNSIGNED, 0, { NULL }, { 0 }, { 0 } }
 #define WRAPPING(n, w) { n, w, int_plus_equals, int_is_zero, int_zero,	\
 	int_negate, NULL, NULL, signed_cmp, NULL, NULL, NULL,		\
-	DTFL_DIFF_KIND_WRAPPING, 0, { NULL }, { 0 } }
+	DTFL_DIFF_KIND_WRAPPING, 0, { NULL }, { 0 }, { 0 } }
 
 /* Indexed by __dtfl_diff_id. */
 static const __dtfl_diff_class builtins[DTFL_DIFF_NBUILTIN] = {
@@ -151,7 +151,7 @@ static const __dtfl_diff_class builtins[DTFL_DIFF_NBUILTIN] = {
 	WRAPPING("Wrapping<i32>", 4), WRAPPING("Wrapping<i64>", 8),
 	{ "Present", 0, present_plus_equals, present_is_zero, NULL, NULL,
 	    NULL, NULL, present_cmp, NULL, NULL, NULL, DTFL_DIFF_KIND_PRESENT,
-	    0, { NULL }, { 0 } },
+	    0, { NULL }, { 0 }, { 0 } },
 };
 
 /* Returns the static built-in class `id`. */
@@ -278,6 +278,7 @@ __dtfl_diff_tuple(const __dtfl_diff_class *const *f, size_t n)
 	c->negate = abelian ? tuple_negate : NULL;
 	c->cmp = tuple_cmp;
 	c->type = dtfl_type_tuple(types, n);
+	__dtfl_arc_init(&c->ref);
 	return c;
 }
 
@@ -307,16 +308,28 @@ __dtfl_diff_class_new(const __dtfl_diff_class *def)
 	c = __dtfl_memdup(def, sizeof *def);
 	if (c->type != NULL)
 		c->type = dtfl_type_retain(c->type);
+	__dtfl_arc_init(&c->ref);
 	return c;
 }
 
-/* Frees a tuple or user class; built-ins are static and ignored. */
+/* Retains a heap class; a no-op for a static built-in. */
+const __dtfl_diff_class *
+__dtfl_diff_class_retain(const __dtfl_diff_class *c)
+{
+	if (c != NULL && !is_builtin(c))
+		__dtfl_arc_retain(&((__dtfl_diff_class *)c)->ref);
+	return c;
+}
+
+/* Frees one reference to a tuple or user class; built-ins are static. */
 void
 __dtfl_diff_class_free(const __dtfl_diff_class *c)
 {
 	__dtfl_diff_class *m = (__dtfl_diff_class *)c;
 
 	if (c == NULL || is_builtin(c))
+		return;
+	if (!__dtfl_arc_release(&m->ref))
 		return;
 	if (m->ctx_free != NULL)
 		m->ctx_free(m->ctx);

@@ -93,7 +93,27 @@ struct __dtfl_diff_class {
 	size_t nfields;			/* tuples */
 	const __dtfl_diff_class *field[DTFL_DIFF_TUPLE_MAX];
 	size_t off[DTFL_DIFF_TUPLE_MAX];
+	/*
+	 * Reference count for a heap class (tuple or user).  A tuple or
+	 * user class is borrowed by raw pointer across many long-lived
+	 * structures (the trace, the arrange/join/reduce operators, their
+	 * histories), which outlive the dtfl_diff handle the caller frees.
+	 * Those borrowers retain the class with __dtfl_diff_class_retain and
+	 * release it with __dtfl_diff_class_free, so the class lives until
+	 * its last borrower is gone.  Built-in classes are static and ignore
+	 * this field (retain/free are no-ops for them).  Zero-initialized in
+	 * the static table and in user definitions; the constructors set it
+	 * to one.
+	 */
+	__dtfl_arc ref;
 };
+
+/*
+ * Retains a class (increments its reference count) and returns it, for a
+ * long-lived structure that borrows the raw pointer.  A no-op that just
+ * returns the class for a static built-in.
+ */
+const __dtfl_diff_class *__dtfl_diff_class_retain(const __dtfl_diff_class *c);
 
 /* A static built-in class; never freed. */
 const __dtfl_diff_class *__dtfl_diff_builtin(__dtfl_diff_id id);
@@ -113,7 +133,8 @@ const __dtfl_diff_class *__dtfl_diff_tuple(const __dtfl_diff_class *const *f,
  */
 const __dtfl_diff_class *__dtfl_diff_class_new(const __dtfl_diff_class *def);
 
-/* Frees a tuple or user class (ctx_free, type).  No-op for built-ins. */
+/* Frees one reference to a tuple or user class (ctx_free and type run on
+ * the last).  No-op for built-ins. */
 void __dtfl_diff_class_free(const __dtfl_diff_class *c);
 
 /* The class's record descriptor (static for built-ins, never NULL). */

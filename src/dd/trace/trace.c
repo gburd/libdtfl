@@ -46,7 +46,10 @@ __dtfl_trace_new(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 	t->kt = kt != NULL ? dtfl_type_retain(kt) : NULL;
 	t->vt = vt != NULL ? dtfl_type_retain(vt) : NULL;
 	t->tc = tc;
-	t->dc = dc;
+	/* The trace outlives the arrange operator that supplied dc, and a
+	 * user diff class is reference counted, so the trace keeps the class
+	 * alive for its whole lifetime (as it does kt/vt above). */
+	t->dc = __dtfl_diff_class_retain(dc);
 	return t;
 }
 
@@ -58,6 +61,7 @@ __dtfl_trace_free(__dtfl_trace *t)
 	__dtfl_spine_free(&t->spine);
 	dtfl_type_free(t->kt);
 	dtfl_type_free(t->vt);
+	__dtfl_diff_class_free(t->dc);
 	__dtfl_free(t);
 }
 

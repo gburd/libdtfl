@@ -41,7 +41,9 @@ __dtfl_diff_wrap(const __dtfl_diff_class *cls)
 	dtfl_diff *d = __dtfl_alloc(sizeof *d);
 
 	__dtfl_arc_init(&d->ref);
-	d->cls = cls;
+	/* The wrapper owns one reference to the class (a no-op retain for a
+	 * static built-in); dtfl_diff_free releases it. */
+	d->cls = __dtfl_diff_class_retain(cls);
 	return d;
 }
 
@@ -131,6 +133,8 @@ dtfl_diff_new(const dtfl_diff_ops *ops)
 {
 	__dtfl_diff_class def = { 0 };
 	dtfl_diff_ops *copy;
+	const __dtfl_diff_class *cls;
+	dtfl_diff *d;
 
 	if (ops->plus_equals == NULL || ops->is_zero == NULL ||
 	    ops->cmp == NULL)
@@ -152,7 +156,15 @@ dtfl_diff_new(const dtfl_diff_ops *ops)
 	def.type = ops->type;
 	def.ctx = copy;
 	def.ctx_free = user_ops_free;
-	return __dtfl_diff_wrap(__dtfl_diff_class_new(&def));
+	/*
+	 * class_new returns the class with one reference; the wrapper takes
+	 * its own with retain, so release the creation reference and leave
+	 * the wrapper the sole owner.
+	 */
+	cls = __dtfl_diff_class_new(&def);
+	d = __dtfl_diff_wrap(cls);
+	__dtfl_diff_class_free(cls);
+	return d;
 }
 
 dtfl_diff *
@@ -732,7 +744,7 @@ dtfl_collection_explode(dtfl_collection *c, const dtfl_type *out_type,
 	ec->user_free = ctx.free;
 	ec->in = c->diff->cls;
 	ec->factor = factor_diff->cls;
-	ec->out = out_cls;
+	ec->out = __dtfl_diff_class_retain(out_cls);
 	ec->depth = c->depth;
 	ec->in_dw = c->diff->cls->width;
 	ec->out_dw = out_cls->width;
