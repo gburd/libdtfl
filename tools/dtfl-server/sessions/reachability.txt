@@ -1,0 +1,10 @@
+# Reachability from a root over a shared graph.
+# random_graph publishes the edge trace; reachability imports it and tracks
+# the set of nodes reachable from node 0.
+load graph random_graph graph 5 8 1000
+load rr reachability graph 0
+tick
+peek graph
+peek graph-reach
+list
+exit

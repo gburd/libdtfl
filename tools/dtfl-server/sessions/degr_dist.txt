@@ -1,0 +1,10 @@
+# Degree distribution of a shared graph.
+# random_graph publishes the edge trace; degr_dist imports it and counts
+# how many nodes share each out-degree.
+load graph random_graph graph 5 8 1000
+load dd degr_dist graph
+tick
+peek graph
+peek graph-degrees
+list
+exit
