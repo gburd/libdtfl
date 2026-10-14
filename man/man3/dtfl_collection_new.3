@@ -19,6 +19,7 @@
 .Nm dtfl_collection_type ,
 .Nm dtfl_collection_diff ,
 .Nm dtfl_collection_scope ,
+.Nm dtfl_stream_as_collection ,
 .Nm dtfl_collection_free ,
 .Nm dtfl_collection_emit_record ,
 .Nm dtfl_collection_emit_pair ,
@@ -63,6 +64,8 @@ Timely and differential dataflow library
 .Fn dtfl_collection_diff "const dtfl_collection *c"
 .Ft dtfl_scope *
 .Fn dtfl_collection_scope "const dtfl_collection *c"
+.Ft dtfl_collection *
+.Fn dtfl_stream_as_collection "dtfl_stream *st" "const dtfl_type *rec_type" "dtfl_diff *diff"
 .Ft void
 .Fn dtfl_collection_free "dtfl_collection *c"
 .Ft void
@@ -141,6 +144,19 @@ and
 report the record type, diff class and scope behind a collection.
 .Fn dtfl_collection_free
 releases the handle without touching the dataflow.
+.Pp
+.Fn dtfl_stream_as_collection
+views a stream of differential update records (the data record followed
+by the scope's time words and the diff) as a collection, differential's
+.Em AsCollection
+trait.
+It is the bridge from a raw source such as an unordered input into the
+differential layer when the time class is not totally ordered, so
+.Fn dtfl_input_session_to_collection
+cannot be used.
+It takes the caller's
+.Fa diff
+reference and reads the time-word depth from the stream's scope.
 .Pp
 .Fn dtfl_collection_map
 and
