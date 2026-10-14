@@ -178,6 +178,15 @@ __dtfl_as_collection(dtfl_stream *st, const dtfl_type *rec, dtfl_diff *diff,
 	return c;
 }
 
+dtfl_collection *
+dtfl_stream_as_collection(dtfl_stream *st, const dtfl_type *rec_type,
+    dtfl_diff *diff)
+{
+	const dtfl_time_class *tc = dtfl_scope_time_class(dtfl_stream_scope(st));
+
+	return __dtfl_as_collection(st, rec_type, diff, dtfl_time_depth(tc));
+}
+
 const dtfl_type *
 dtfl_collection_type(const dtfl_collection *c)
 {

@@ -92,6 +92,24 @@ DTFL_API dtfl_input_session *dtfl_input_session_new(const dtfl_type *type,
 DTFL_API dtfl_collection *dtfl_input_session_to_collection(
     dtfl_input_session *s, dtfl_scope *scope);
 
+/*
+ * Views a stream of differential update records as a collection
+ * (differential's AsCollection trait).  `st` must carry records in the
+ * update layout the collection operators produce: the data record bytes
+ * followed by the scope's time words and the diff value.  `rec_type` is
+ * the data record type (not the update type), and `diff` is its diff
+ * class; this call takes the caller's `diff` reference.  The time-word
+ * depth is taken from the stream's scope.  Returns a collection the
+ * caller frees with dtfl_collection_free; it does not copy the stream.
+ *
+ * This is the bridge from a raw source (for example an unordered input
+ * emitting update records at partial-order times) into the differential
+ * layer, where dtfl_input_session_to_collection cannot be used because
+ * the time class is not totally ordered.
+ */
+DTFL_API dtfl_collection *dtfl_stream_as_collection(dtfl_stream *st,
+    const dtfl_type *rec_type, dtfl_diff *diff);
+
 /* Adds `change` to the weight of `record` at the current epoch. */
 DTFL_API void dtfl_input_session_update(dtfl_input_session *s,
     const void *record, size_t len, const void *change);
