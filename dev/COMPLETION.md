@@ -60,8 +60,12 @@ Not started or partial -- MUST be finished before the project is done
         examples.  REMAINING: a few blocked examples (pagerank,
         monoid-bfs, dynamic, graspan, progress, multitemporal, scc,
         ngo) each needing a distinct API, and half_join2.
-[ ] P10 differential capture (1 row).  Exit: capture round trip under
-        message duplication and reordering.
+[x] P10 differential capture (1 row).  Exit: capture round trip under
+        message duplication and reordering.  DONE (feat/finish-code):
+        src/dd/capture.c ports CDC V2 (the Updates/Progress Message
+        protocol, the sink, and the deduplicating reordering iterator);
+        tests/unit/test_dd_capture.c reconstructs the captured multiset
+        in order, reversed, duplicated and reversed+duplicated.
 [x] P11 diagnostics (the dataflow-diag crate): the in-process WebSocket
         server and dtfl-diag.  DONE (feat/p11-diag): Frame JSON byte-
         compatible with the upstream consoles; graph/profile/
@@ -115,8 +119,12 @@ Not started or partial -- MUST be finished before the project is done
         masked by that UAF crashing first); the heavy fuzz sweep stays
         SKIP until the reduce output-tag logic is fixed.  scc_100 remains
         a time-gated heavy sweep, not blocked on this.
-[ ] P14 plugin server + its four example plugins.  Exit: the dd_server
-        session scripts replay.
+[x] P14 plugin server + its four example plugins.  Exit: the dd_server
+        session scripts replay.  DONE (feat/p14-server): dd_server with a
+        named shared-trace registry, the degr_dist/reachability/
+        neighborhood/random_graph plugins (hand-verified), the
+        dtfl-server tool replaying the session scripts, and the
+        shared-arrangement property proven by pointer identity.
 [ ] P15 release: the three experiments/ benchmarks, the performance
         parity table (within 1.5x of Rust on the agreed subset), the
         fuzz campaign, distcheck on Linux (glibc, musl), FreeBSD, macOS.
