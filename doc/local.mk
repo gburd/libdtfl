@@ -22,4 +22,11 @@ libdtfl_TEXINFOS = \
 	doc/apiref.texi \
 	doc/porting.texi \
 	doc/timely/manual.texi \
+	doc/timely/introduction.texi \
+	doc/timely/chapter_0.texi \
+	doc/timely/chapter_1.texi \
+	doc/timely/chapter_2.texi \
+	doc/timely/chapter_3.texi \
+	doc/timely/chapter_4.texi \
+	doc/timely/chapter_5.texi \
 	doc/differential/manual.texi

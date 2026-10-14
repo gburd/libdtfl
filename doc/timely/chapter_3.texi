@@ -1,0 +1,9 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_3.texi: ports timely-dataflow chapter_3/* (Running
+@c Timely Dataflows: providing input, monitoring probes, operator
+@c execution, extending dataflows).
+
+@node Running Timely Dataflows
+@section Running a dataflow
+
+This section is forthcoming.

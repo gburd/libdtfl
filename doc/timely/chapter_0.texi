@@ -1,0 +1,134 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_0.texi: ports timely-dataflow
+@c mdbook/src/chapter_0/chapter_0_0.md (A simplest example) and
+@c chapter_0/chapter_0_1.md (An example).
+
+@node Timely Core Concepts
+@section A first dataflow
+
+Here is about the simplest non-trivial timely dataflow program: it
+streams the numbers 0 through 9 and inspects each one.
+
+@example
+static bool
+range_next(void *ctx, dtfl_emit *out)
+@{
+        uint64_t *next = ctx;
+        unsigned char buf[8];
+
+        if (*next >= 10)
+                return false;
+        dtfl_put_u64(buf, *next);
+        dtfl_emit_record(out, buf, sizeof buf);
+        (*next)++;
+        return true;
+@}
+
+static void
+inspect_seen(void *ctx, const uint64_t *time, const void *rec, size_t len)
+@{
+        printf("seen: %llu\n", (unsigned long long)dtfl_get_u64(rec));
+@}
+
+static void
+build(dtfl_scope *scope, void *ctx)
+@{
+        dtfl_stream *s = dtfl_to_stream(scope, dtfl_type_u64(),
+            range_next, DTFL_CTX(ctx, NULL));
+
+        dtfl_stream_inspect(s, inspect_seen, DTFL_NOCTX);
+@}
+@end example
+
+A worker runs this build function inside @code{dtfl_worker_dataflow},
+then steps until the dataflow is done:
+
+@example
+static void
+worker(dtfl_worker *w, void *ctx)
+@{
+        dtfl_time_class *tc = dtfl_time_u64();
+        uint64_t next = 0;
+
+        dtfl_worker_dataflow(w, "hello", tc, build, &next);
+        while (dtfl_worker_step(w))
+                ;
+        dtfl_time_class_free(tc);
+@}
+
+int
+main(void)
+@{
+        return dtfl_execute_directly(worker, NULL);
+@}
+@end example
+
+@code{dtfl_execute_directly} runs one worker on the calling thread.  The
+complete program is in @file{doc/snippets/timely_hello.c}; it prints:
+
+@example
+seen: 0
+seen: 1
+@dots{}
+seen: 9
+@end example
+
+Note how the C API renders two Rust idioms.  A Rust closure
+(@code{|x| println!(@dots{})}) becomes a function pointer and a context:
+@code{inspect_seen} plus @code{DTFL_NOCTX} (no context).  Rust's
+iterator (@code{(0..10).to_stream(scope)}) becomes @code{dtfl_to_stream}
+driven by a @code{range_next} callback that emits one record at a time
+and returns @code{false} at the end.  Because a record in libdtfl is a
+byte string, @code{dtfl_put_u64} and @code{dtfl_get_u64} move native
+values in and out of the eight-byte @code{u64} record (@pxref{Records}).
+
+@subsection A reactive example
+
+A dataflow is more than a loop because it can be @emph{reactive}: run it
+without knowing the data ahead of time, and feed data in as the
+computation proceeds.  The next program creates an input, exchanges each
+record across workers by its value, inspects it, and uses a probe to
+keep the input and the dataflow in step.
+
+@example
+static uint64_t
+route_by_value(const void *rec, size_t len, void *ctx)
+@{
+        return dtfl_get_u64(rec);
+@}
+
+static void
+build(dtfl_scope *scope, void *arg)
+@{
+        build_ctx *c = arg;
+        dtfl_stream *s = dtfl_input_to_stream(c->input, scope);
+
+        s = dtfl_stream_exchange(s, route_by_value, NULL);
+        s = dtfl_stream_inspect(s, say_hello, DTFL_NOCTX);
+        dtfl_stream_probe_with(s, c->probe);
+@}
+@end example
+
+The driver introduces one record per round and advances the input's
+timestamp after each:
+
+@example
+for (round = 0; round < 10; round++) @{
+        uint64_t next = round + 1;
+        unsigned char buf[8];
+
+        dtfl_put_u64(buf, round);
+        dtfl_input_send(c->input, buf, sizeof buf);
+        dtfl_input_advance_to(c->input, &next);
+        while (dtfl_probe_less_than(c->probe, dtfl_input_time(c->input)))
+                dtfl_worker_step(w);
+@}
+dtfl_input_close(c->input);
+@end example
+
+The complete program is in @file{doc/snippets/timely_input.c}.  Run on
+one worker it prints @code{hello 0} through @code{hello 9} in order.
+Run on several workers (configure the mode and thread count through
+@code{dtfl_config}, @pxref{Installation}), each record is routed to the
+worker its value hashes to, so the lines interleave; the next section
+explains why that is fine, and how the probe keeps the output sensible.

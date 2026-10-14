@@ -1,0 +1,9 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_4.texi: ports timely-dataflow chapter_4/* (Advanced
+@c Timely Dataflow: scopes, iteration, flow control, capture and replay,
+@c custom datatypes).
+
+@node Advanced Timely
+@section Scopes, iteration and capture
+
+This section is forthcoming.

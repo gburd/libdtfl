@@ -1,0 +1,8 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_5.texi: ports timely-dataflow chapter_5/* (Internals:
+@c communication, progress tracking, containers, logging).
+
+@node Timely Internals
+@section Internals
+
+This section is forthcoming.
