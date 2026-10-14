@@ -57,6 +57,7 @@ dtflinclude_HEADERS += include/dtfl/dd_server.h
 EXTRA_DIST += src/dd/exports.sym
 
 dist_man_MANS += man/man3/dtfl_collection_new.3
+dist_man_MANS += man/man3/dtfl_diff_new.3
 dist_man_MANS += man/man3/dtfl_input_session_new.3
 dist_man_MANS += man/man3/dtfl_collection_arrange.3
 dist_man_MANS += man/man3/dtfl_collection_arrange_by_key.3

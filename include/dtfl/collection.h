@@ -71,6 +71,57 @@ DTFL_API size_t dtfl_diff_width(const dtfl_diff *d);
 /* True if the class is Abelian (has negate), which negate requires. */
 DTFL_API bool dtfl_diff_is_abelian(const dtfl_diff *d);
 
+/*
+ * A user-defined diff class (difference.rs Semigroup and its extensions).
+ * The callbacks implement the algebra of one difference type whose values
+ * are `width` bytes, stored natively and unaligned (so copy with memcpy).
+ * Each callback receives the ops' own `ctx` so a family of related classes
+ * can share state.  A zero-width class (like Present) passes NULL value
+ * pointers.
+ *
+ *   plus_equals	acc += x (Semigroup; required)
+ *   is_zero		true if x is the additive identity (required); a
+ *			semigroup need not have a zero, so this may always
+ *			return false (differential uses it only to drop
+ *			cancelled updates)
+ *   cmp			Rust's Ord on values: <0, 0, >0 (required)
+ *   multiply		acc *= x in place, Multiply<Self> (NULL = absent);
+ *			providing it lets join multiply this diff with itself
+ *   negate		x = -x, Abelian (NULL = not Abelian); if set, zero
+ *			must be set too, and reduce_abelian, count and negate
+ *			accept this class
+ *   zero		write the zero value to out, Monoid (NULL = Semigroup
+ *			only)
+ *
+ * `type` describes a value of this class when it becomes a record value
+ * (e.g. in explode or count); NULL means the class carries no record
+ * value (the unit type).  `ctx` is passed to every callback and freed by
+ * `ctx_free` when the last reference to the class is released; either may
+ * be NULL.
+ */
+typedef struct dtfl_diff_ops {
+	const char *name;
+	size_t width;
+	void (*plus_equals)(void *ctx, void *acc, const void *x);
+	bool (*is_zero)(void *ctx, const void *x);
+	int (*cmp)(void *ctx, const void *a, const void *b);
+	void (*multiply)(void *ctx, void *acc, const void *x);
+	void (*negate)(void *ctx, void *x);
+	void (*zero)(void *ctx, void *out);
+	const dtfl_type *type;
+	void *ctx;
+	void (*ctx_free)(void *ctx);
+} dtfl_diff_ops;
+
+/*
+ * A new diff class from a user-defined algebra (difference.rs).  Copies
+ * *ops and retains ops->type if set.  plus_equals, is_zero and cmp are
+ * required; negate requires zero (an Abelian class is a Monoid).  Panics
+ * through the panic hook if a required callback is missing or negate is
+ * set without zero.  Release the class with dtfl_diff_free.
+ */
+DTFL_API dtfl_diff *dtfl_diff_new(const dtfl_diff_ops *ops);
+
 /* ------------------------------------------------------------------ */
 /* Input sessions (input.rs)                                           */
 /* ------------------------------------------------------------------ */
