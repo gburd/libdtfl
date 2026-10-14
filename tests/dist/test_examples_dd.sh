@@ -74,6 +74,7 @@ run dd interpreted interpreted.expected sort
 run dd itembased_cf itembased_cf.expected sort
 run dd scc scc.expected sort
 run dd pagerank pagerank.expected sort
+run dd dynamic dynamic.expected sort
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
 run dogs dogsdogsdogs dogsdogsdogs.expected sort
 
