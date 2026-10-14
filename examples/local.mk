@@ -28,7 +28,8 @@ noinst_PROGRAMS += \
 	examples/timely/bfs \
 	examples/timely/pagerank \
 	examples/timely/wordcount \
-	examples/timely/hashjoin
+	examples/timely/hashjoin \
+	examples/timely/logging-send
 
 examples_timely_simple_SOURCES = examples/timely/simple.c
 examples_timely_simple_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -105,6 +106,10 @@ examples_timely_wordcount_LDADD = $(EXAMPLE_LDADD)
 examples_timely_hashjoin_SOURCES = examples/timely/hashjoin.c
 examples_timely_hashjoin_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_hashjoin_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_logging_send_SOURCES = examples/timely/logging-send.c
+examples_timely_logging_send_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_logging_send_LDADD = $(EXAMPLE_LDADD)
 
 # ----------------------------------------------------------------------
 # Differential dataflow examples (P9).
@@ -201,6 +206,7 @@ check_PROGRAMS += \
 	examples/timely/pagerank \
 	examples/timely/hashjoin \
 	examples/timely/capture \
+	examples/timely/logging-send \
 	examples/dd/degrees \
 	examples/dd/bfs \
 	examples/dd/projekt \
@@ -228,6 +234,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/pagerank.expected \
 	examples/timely/hashjoin.expected \
 	examples/timely/capture.expected \
+	examples/timely/logging-send.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
 	examples/dd/projekt.expected \
