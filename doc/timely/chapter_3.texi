@@ -1,9 +1,100 @@
 @c SPDX-License-Identifier: MIT
-@c doc/timely/chapter_3.texi: ports timely-dataflow chapter_3/* (Running
-@c Timely Dataflows: providing input, monitoring probes, operator
-@c execution, extending dataflows).
+@c doc/timely/chapter_3.texi: ports timely-dataflow
+@c mdbook/src/chapter_3/chapter_3.md (Running Timely Dataflows),
+@c chapter_3_1.md (Providing Input), chapter_3_2.md (Monitoring Probes),
+@c chapter_3_3.md (Operator Execution), chapter_3_4.md (Extending).
 
 @node Running Timely Dataflows
-@section Running a dataflow
+@section Driving a worker
 
-This section is forthcoming.
+With a dataflow graph built, how do we feed it and learn what it did?
+The key realization is that @strong{a timely program programs the worker
+threads}.  Part of that program builds the dataflow graph; the other
+part feeds it, advances the inputs, and gives each operator a chance to
+run.  That second part is the loop seen throughout this chapter:
+
+@example
+for (round = 0; round < 10; round++) @{
+        uint64_t next = round + 1;
+        dtfl_input_send(input, &round, sizeof round);
+        dtfl_input_advance_to(input, &next);
+        while (dtfl_probe_less_than(probe, dtfl_input_time(input)))
+                dtfl_worker_step(w);
+@}
+@end example
+
+Until @code{dtfl_worker_step} runs, the data just sit in queues; the
+step is where the computation happens.
+
+@subsection Providing input
+
+@code{dtfl_input_send} moves a record into the queue shared with the
+input operator.  It does not block and does no expensive work; call it
+as much as you like.  But take a break from sending now and again to let
+the operators run: efficient streaming keeps the data moving by building
+only small buffers before stepping.
+
+@code{dtfl_input_advance_to} announces that the input will send nothing
+with a time less than its argument from now on.  That is big news for
+the rest of the system: any operator waiting on the time you held can
+get to work once your sent messages drain.  Advancing to a time not at
+or after the current time (which @code{dtfl_input_time} reports) is a
+logic error, and libdtfl calls the panic hook.  @code{dtfl_input_close}
+consumes the input entirely, which tells every operator it will hear
+nothing more from you.
+
+Two cautions.  First, keep the input moving: forgetting to advance an
+input is the most common way to wait forever for a result that never
+comes.  Second, progress tracking does work proportional to the number
+of distinct timestamps, so batch your input: send many records at one
+time rather than a new time per record.
+
+@subsection Monitoring probes
+
+A probe reports the timestamps still possible at the point it is
+attached.  @code{dtfl_stream_probe_with} attaches a probe you created
+with @code{dtfl_probe_new}; attaching one handle to several streams
+makes it report the union of their frontiers.  Three queries read it:
+@code{dtfl_probe_less_than} is true if a time strictly less than the
+argument is still possible; @code{dtfl_probe_less_equal} is the
+inclusive form; @code{dtfl_probe_done} is true when no time is possible
+at all.
+
+The usual use is to check whether the dataflow has caught up to the
+input: @code{dtfl_probe_less_than(probe, dtfl_input_time(input))} is true
+while the system could still do work to reach the input's current time.
+Stepping while it is true drains each round before the next; but you are
+free to step a fixed number of times instead, trading the risk of
+overloading the system against the waste of waiting when you could be
+starting the next batch.
+
+@subsection Operator execution
+
+@code{dtfl_worker_step} is the heart of the computation.  One call makes
+a single pass over the operators, giving each the chance to drain its
+input and produce output; the clever work (filtering, projection,
+pre-aggregation) happens here and nowhere else.
+
+@code{dtfl_worker_step} returns @code{true} while any operator remains
+incomplete, which includes an input operator whose handle is still open.
+So this loop @emph{never terminates} while an input is open:
+
+@example
+while (dtfl_worker_step(w))   /* wrong: input still open */
+        ;
+@end example
+
+The system cannot know you are done sending; another
+@code{dtfl_input_send} could always arrive.  Step with a probe until the
+dataflow catches up, as above, and only drain to completion with the
+bare @code{while (dtfl_worker_step(w)) ;} loop @emph{after} closing the
+input with @code{dtfl_input_close}.
+
+@subsection Extending dataflows
+
+Building one dataflow does not end the matter.  A worker can run one
+dataflow for a while, then build and run a second, and a third, all
+driven by the same @code{dtfl_worker_step}.  A worker tracks any number
+of dataflows and cleans up each when it completes (when no capability
+remains in it); @code{dtfl_worker_has_dataflows} reports whether any
+remain.  Spin up as many as a program needs.

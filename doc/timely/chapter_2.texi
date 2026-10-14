@@ -1,8 +1,108 @@
 @c SPDX-License-Identifier: MIT
-@c doc/timely/chapter_2.texi: ports timely-dataflow chapter_2/* (Building
-@c Timely Dataflows: inputs, outputs, operators, a worked example).
+@c doc/timely/chapter_2.texi: ports timely-dataflow
+@c mdbook/src/chapter_2/chapter_2.md (Building Timely Dataflows),
+@c chapter_2_1.md (Creating Inputs), chapter_2_2.md (Observing Outputs)
+@c and chapter_2_3.md (Introducing Operators).
 
 @node Building Timely Dataflows
 @section Inputs, outputs and operators
 
-This section is forthcoming.
+This section tours dataflow construction: where data come from, how to
+observe them, and the built-in operators that transform them.  One
+assumption underlies all of it: @strong{every worker builds the same
+dataflow}.  A worker's build function may read user input or a random
+seed, but you should not: a sensible computation builds an identical
+graph on every worker (@pxref{Running Timely Dataflows}).
+
+@subsection Creating inputs
+
+Almost every operator is defined from a source of data.  There are two
+common sources.  @code{dtfl_to_stream} turns an iterator-like callback
+into a stream, as in the first dataflow (@pxref{Timely Core Concepts}):
+the callback emits records until it returns @code{false}.  An input
+handle feeds a stream interactively: create it with
+@code{dtfl_input_new}, add it to a scope with @code{dtfl_input_to_stream},
+and send records with @code{dtfl_input_send} as the computation runs.  A
+third source, @code{dtfl_op_builder_output} with no inputs, is a custom
+source operator (@pxref{Running Timely Dataflows}); a fourth,
+@code{dtfl_stream_capture_into} and the event-link replay, moves a
+stream out of one dataflow and back into another.
+
+@subsection Observing outputs
+
+The simplest way to look at a stream is @code{dtfl_stream_inspect},
+which runs a callback on each record.  Its larger sibling
+@code{dtfl_stream_inspect_batch} hands the callback a whole batch of
+records that share a timestamp, together with that timestamp
+(@pxref{Timely Dataflow Model}); it is the efficient choice when a
+program processes outputs in bulk or needs to see the time.
+@code{dtfl_stream_capture_into} exfiltrates a stream as a sequence of
+events (data arriving, and progress notifications) that another dataflow
+can replay; libdtfl's own tests use capture to extract a stream and
+assert it is correct.
+
+@subsection Transforming data
+
+Between a source and a sink a program computes.  libdtfl provides the
+usual operators; the ones you reach for first are map, flat_map and
+filter.
+
+@strong{Map and flat_map.}  @code{dtfl_stream_flat_map} transforms each
+record into zero or more output records of a chosen type.  (libdtfl
+spells @code{map} as a flat_map that emits exactly one record; because a
+record is a byte string, the output type is given explicitly.)  The
+callback writes each output record through an emit handle:
+
+@example
+static void
+plus_one(void *ctx, const uint64_t *time, const void *rec, size_t len,
+    dtfl_emit *out)
+@{
+        unsigned char buf[8];
+        dtfl_put_u64(buf, dtfl_get_u64(rec) + 1);
+        dtfl_emit_record(out, buf, sizeof buf);
+@}
+/* dtfl_stream_flat_map(s, dtfl_type_u64(), plus_one, DTFL_NOCTX); */
+@end example
+
+To emit several records, call @code{dtfl_emit_record} more than once; to
+emit none, call it zero times.  Mapping each @var{x} to @code{0 .. x},
+say, is a flat_map whose callback emits a record per value in the range.
+
+@strong{Filter.}  @code{dtfl_stream_filter} keeps the records whose
+predicate returns @code{true}.  The predicate sees the record but, in
+keeping with upstream, does not change it:
+
+@example
+static bool
+is_even(void *ctx, const void *rec, size_t len)
+@{
+        return dtfl_get_u64(rec) % 2 == 0;
+@}
+/* dtfl_stream_filter(s, is_even, DTFL_NOCTX); */
+@end example
+
+The complete program in @file{doc/snippets/timely_ops.c} chains these:
+stream 0 through 9, add one, keep the evens, and inspect.  It prints
+@code{seen: 2}, @code{4}, @code{6}, @code{8}, @code{10}.
+
+@subsection Splitting and combining
+
+@code{dtfl_stream_partition} splits a stream into a fixed number of
+output streams by a routing callback; it partitions only
+@emph{logically} and moves no data between workers.
+@code{dtfl_stream_concat} merges two streams, and
+@code{dtfl_stream_concatenate} merges a whole array of them, undoing a
+partition in one operator.  Both concat operators exchange no data and
+copy no records.
+
+@code{dtfl_stream_exchange} is the @emph{physical} partition: it routes
+each record to the worker its routing callback selects, changing the
+distribution of data without changing its contents.  You rarely call it
+directly, since an operator that needs a particular distribution arranges
+it itself; it earns its keep when two operators want the same
+distribution of one stream, where a single @code{exchange} moves the
+data once instead of twice.
+
+Many more operators live in @code{timely_ops.h}; the next section shows
+how to build your own when none of them fits.
