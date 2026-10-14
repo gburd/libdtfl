@@ -152,6 +152,18 @@ tests_upstream_dd_join_SOURCES = tests/upstream/dd/join.c
 tests_upstream_dd_join_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_dd_join_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/upstream/dd/import
+TESTS += tests/upstream/dd/import
+tests_upstream_dd_import_SOURCES = tests/upstream/dd/import.c
+tests_upstream_dd_import_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_import_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/dd/reduce_reference
+TESTS += tests/upstream/dd/reduce_reference
+tests_upstream_dd_reduce_reference_SOURCES = tests/upstream/dd/reduce_reference.c
+tests_upstream_dd_reduce_reference_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_reduce_reference_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_agent
 TESTS += tests/unit/test_agent
 tests_unit_test_agent_SOURCES = tests/unit/test_agent.c

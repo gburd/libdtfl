@@ -483,18 +483,34 @@ __dtfl_trace_agent_new_listener(__dtfl_trace_agent *a, dtfl_activator *activator
 	__dtfl_batch_ord **batches;
 	size_t n, i;
 	uint64_t minimum[DTFL_TIME_MAX] = { 0 };
-	const __dtfl_antichain *final_upper = NULL;
+	const __dtfl_antichain *final_upper;
 
 	/* map_batches: all batches currently in the trace. */
 	batches = __dtfl_trace_map_batches(a->box->trace, &n);
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n; i++)
 		__dtfl_replay_queue_push_batch(q, batches[i], minimum);
-		final_upper = __dtfl_batch_ord_upper(batches[i]);
-	}
-	if (final_upper != NULL)
-		__dtfl_replay_queue_push_frontier(q,
-		    (const uint64_t *)final_upper->elems.data,
-		    __dtfl_antichain_len(final_upper));
+	/*
+	 * Seed the frontier from the trace's current upper (spine_fueled.rs
+	 * Spine.upper, maintained by insert as the last batch's upper).
+	 * Upstream agent.rs new_listener takes this frontier from the upper()
+	 * of the last batch map_batches yields, and upstream map_batches
+	 * (spine_fueled.rs) reports EVERY batch, including the logically-empty
+	 * seal batches that writer.rs seal inserts to advance the frontier
+	 * without data; so for upstream that last upper equals Spine.upper.
+	 * The C port's map_batches is built on batches_through, which drops
+	 * empty batches (correct for a cursor), so the last non-empty batch's
+	 * upper would lag.  Reading Spine.upper directly reproduces upstream's
+	 * seed frontier exactly.  Not pushing the empty seal batch into the
+	 * queue is observationally identical: an empty batch yields no cursor
+	 * updates, and import_logic skips empty batches on emission, so only
+	 * the frontier it announces matters, and that now matches.  Without
+	 * this an importer created after a pure frontier advance starts behind
+	 * the real frontier (import.rs test_import_stalled_dataflow fails).
+	 */
+	final_upper = __dtfl_trace_upper(a->box->trace);
+	__dtfl_replay_queue_push_frontier(q,
+	    (const uint64_t *)final_upper->elems.data,
+	    __dtfl_antichain_len(final_upper));
 	for (i = 0; i < n; i++)
 		__dtfl_batch_ord_release(batches[i]);
 	if (batches != NULL)

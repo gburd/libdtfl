@@ -38,8 +38,13 @@ __dtfl_trace_new(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 
 	__dtfl_spine_init(&t->spine, keyed, kt, vt, tc, dc);
 	t->keyed = keyed;
-	t->kt = kt;
-	t->vt = vt;
+	/* The trace owns its key and value type references for its whole
+	 * lifetime: a trace handle (dtfl_arranged_trace) and anything cloning
+	 * the box outlive the arrange operator that supplied these types, so
+	 * the trace must keep them alive (dtfl_trace_to_vec and cursor_through
+	 * read them after the arrangement is freed). */
+	t->kt = kt != NULL ? dtfl_type_retain(kt) : NULL;
+	t->vt = vt != NULL ? dtfl_type_retain(vt) : NULL;
 	t->tc = tc;
 	t->dc = dc;
 	return t;
@@ -51,6 +56,8 @@ __dtfl_trace_free(__dtfl_trace *t)
 	if (t == NULL)
 		return;
 	__dtfl_spine_free(&t->spine);
+	dtfl_type_free(t->kt);
+	dtfl_type_free(t->vt);
 	__dtfl_free(t);
 }
 
@@ -92,6 +99,20 @@ const __dtfl_antichain *
 __dtfl_trace_get_physical_compaction(const __dtfl_trace *t)
 {
 	return &t->spine.physical_frontier;
+}
+
+/*
+ * The trace's current upper frontier (spine_fueled.rs Spine.upper): the
+ * upper of the last batch inserted, which the logically-empty seal batches
+ * writer.rs seal inserts advance even when they carry no data.  Upstream's
+ * map_batches reports every batch (including empties), so new_listener's seed
+ * frontier equals this; the C map_batches is built on batches_through, which
+ * drops empties, so new_listener reads this directly.
+ */
+const __dtfl_antichain *
+__dtfl_trace_upper(const __dtfl_trace *t)
+{
+	return &t->spine.upper;
 }
 
 /*
