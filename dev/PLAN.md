@@ -648,7 +648,10 @@ needs a before/after benchmark (section 9).
 ### D12. Divergences from the pin
 
 The port matches the pin.  Where it does not, the difference is listed
-here and in the ledger note, and it gets its own ADR.  There are two:
+here and in the ledger note, and it gets its own ADR.  There are two
+byte/network divergences and one group of examples and emit points that
+cannot be ported literally without reversing a decision made elsewhere
+in this section (see the 2026-10-15 amendment in ADR-0012):
 
 1. **Byte aliasing.** `bytes/src/lib.rs` takes the aliasing and
    regeneration hardening from timely #821, which landed after the
@@ -663,6 +666,18 @@ here and in the ledger note, and it gets its own ADR.  There are two:
 
 A new divergence needs an entry here, an ADR and a ledger note, all in
 the same commit.
+
+Separately, a few upstream examples and optional emit points are
+excluded or deferred rather than ported literally, each with a reason
+recorded in the ADR-0012 amendment and the ledger note: comm_hello and
+lgalloc (the raw allocator is internal, D7/D9; the worker is the public
+entry), logging-recv and logging_replay (logging is a subscriber API,
+not logging-as-data), the comm_log/dd_log/progcaster emit points (no
+consumer on the data plane), the ddir multi-worker Sequencer, the
+reduce_reference cross-tactic family (needs a second reduce tactic), and
+arrange/graspan/progress (each needs a public surface that is not a
+small add).  These are not divergences in behavior; they are the scope
+boundary of the public API as this plan drew it.
 
 ## 5. Thread-safety contract
 
