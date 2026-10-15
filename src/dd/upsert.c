@@ -158,7 +158,7 @@ static void
 sort_queue(upsert_ctx *c)
 {
 	size_t i, j, n = c->queue.len;
-	pending *q = (pending *)c->queue.data;
+	pending *q = (pending *)(void *)c->queue.data;
 
 	for (i = 1; i < n; i++) {
 		pending tmp = q[i];
@@ -224,7 +224,7 @@ process_interval(upsert_ctx *c, dtfl_op *op, dtfl_cap *cap,
 
 	/* Sort taken by (key, then time, then option<value>). */
 	{
-		pending *t = (pending *)taken.data;
+		pending *t = (pending *)(void *)taken.data;
 		size_t n = taken.len, a, b;
 
 		for (a = 1; a < n; a++) {
@@ -457,7 +457,7 @@ upsert_logic(dtfl_op *op, void *vctx)
 
 			sort_queue(c);
 			if (c->queue.len > 0)
-				earliest = ((pending *)c->queue.data)[0].time;
+				earliest = ((pending *)(void *)c->queue.data)[0].time;
 			__dtfl_vec_init(&newcaps, sizeof(dtfl_cap *));
 			if (earliest != NULL) {
 				dtfl_cap *found = NULL;
@@ -506,10 +506,10 @@ upsert_logic(dtfl_op *op, void *vctx)
 		__dtfl_antichain_insert(&c->prev_frontier,
 		    frontier + (size_t)c->depth * i);
 	__dtfl_trace_agent_set_logical(&c->reader,
-	    (const uint64_t *)c->prev_frontier.elems.data,
+	    (const uint64_t *)(void *)c->prev_frontier.elems.data,
 	    __dtfl_antichain_len(&c->prev_frontier));
 	__dtfl_trace_agent_set_physical(&c->reader,
-	    (const uint64_t *)c->prev_frontier.elems.data,
+	    (const uint64_t *)(void *)c->prev_frontier.elems.data,
 	    __dtfl_antichain_len(&c->prev_frontier));
 
 	(void)j;

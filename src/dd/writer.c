@@ -76,7 +76,7 @@ __dtfl_trace_writer_insert(__dtfl_trace_writer *w, __dtfl_batch_ord *batch,
 		}
 		__dtfl_replay_queue_push_batch(q, batch, hint);
 		__dtfl_replay_queue_push_frontier(q,
-		    (const uint64_t *)upper->elems.data,
+		    (const uint64_t *)(void *)upper->elems.data,
 		    __dtfl_antichain_len(upper));
 		if (q->activator != NULL)
 			dtfl_activator_activate(q->activator);

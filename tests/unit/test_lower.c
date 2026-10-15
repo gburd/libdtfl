@@ -42,7 +42,7 @@ sub_count(const dd_scope *s)
 	size_t i, n = 0;
 
 	for (i = 0; i < s->items.len; i++)
-		if (((dd_item *)s->items.data[i])->kind == DD_I_SUB)
+		if (((dd_item *)(void *)s->items.data[i])->kind == DD_I_SUB)
 			n++;
 	return n;
 }
@@ -67,7 +67,7 @@ import_named(const dd_scope *s, const char *name)
 	size_t i;
 
 	for (i = 0; i < s->imports.len; i++)
-		if (strcmp(((dd_import *)s->imports.data[i])->name, name) == 0)
+		if (strcmp(((dd_import *)(void *)s->imports.data[i])->name, name) == 0)
 			return true;
 	return false;
 }
@@ -78,7 +78,7 @@ export_named(const dd_scope *s, const char *name)
 	size_t i;
 
 	for (i = 0; i < s->exports.len; i++)
-		if (strcmp(((dd_export *)s->exports.data[i])->name, name) == 0)
+		if (strcmp(((dd_export *)(void *)s->exports.data[i])->name, name) == 0)
 			return true;
 	return false;
 }
@@ -89,7 +89,7 @@ all_imports_input(const dd_scope *s)
 	size_t i;
 
 	for (i = 0; i < s->imports.len; i++)
-		if (((dd_import *)s->imports.data[i])->from.kind != DD_SRC_INPUT)
+		if (((dd_import *)(void *)s->imports.data[i])->from.kind != DD_SRC_INPUT)
 			return false;
 	return true;
 }
@@ -100,7 +100,7 @@ all_imports_parent(const dd_scope *s)
 	size_t i;
 
 	for (i = 0; i < s->imports.len; i++)
-		if (((dd_import *)s->imports.data[i])->from.kind !=
+		if (((dd_import *)(void *)s->imports.data[i])->from.kind !=
 		    DD_SRC_PARENT)
 			return false;
 	return true;
@@ -176,7 +176,7 @@ DTFL_TEST(lower_tree_tests__lowers_reach_to_tree)
 	assert_true(all_imports_input(&p->root));
 	assert_size(sub_count(&p->root), ==, 1);
 	assert_size(p->root.exports.len, ==, 1);
-	assert_string_equal(((dd_export *)p->root.exports.data[0])->name,
+	assert_string_equal(((dd_export *)(void *)p->root.exports.data[0])->name,
 	    "result");
 
 	reach = first_sub(&p->root);
@@ -185,7 +185,7 @@ DTFL_TEST(lower_tree_tests__lowers_reach_to_tree)
 	assert_true(all_imports_parent(reach));
 	assert_size(reach->binds.len, ==, 1);
 	assert_size(reach->exports.len, ==, 1);
-	assert_string_equal(((dd_export *)reach->exports.data[0])->name,
+	assert_string_equal(((dd_export *)(void *)reach->exports.data[0])->name,
 	    "reach");
 	assert_true(reads_child_export(&p->root));
 
@@ -308,9 +308,9 @@ DTFL_TEST(lower_optimize_tests__fuses_linear_chains)
 	}
 	assert_not_null(lin);
 	assert_size(lin->ops.len, ==, 3); /* all three ops in order */
-	assert_int(((dd_linear_op *)lin->ops.data[0])->kind, ==,
+	assert_int(((dd_linear_op *)(void *)lin->ops.data[0])->kind, ==,
 	    DD_LIN_PROJECT);
-	assert_int(((dd_linear_op *)lin->ops.data[2])->kind, ==,
+	assert_int(((dd_linear_op *)(void *)lin->ops.data[2])->kind, ==,
 	    DD_LIN_NEGATE);
 
 	dd_program_free(p);

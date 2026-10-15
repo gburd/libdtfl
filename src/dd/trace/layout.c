@@ -263,7 +263,7 @@ __dtfl_upds_builder_push(__dtfl_upds_builder *b, const uint64_t *time,
 static uint64_t *
 stash_time(__dtfl_upds_builder *b, size_t i)
 {
-	return (uint64_t *)b->stash_t.data + (size_t)b->tw * i;
+	return (uint64_t *)(void *)b->stash_t.data + (size_t)b->tw * i;
 }
 
 static void *

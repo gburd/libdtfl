@@ -267,9 +267,9 @@ input_ref(scope_lower *sl, size_t n)
 	if (!sl->is_root)
 		__dtfl_panic("`input %zu` used outside the root scope", n);
 	for (i = 0; i < sl->input_import_n.len; i++)
-		if (*(size_t *)sl->input_import_n.data[i] == n) {
+		if (*(size_t *)(void *)sl->input_import_n.data[i] == n) {
 			r.kind = DD_REF_IMPORT;
-			r.u.import = *(size_t *)sl->input_import_i.data[i];
+			r.u.import = *(size_t *)(void *)sl->input_import_i.data[i];
 			return r;
 		}
 	imp = __dtfl_alloc(sizeof *imp);
@@ -302,7 +302,7 @@ trace_ref(scope_lower *sl, const char *name)
 	for (i = 0; i < sl->trace_import_name.len; i++)
 		if (strcmp(sl->trace_import_name.data[i], name) == 0) {
 			r.kind = DD_REF_IMPORT;
-			r.u.import = *(size_t *)sl->trace_import_i.data[i];
+			r.u.import = *(size_t *)(void *)sl->trace_import_i.data[i];
 			return r;
 		}
 	imp = __dtfl_alloc(sizeof *imp);
@@ -792,7 +792,7 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 		dd_ref r = lower_expr(&sl, var_exprs.data[i]);
 		dd_bind *b = __dtfl_alloc(sizeof *b);
 
-		b->var = *(size_t *)var_ids.data[i];
+		b->var = *(size_t *)(void *)var_ids.data[i];
 		b->value = r;
 		dd_vec_push(&s->binds, b);
 	}

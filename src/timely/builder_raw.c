@@ -63,7 +63,7 @@ oc_notify_me(const __dtfl_operate *op)
 static bool
 oc_schedule(__dtfl_schedule *s)
 {
-	op_core *o = (op_core *)((char *)s - offsetof(op_core, sched));
+	op_core *o = (op_core *)(void *)((char *)s - offsetof(op_core, sched));
 
 	return o->logic(o->ctx, o->sp);
 }
@@ -84,7 +84,7 @@ oc_free(op_core *o)
 static void
 oc_sched_destroy(__dtfl_schedule *s)
 {
-	op_core *o = (op_core *)((char *)s - offsetof(op_core, sched));
+	op_core *o = (op_core *)(void *)((char *)s - offsetof(op_core, sched));
 
 	oc_free(o);
 }

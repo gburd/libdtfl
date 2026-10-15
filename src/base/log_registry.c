@@ -234,7 +234,7 @@ logger_push(__dtfl_logger *l)
 	}
 	l->in_action = true;
 	l->action(l->ctx, __dtfl_logger_now(l),
-	    (const __dtfl_log_event *)l->events.data, l->events.len);
+	    (const __dtfl_log_event *)(void *)l->events.data, l->events.len);
 	l->in_action = false;
 	__dtfl_vec_clear(&l->events);
 	__dtfl_vec_clear(&l->arena);

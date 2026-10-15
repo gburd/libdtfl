@@ -106,7 +106,7 @@ dtfl_event_link_extract(dtfl_event_link *l,
 	}
 
 	if (pairs.len > 1)
-		sort_pairs((pair *)pairs.data, pairs.len, l->tc, l->type);
+		sort_pairs((pair *)(void *)pairs.data, pairs.len, l->tc, l->type);
 
 	for (i = 0; i < pairs.len; i++) {
 		pair *pr = DTFL_VEC_AT(&pairs, pair, i);

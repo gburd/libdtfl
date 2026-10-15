@@ -376,7 +376,7 @@ dtfl_op_builder_build(dtfl_op_builder *b, dtfl_logic_fn logic, void *ctx,
 
 	op = __dtfl_op_core_new(b->scope->worker, b->name, b->address, b->address_len,
 	    b->tc, b->peers, b->inputs, b->outputs,
-	    (const __dtfl_frontier_interest *)b->notify.data, &summary,
+	    (const __dtfl_frontier_interest *)(void *)b->notify.data, &summary,
 	    runtime_logic, rt, runtime_free);
 	__dtfl_scope_install(b->scope, &b->slot, op);
 

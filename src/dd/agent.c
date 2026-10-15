@@ -364,11 +364,11 @@ __dtfl_trace_agent_clone(const __dtfl_trace_agent *src, __dtfl_trace_agent *dst)
 	__dtfl_antichain_init(&empty, src->tc);
 	__dtfl_trace_box_adjust_logical(dst->box,
 	    __dtfl_ac_base(&empty), 0,
-	    (const uint64_t *)dst->logical_compaction.elems.data,
+	    (const uint64_t *)(void *)dst->logical_compaction.elems.data,
 	    __dtfl_antichain_len(&dst->logical_compaction));
 	__dtfl_trace_box_adjust_physical(dst->box,
 	    __dtfl_ac_base(&empty), 0,
-	    (const uint64_t *)dst->physical_compaction.elems.data,
+	    (const uint64_t *)(void *)dst->physical_compaction.elems.data,
 	    __dtfl_antichain_len(&dst->physical_compaction));
 	__dtfl_antichain_free(&empty);
 }
@@ -383,11 +383,11 @@ __dtfl_trace_agent_free(__dtfl_trace_agent *a)
 	/* Decrement holds to zero (agent.rs Drop), letting compaction run. */
 	__dtfl_antichain_init(&empty, a->tc);
 	__dtfl_trace_box_adjust_logical(a->box,
-	    (const uint64_t *)a->logical_compaction.elems.data,
+	    (const uint64_t *)(void *)a->logical_compaction.elems.data,
 	    __dtfl_antichain_len(&a->logical_compaction),
 	    __dtfl_ac_base(&empty), 0);
 	__dtfl_trace_box_adjust_physical(a->box,
-	    (const uint64_t *)a->physical_compaction.elems.data,
+	    (const uint64_t *)(void *)a->physical_compaction.elems.data,
 	    __dtfl_antichain_len(&a->physical_compaction),
 	    __dtfl_ac_base(&empty), 0);
 	__dtfl_antichain_free(&empty);
@@ -413,19 +413,19 @@ agent_set(__dtfl_trace_agent *a, __dtfl_antichain *hold, const uint64_t *frontie
 
 	__dtfl_antichain_init(&joined, a->tc);
 	__dtfl_antichain_join_into(a->tc,
-	    (const uint64_t *)hold->elems.data, __dtfl_antichain_len(hold),
+	    (const uint64_t *)(void *)hold->elems.data, __dtfl_antichain_len(hold),
 	    frontier, n, &joined);
 	if (physical)
 		__dtfl_trace_box_adjust_physical(a->box,
-		    (const uint64_t *)hold->elems.data,
+		    (const uint64_t *)(void *)hold->elems.data,
 		    __dtfl_antichain_len(hold),
-		    (const uint64_t *)joined.elems.data,
+		    (const uint64_t *)(void *)joined.elems.data,
 		    __dtfl_antichain_len(&joined));
 	else
 		__dtfl_trace_box_adjust_logical(a->box,
-		    (const uint64_t *)hold->elems.data,
+		    (const uint64_t *)(void *)hold->elems.data,
 		    __dtfl_antichain_len(hold),
-		    (const uint64_t *)joined.elems.data,
+		    (const uint64_t *)(void *)joined.elems.data,
 		    __dtfl_antichain_len(&joined));
 	__dtfl_antichain_free(hold);
 	*hold = joined;
@@ -509,7 +509,7 @@ __dtfl_trace_agent_new_listener(__dtfl_trace_agent *a, dtfl_activator *activator
 	 */
 	final_upper = __dtfl_trace_upper(a->box->trace);
 	__dtfl_replay_queue_push_frontier(q,
-	    (const uint64_t *)final_upper->elems.data,
+	    (const uint64_t *)(void *)final_upper->elems.data,
 	    __dtfl_antichain_len(final_upper));
 	for (i = 0; i < n; i++)
 		__dtfl_batch_ord_release(batches[i]);

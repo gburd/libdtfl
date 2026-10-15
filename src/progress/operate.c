@@ -68,7 +68,7 @@ summary_antichain_insert(const dtfl_time_class *tc, __dtfl_vec *v,
     const uint64_t *s)
 {
 	size_t w = summary_words(tc), n = v->len / w, i;
-	uint64_t *e = (uint64_t *)v->data;
+	uint64_t *e = (uint64_t *)(void *)v->data;
 
 	for (i = 0; i < n; i++) {
 		if (dtfl_summary_less_equal(tc, e + i * w, s))
@@ -114,7 +114,7 @@ __dtfl_port_conn_insert(__dtfl_port_conn *pc, size_t port, const uint64_t *summa
 		fresh.port = port;
 		__dtfl_vec_init(&fresh.summaries, sizeof(uint64_t));
 		__dtfl_vec_push(&pc->entries, NULL);
-		base = (__dtfl_port_conn_entry *)pc->entries.data;
+		base = (__dtfl_port_conn_entry *)(void *)pc->entries.data;
 		memmove(base + lo + 1, base + lo,
 		    (pc->entries.len - lo - 1) * sizeof fresh);
 		base[lo] = fresh;
@@ -134,7 +134,7 @@ __dtfl_port_conn_get(const __dtfl_port_conn *pc, size_t port, size_t *n)
 
 		if (e->port == port) {
 			*n = e->summaries.len / summary_words(pc->tc);
-			return (const uint64_t *)e->summaries.data;
+			return (const uint64_t *)(void *)e->summaries.data;
 		}
 		if (e->port > port)
 			break;

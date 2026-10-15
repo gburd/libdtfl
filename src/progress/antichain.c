@@ -253,7 +253,7 @@ __dtfl_mantichain_init_elem(__dtfl_mutable_antichain *m,
 	__dtfl_mantichain_init(m, tc);
 	__dtfl_cb_update(&m->updates, bottom, 1);
 	__dtfl_vec_push(&m->frontier, NULL);
-	__dtfl_time_copy(tc, (uint64_t *)m->frontier.data, bottom);
+	__dtfl_time_copy(tc, (uint64_t *)(void *)m->frontier.data, bottom);
 }
 
 void

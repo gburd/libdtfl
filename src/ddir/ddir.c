@@ -97,7 +97,7 @@ dtfl_ddir_program_export_name(const dtfl_ddir_program *p, size_t i)
 {
 	if (i >= p->root.exports.len)
 		return NULL;
-	return ((dd_export *)p->root.exports.data[i])->name;
+	return ((dd_export *)(void *)p->root.exports.data[i])->name;
 }
 
 /* ------------------------------------------------------------------ */

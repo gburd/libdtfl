@@ -520,7 +520,7 @@ build_seq(const dd_vec *fields, dd_value ***env, size_t *len, size_t *cap,
 			dd_vec_push(&out, dd_eval(f, env, len, cap));
 		}
 	}
-	*out_items = (dd_value **)out.data;
+	*out_items = (dd_value **)(void *)out.data;
 	*out_len = out.len;
 }
 

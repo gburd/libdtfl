@@ -412,7 +412,7 @@ half_join_logic(dtfl_op *op, void *vctx)
 			}
 		}
 		__dtfl_trace_agent_set_logical(&c->reader,
-		    (const uint64_t *)frontier.elems.data,
+		    (const uint64_t *)(void *)frontier.elems.data,
 		    __dtfl_antichain_len(&frontier));
 		__dtfl_antichain_free(&frontier);
 	}

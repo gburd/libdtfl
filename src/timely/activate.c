@@ -179,7 +179,7 @@ timer_push(__dtfl_activations *a, uint64_t deadline, const size_t *path, size_t 
 	e.len = len;
 	e.path = __dtfl_memdup(path, len * sizeof(size_t));
 	__dtfl_vec_push(&a->timers, &e);
-	h = (timer_heap_entry *)a->timers.data;
+	h = (timer_heap_entry *)(void *)a->timers.data;
 	for (i = a->timers.len - 1; i > 0;) {
 		size_t parent = (i - 1) / 2;
 		timer_heap_entry tmp;
@@ -196,7 +196,7 @@ timer_push(__dtfl_activations *a, uint64_t deadline, const size_t *path, size_t 
 static void
 timer_pop(__dtfl_activations *a, timer_heap_entry *out)
 {
-	timer_heap_entry *h = (timer_heap_entry *)a->timers.data;
+	timer_heap_entry *h = (timer_heap_entry *)(void *)a->timers.data;
 	size_t n = a->timers.len - 1, i = 0;
 
 	*out = h[0];
@@ -285,7 +285,7 @@ __dtfl_activations_advance(__dtfl_activations *a)
 			size_t len = *DTFL_VEC_AT(&drained, size_t, i);
 
 			__dtfl_activations_activate(a,
-			    (const size_t *)drained.data + i + 1, len);
+			    (const size_t *)(void *)drained.data + i + 1, len);
 			i += 1 + len;
 		}
 		__dtfl_vec_free(&drained);
@@ -294,7 +294,7 @@ __dtfl_activations_advance(__dtfl_activations *a)
 		uint64_t now = __dtfl_activations_elapsed(a);
 
 		while (a->timers.len > 0 &&
-		    ((timer_heap_entry *)a->timers.data)[0].deadline <= now) {
+		    ((timer_heap_entry *)(void *)a->timers.data)[0].deadline <= now) {
 			timer_heap_entry e;
 
 			timer_pop(a, &e);
@@ -308,12 +308,12 @@ __dtfl_activations_advance(__dtfl_activations *a)
 	memmove(a->bounds.data, a->bounds.data + a->clean * sizeof(bound),
 	    n * sizeof(bound));
 	__dtfl_vec_truncate(&a->bounds, n);
-	b = (bound *)a->bounds.data;
-	sort_bounds(b, n, (const size_t *)a->slices.data);
+	b = (bound *)(void *)a->bounds.data;
+	sort_bounds(b, n, (const size_t *)(void *)a->slices.data);
 	/* dedup by path */
 	k = 0;
 	for (i = 0; i < n; i++) {
-		if (k > 0 && bound_cmp((const size_t *)a->slices.data, &b[k - 1], &b[i]) == 0)
+		if (k > 0 && bound_cmp((const size_t *)(void *)a->slices.data, &b[k - 1], &b[i]) == 0)
 			continue;
 		b[k++] = b[i];
 	}
@@ -323,7 +323,7 @@ __dtfl_activations_advance(__dtfl_activations *a)
 	for (i = 0; i < k; i++) {
 		size_t off = a->buffer.len;
 
-		__dtfl_vec_push_n(&a->buffer, (const size_t *)a->slices.data + b[i].off,
+		__dtfl_vec_push_n(&a->buffer, (const size_t *)(void *)a->slices.data + b[i].off,
 		    b[i].len);
 		b[i].off = off;
 	}
@@ -340,8 +340,8 @@ __dtfl_activations_for_extensions(const __dtfl_activations *a,
     const size_t *path, size_t len, void (*action)(void *ctx, size_t ext),
     void *ctx)
 {
-	const bound *b = (const bound *)a->bounds.data;
-	const size_t *sl = (const size_t *)a->slices.data;
+	const bound *b = (const bound *)(void *)a->bounds.data;
+	const size_t *sl = (const size_t *)(void *)a->slices.data;
 	size_t lo = 0, hi = a->clean, i;
 	bool have_prev = false;
 	size_t prev = 0;
@@ -397,7 +397,7 @@ __dtfl_activations_empty_for(const __dtfl_activations *a)
 	if (a->timers.len == 0)
 		return UINT64_MAX;
 	now = __dtfl_activations_elapsed(a);
-	next = ((const timer_heap_entry *)a->timers.data)[0].deadline;
+	next = ((const timer_heap_entry *)(void *)a->timers.data)[0].deadline;
 	return next < now ? 0 : next - now;
 }
 

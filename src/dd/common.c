@@ -112,7 +112,7 @@ edit_list_bounds(const __dtfl_edit_list *e, size_t i, size_t *lo, size_t *hi)
 static const uint64_t *
 edit_list_time(const __dtfl_edit_list *e, size_t i)
 {
-	return (const uint64_t *)e->times.data + (size_t)e->tw * i;
+	return (const uint64_t *)(void *)e->times.data + (size_t)e->tw * i;
 }
 
 static const void *
@@ -167,7 +167,7 @@ edit_list_consolidate_from(__dtfl_edit_list *e, size_t prev)
 		memcpy(kd, db + i * dsz, dsz);
 		j = i;
 		while (j > prev &&
-		    __dtfl_words_cmp((const uint64_t *)(tb + (j - 1) * tsz),
+		    __dtfl_words_cmp((const uint64_t *)(void *)(tb + (j - 1) * tsz),
 		    kt, tw) > 0) {
 			memcpy(tb + j * tsz, tb + (j - 1) * tsz, tsz);
 			memcpy(db + j * dsz, db + (j - 1) * dsz, dsz);
@@ -184,8 +184,8 @@ edit_list_consolidate_from(__dtfl_edit_list *e, size_t prev)
 
 		memcpy(acc, db + i * dsz, dsz);
 		for (j = i + 1; j < n &&
-		    __dtfl_words_cmp((const uint64_t *)(tb + i * tsz),
-		    (const uint64_t *)(tb + j * tsz), tw) == 0; j++)
+		    __dtfl_words_cmp((const uint64_t *)(void *)(tb + i * tsz),
+		    (const uint64_t *)(void *)(tb + j * tsz), tw) == 0; j++)
 			e->dc->plus_equals(e->dc, acc, db + j * dsz);
 		if (!e->dc->is_zero(e->dc, acc)) {
 			memmove(tb + w * tsz, tb + i * tsz, tsz);
@@ -307,7 +307,7 @@ value_history_build(__dtfl_value_history *h)
 	n = h->history.len;
 	if (n == 0)
 		return;
-	recs = (hist_rec *)h->history.data;
+	recs = (hist_rec *)(void *)h->history.data;
 	if (n > 1) {
 		struct { const hist_rec *recs; unsigned tw; } cx =
 		    { recs, h->tw };
@@ -343,7 +343,7 @@ value_history_time(const __dtfl_value_history *h)
 {
 	if (h->history.len == 0)
 		return NULL;
-	return ((const hist_rec *)h->history.data)[h->history.len - 1].time;
+	return ((const hist_rec *)(void *)h->history.data)[h->history.len - 1].time;
 }
 
 /* The meet of all un-replayed times, or NULL. */
@@ -352,7 +352,7 @@ value_history_meet(const __dtfl_value_history *h)
 {
 	if (h->history.len == 0)
 		return NULL;
-	return ((const hist_rec *)h->history.data)[h->history.len - 1].meet;
+	return ((const hist_rec *)(void *)h->history.data)[h->history.len - 1].meet;
 }
 
 /* The next un-replayed edit's value bytes, time and diff. */
@@ -360,7 +360,7 @@ static void
 value_history_edit(const __dtfl_value_history *h, const void **val,
     size_t *vlen, const uint64_t **time, const void **diff)
 {
-	const hist_rec *r = &((const hist_rec *)h->history.data)
+	const hist_rec *r = &((const hist_rec *)(void *)h->history.data)
 	    [h->history.len - 1];
 
 	*val = __dtfl_slices_get(&h->edits.vals, r->value_index, vlen);
@@ -372,7 +372,7 @@ value_history_edit(const __dtfl_value_history *h, const void **val,
 static void
 value_history_step(__dtfl_value_history *h)
 {
-	hist_rec r = ((hist_rec *)h->history.data)[h->history.len - 1];
+	hist_rec r = ((hist_rec *)(void *)h->history.data)[h->history.len - 1];
 	buf_rec b;
 
 	h->history.len--;
@@ -407,7 +407,7 @@ buf_cmp_idx(void *vctx, size_t a, size_t b)
 static void
 value_history_advance_buffer_by(__dtfl_value_history *h, const uint64_t *meet)
 {
-	buf_rec *b = (buf_rec *)h->buffer.data;
+	buf_rec *b = (buf_rec *)(void *)h->buffer.data;
 	size_t n = h->buffer.len, i, w;
 
 	if (n == 0)
@@ -599,7 +599,7 @@ join_wave(__dtfl_value_history *h1, __dtfl_value_history *h2,
 			value_history_advance_buffer_by(h2,
 			    value_history_meet(h1));
 			value_history_edit(h1, &ev, &evlen, &et, &ed);
-			b = (const buf_rec *)h2->buffer.data;
+			b = (const buf_rec *)(void *)h2->buffer.data;
 			n = h2->buffer.len;
 			for (i = 0; i < n; i++) {
 				size_t bvlen;
@@ -623,7 +623,7 @@ join_wave(__dtfl_value_history *h1, __dtfl_value_history *h2,
 			value_history_advance_buffer_by(h1,
 			    value_history_meet(h2));
 			value_history_edit(h2, &ev, &evlen, &et, &ed);
-			b = (const buf_rec *)h1->buffer.data;
+			b = (const buf_rec *)(void *)h1->buffer.data;
 			n = h1->buffer.len;
 			for (i = 0; i < n; i++) {
 				size_t bvlen;

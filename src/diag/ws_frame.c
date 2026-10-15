@@ -484,7 +484,7 @@ __dtfl_diag_frame_finish(__dtfl_diag_frame *f, uint64_t ts_us)
 	__dtfl_vec_push_n(&out, f->buf.data, f->buf.len);
 	__dtfl_vec_push_n(&out, "]}", 2);
 	__dtfl_vec_push(&out, &nul);
-	s = (char *)out.data;	/* ownership transfers to caller */
+	s = (char *)(void *)out.data;	/* ownership transfers to caller */
 	__dtfl_vec_free(&f->buf);
 	return s;
 }

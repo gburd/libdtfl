@@ -65,6 +65,26 @@ AS_IF([test "x$enable_werror" = xyes],
 	[DTFL_WARN_CFLAGS="$DTFL_WARN_CFLAGS -Werror"])
 AC_SUBST([DTFL_WARN_CFLAGS])
 
+# The test and property-test CFLAGS silence a few warnings in the
+# vendored munit and the test helpers.  Some -Wno-* spellings are
+# gcc-only (-Wno-discarded-qualifiers, -Wno-clobbered); clang errors on
+# an unknown warning option under -Werror.  Probe each and keep only the
+# ones this compiler accepts, so the tests build under both gcc and
+# clang.
+TEST_WNO_CFLAGS=""
+for _f in -Wno-pedantic -Wno-write-strings -Wno-missing-prototypes \
+          -Wno-discarded-qualifiers -Wno-clobbered \
+          -Wno-unneeded-internal-declaration; do
+	AC_MSG_CHECKING([whether $CC accepts $_f])
+	_save_cflags="$CFLAGS"
+	CFLAGS="$CFLAGS -Werror $_f"
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [])],
+		[TEST_WNO_CFLAGS="$TEST_WNO_CFLAGS $_f"; AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])])
+	CFLAGS="$_save_cflags"
+done
+AC_SUBST([TEST_WNO_CFLAGS])
+
 # -------------------------------------------------------------------------
 # Debug: owner-thread checks, leak checks at worker shutdown, debug asserts.
 # -------------------------------------------------------------------------

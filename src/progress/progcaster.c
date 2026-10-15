@@ -69,7 +69,7 @@ pm_encode(const __dtfl_msg_class *mc, const void *m, unsigned char *out)
 {
 	const progress_msg *p = m;
 	size_t n = p->changes.updates.len, w = p->changes.kw + 1, i;
-	const uint64_t *e = (const uint64_t *)p->changes.updates.data;
+	const uint64_t *e = (const uint64_t *)(void *)p->changes.updates.data;
 
 	(void)mc;
 	put_le64(out, p->source);

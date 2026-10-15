@@ -444,7 +444,7 @@ parse_pattern_case(pparser *p)
 		size_t j;
 
 		for (j = 0; j < tags.len; j++)
-			if (*(int64_t *)tags.data[j] == (int64_t)i) {
+			if (*(int64_t *)(void *)tags.data[j] == (int64_t)i) {
 				arm = dd_arena_clone(p->pc, tagged.data[j]);
 				break;
 			}
@@ -1151,7 +1151,7 @@ dd_parse_pipe(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	}
 	tokenize(&lx, input);
 	p.pc = pc;
-	p.toks = (tok **)lx.toks.data;
+	p.toks = (tok **)(void *)lx.toks.data;
 	p.pos = 0;
 	parse_program_into(&p, out);
 	if (pk(&p)->kind != T_EOF)
@@ -1179,7 +1179,7 @@ dd_parse_pipe_term(const char *input, dd_parse_ctx *pc)
 	}
 	tokenize(&lx, input);
 	p.pc = pc;
-	p.toks = (tok **)lx.toks.data;
+	p.toks = (tok **)(void *)lx.toks.data;
 	p.pos = 0;
 	t = parse_term(&p);
 	if (pk(&p)->kind != T_EOF)

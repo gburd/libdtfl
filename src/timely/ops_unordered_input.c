@@ -72,7 +72,7 @@ uop_notify_me(const __dtfl_operate *op)
 static bool
 uop_schedule(__dtfl_schedule *s)
 {
-	uinput_op *o = (uinput_op *)((char *)s - offsetof(uinput_op, sched));
+	uinput_op *o = (uinput_op *)(void *)((char *)s - offsetof(uinput_op, sched));
 
 	__dtfl_cb_drain_into(&o->shared->progress, &o->sp->internals[0]);
 	__dtfl_cb_drain_into(&o->shared->produced, &o->sp->produceds[0]);
@@ -93,7 +93,7 @@ uop_free(uinput_op *o)
 static void
 uop_sched_destroy(__dtfl_schedule *s)
 {
-	uinput_op *o = (uinput_op *)((char *)s - offsetof(uinput_op, sched));
+	uinput_op *o = (uinput_op *)(void *)((char *)s - offsetof(uinput_op, sched));
 
 	uop_free(o);
 }

@@ -92,7 +92,7 @@ apply_stat(__dtfl_diag_shared *sh, __dtfl_diag_stat_kind kind, size_t id,
 	}
 	st->value += diff;
 	if (st->value == 0) {
-		size_t idx = (size_t)(st - (__dtfl_diag_stat *)sh->stats.data);
+		size_t idx = (size_t)(st - (__dtfl_diag_stat *)(void *)sh->stats.data);
 
 		__dtfl_vec_swap_remove(&sh->stats, idx);
 	}
@@ -156,7 +156,7 @@ __dtfl_diag_on_batch(const dtfl_log_batch *batch, void *ctx)
 
 				if (op != NULL) {
 					size_t idx = (size_t)(op -
-					    (__dtfl_diag_operator *)
+					    (__dtfl_diag_operator *)(void *)
 					    sh->operators.data);
 
 					__dtfl_diag_frame_add_operator(&frame,

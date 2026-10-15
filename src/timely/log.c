@@ -320,14 +320,14 @@ decode_into(dtfl_log_batch *b, const char *stream, size_t worker,
 			ev.kind = DTFL_LOG_UNKNOWN;
 		__dtfl_vec_push(&b->evbuf, &ev);
 	}
-	b->events = (decoded_event *)b->evbuf.data;
+	b->events = (decoded_event *)(void *)b->evbuf.data;
 
 	/* Resolve pooled offsets to pointers now the pools are final. */
 	for (i = 0; i < n; i++) {
 		decoded_event *ev = &b->events[i];
 
 		if (ev->str != (const char *)(uintptr_t)SIZE_MAX)
-			ev->str = (const char *)b->strpool.data +
+			ev->str = (const char *)(void *)b->strpool.data +
 			    (size_t)(uintptr_t)ev->str;
 		else
 			ev->str = NULL;
@@ -521,7 +521,7 @@ dtfl_log_operates_addr(const dtfl_log_batch *b, size_t i, size_t *n)
 		return NULL;
 	}
 	*n = ev->addr_len;
-	return (const size_t *)b->addrs.data + ev->addr_off;
+	return (const size_t *)(void *)b->addrs.data + ev->addr_off;
 }
 
 const char *
@@ -550,7 +550,7 @@ dtfl_log_channels_scope(const dtfl_log_batch *b, size_t i, size_t *n)
 		return NULL;
 	}
 	*n = ev->scope_len;
-	return (const size_t *)b->addrs.data + ev->scope_off;
+	return (const size_t *)(void *)b->addrs.data + ev->scope_off;
 }
 
 void

@@ -27,9 +27,9 @@ libmunit_la_SOURCES = tests/munit.c
 libmunit_la_CFLAGS = -std=c11 -w
 
 # Tests.  Components append unit tests to check_PROGRAMS and TESTS.
-TEST_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/tests -Wno-pedantic -Wno-write-strings -Wno-discarded-qualifiers -Wno-missing-prototypes
+TEST_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/tests $(TEST_WNO_CFLAGS)
 TEST_LIBS = libdtfl.la libmunit.la
-PBT_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/tests -I$(top_srcdir)/tests/pbt $(HEGEL_CFLAGS) -Wno-pedantic -Wno-clobbered -Wno-missing-prototypes
+PBT_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/tests -I$(top_srcdir)/tests/pbt $(HEGEL_CFLAGS) $(TEST_WNO_CFLAGS)
 PBT_LIBS = libdtfl.la $(HEGEL_LIBS)
 # Tests that need library-internal (hidden) symbols link the convenience
 # library of all objects instead of the shared library.  Components use

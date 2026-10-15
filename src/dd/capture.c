@@ -308,12 +308,12 @@ capture_logic(void *vctx, const dtfl_message *msg, const uint64_t *frontier,
 		}
 
 		dtfl_cdc_log_push_progress(c->log,
-		    (const uint64_t *)c->announced.elems.data,
+		    (const uint64_t *)(void *)c->announced.elems.data,
 		    __dtfl_antichain_len(&c->announced),
-		    (const uint64_t *)newf.elems.data,
+		    (const uint64_t *)(void *)newf.elems.data,
 		    __dtfl_antichain_len(&newf),
-		    kept != 0 ? (const uint64_t *)ctimes.data : NULL,
-		    kept != 0 ? (const size_t *)ccounts.data : NULL, kept);
+		    kept != 0 ? (const uint64_t *)(void *)ctimes.data : NULL,
+		    kept != 0 ? (const size_t *)(void *)ccounts.data : NULL, kept);
 
 		/* The retained counts become the new unannounced set. */
 		__dtfl_cb_clear(&c->counts);
@@ -520,14 +520,14 @@ static const uint64_t *
 msg_lower(const cdc_msg *m, size_t *n, unsigned tw)
 {
 	*n = tw != 0 ? m->lower.len / tw : (m->lower.len != 0 ? 1 : 0);
-	return (const uint64_t *)m->lower.data;
+	return (const uint64_t *)(void *)m->lower.data;
 }
 
 static const uint64_t *
 msg_upper(const cdc_msg *m, size_t *n, unsigned tw)
 {
 	*n = tw != 0 ? m->upper.len / tw : (m->upper.len != 0 ? 1 : 0);
-	return (const uint64_t *)m->upper.data;
+	return (const uint64_t *)(void *)m->upper.data;
 }
 
 /*
@@ -582,7 +582,7 @@ iter_drain_progress(dtfl_cdc_iter *it)
 			/* Incorporate counts for times at/above progress. */
 			nentries = p.ccounts.len;
 			for (j = 0; j < nentries; j++) {
-				const uint64_t *t = (const uint64_t *)
+				const uint64_t *t = (const uint64_t *)(void *)
 				    p.ctimes.data + (size_t)j * it->tw;
 				size_t cnt = *DTFL_VEC_AT(&p.ccounts, size_t, j);
 
@@ -679,7 +679,7 @@ dtfl_cdc_iter_next(dtfl_cdc_iter *it, dtfl_cdc_update_fn fn, void *ctx,
 		__dtfl_vec_push_n(&it->last_frontier,
 		    __dtfl_antichain_at(&lower, i), it->tw);
 	if (frontier != NULL)
-		*frontier = (const uint64_t *)it->last_frontier.data;
+		*frontier = (const uint64_t *)(void *)it->last_frontier.data;
 	if (nfrontier != NULL)
 		*nfrontier = __dtfl_antichain_len(&lower);
 	__dtfl_antichain_free(&lower);

@@ -176,7 +176,7 @@ handle_body(void *scratch, const char *stream, const unsigned char *body,
 done:
 	if (rc == DTFL_OK && recs.len > 0)
 		__dtfl_log_decode_and_deliver(scratch, stream, 0, time_ns,
-		    (const __dtfl_log_event *)recs.data, recs.len, deliver, &d);
+		    (const __dtfl_log_event *)(void *)recs.data, recs.len, deliver, &d);
 	__dtfl_vec_free(&recs);
 	return rc;
 }

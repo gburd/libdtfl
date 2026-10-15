@@ -58,7 +58,7 @@ static void
 batch_each_elem(__dtfl_batch *b, void (*fn)(void *rec))
 {
 	size_t i, n = __dtfl_batch_len(b);
-	const size_t *o = (const size_t *)b->offs.data;
+	const size_t *o = (const size_t *)(void *)b->offs.data;
 
 	for (i = 0; i < n; i++)
 		fn(b->arena.data + o[i]);
@@ -177,7 +177,7 @@ __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i)
 
 	DTFL_ASSERT(b->tw == src->tw && b->dw == src->dw);
 	DTFL_ASSERT(i < __dtfl_batch_len(src));
-	o = (const size_t *)src->offs.data;
+	o = (const size_t *)(void *)src->offs.data;
 	off = o[i];
 	len = o[i + 1] - off;
 	p = __dtfl_batch_push_uninit(b, len, NULL, NULL);
@@ -239,8 +239,8 @@ __dtfl_batch_encoded_len(const __dtfl_batch *b)
 void
 __dtfl_batch_encode(const __dtfl_batch *b, unsigned char *out)
 {
-	const size_t *o = (const size_t *)b->offs.data;
-	const uint64_t *t = (const uint64_t *)b->times.data;
+	const size_t *o = (const size_t *)(void *)b->offs.data;
+	const uint64_t *t = (const uint64_t *)(void *)b->times.data;
 	size_t n = __dtfl_batch_len(b), i, at;
 
 	le_put(out, n, 8);

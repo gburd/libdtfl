@@ -768,7 +768,7 @@ dd_parse_applicative(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	}
 	atokenize(&lx, input);
 	p.pc = pc;
-	p.toks = (atok **)lx.toks.data;
+	p.toks = (atok **)(void *)lx.toks.data;
 	p.pos = 0;
 	aparse_program_into(&p, out);
 	if (apk(&p)->kind != A_EOF)

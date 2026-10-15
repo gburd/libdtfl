@@ -603,6 +603,6 @@ dtfl_config_log_subscribe(dtfl_config *cfg, const char *stream,
 size_t
 __dtfl_config_log_subs(const dtfl_config *cfg, const __dtfl_log_sub **subs)
 {
-	*subs = (const __dtfl_log_sub *)cfg->log_subs.data;
+	*subs = (const __dtfl_log_sub *)(void *)cfg->log_subs.data;
 	return cfg->log_subs.len;
 }

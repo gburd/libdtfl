@@ -83,8 +83,8 @@ static uint64_t *
 tv_at(const timevec *v, size_t i)
 {
 	if (v->tw == 0)
-		return (uint64_t *)v->words.data;	/* unit: no words */
-	return (uint64_t *)v->words.data + (size_t)v->tw * i;
+		return (uint64_t *)(void *)v->words.data;	/* unit: no words */
+	return (uint64_t *)(void *)v->words.data + (size_t)v->tw * i;
 }
 
 static void
@@ -1861,7 +1861,7 @@ reduce_logic(dtfl_op *op, void *vctx)
 	produced = __dtfl_alloc(DTFL_MAX(nheld, 1u) * sizeof *produced);
 	__dtfl_antichain_init(&new_frontier, c->tc);
 
-	rd_retire(c, (const uint64_t *)c->upper_limit.elems.data,
+	rd_retire(c, (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit), produced, &nproduced,
 	    &new_frontier);
 
@@ -1933,16 +1933,16 @@ reduce_logic(dtfl_op *op, void *vctx)
 
 	/* Advance compaction on both traces. */
 	__dtfl_trace_agent_set_logical(&c->source,
-	    (const uint64_t *)c->upper_limit.elems.data,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit));
 	__dtfl_trace_agent_set_physical(&c->source,
-	    (const uint64_t *)c->upper_limit.elems.data,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit));
 	__dtfl_trace_agent_set_logical(&c->out_reader,
-	    (const uint64_t *)c->upper_limit.elems.data,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit));
 	__dtfl_trace_agent_set_physical(&c->out_reader,
-	    (const uint64_t *)c->upper_limit.elems.data,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit));
 
 	/* Release the consumed new input batches. */

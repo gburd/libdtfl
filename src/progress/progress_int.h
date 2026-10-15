@@ -167,7 +167,7 @@ __dtfl_mantichain_frontier_len(const __dtfl_mutable_antichain *m)
 static inline const uint64_t *
 __dtfl_mantichain_frontier(const __dtfl_mutable_antichain *m)
 {
-	return (const uint64_t *)m->frontier.data;
+	return (const uint64_t *)(void *)m->frontier.data;
 }
 
 /*

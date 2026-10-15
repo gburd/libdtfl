@@ -253,10 +253,10 @@ __dtfl_worker_install_dataflow(__dtfl_worker *w, size_t index, size_t identifier
 	at = dataflow_find(w, index, &found);
 	DTFL_ASSERT(!found);
 	__dtfl_vec_push(&w->dataflows, NULL);
-	memmove((__dtfl_dataflow **)w->dataflows.data + at + 1,
-	    (__dtfl_dataflow **)w->dataflows.data + at,
+	memmove((__dtfl_dataflow **)(void *)w->dataflows.data + at + 1,
+	    (__dtfl_dataflow **)(void *)w->dataflows.data + at,
 	    (w->dataflows.len - at - 1) * sizeof(__dtfl_dataflow *));
-	((__dtfl_dataflow **)w->dataflows.data)[at] = df;
+	((__dtfl_dataflow **)(void *)w->dataflows.data)[at] = df;
 }
 
 void

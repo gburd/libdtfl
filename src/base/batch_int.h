@@ -145,7 +145,7 @@ void __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i);
 static inline const void *
 __dtfl_batch_rec(const __dtfl_batch *b, size_t i, size_t *len)
 {
-	const size_t *o = (const size_t *)b->offs.data;
+	const size_t *o = (const size_t *)(void *)b->offs.data;
 
 	*len = o[i + 1] - o[i];
 	return b->arena.data + o[i];
@@ -154,13 +154,13 @@ __dtfl_batch_rec(const __dtfl_batch *b, size_t i, size_t *len)
 static inline const uint64_t *
 __dtfl_batch_time(const __dtfl_batch *b, size_t i)
 {
-	return (const uint64_t *)b->times.data + (size_t)b->tw * i;
+	return (const uint64_t *)(void *)b->times.data + (size_t)b->tw * i;
 }
 
 static inline uint64_t *
 __dtfl_batch_time_mut(__dtfl_batch *b, size_t i)
 {
-	return (uint64_t *)b->times.data + (size_t)b->tw * i;
+	return (uint64_t *)(void *)b->times.data + (size_t)b->tw * i;
 }
 
 static inline const void *

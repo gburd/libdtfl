@@ -100,7 +100,7 @@ to_local_insert(__dtfl_vec *m, size_t at, size_t channel)
 	to_local_entry *base;
 
 	__dtfl_vec_push(m, &e);
-	base = (to_local_entry *)m->data;
+	base = (to_local_entry *)(void *)m->data;
 	memmove(base + at + 1, base + at, (m->len - 1 - at) * sizeof e);
 	base[at] = e;
 	return e.fifo;

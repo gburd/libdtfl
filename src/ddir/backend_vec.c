@@ -785,7 +785,7 @@ reduce_collect_fn(void *ctx, const void *key, size_t klen, size_t n,
 			dd_vec_push(&items, dd_value_clone(v));
 		dd_value_free(v);
 	}
-	list = dd_value_list((dd_value **)items.data, items.len);
+	list = dd_value_list((dd_value **)(void *)items.data, items.len);
 	dd_value_encode(list, &buf, &blen, &cap);
 	dtfl_reduce_emit_pair(out, buf, blen, &one);
 	__dtfl_free(buf);

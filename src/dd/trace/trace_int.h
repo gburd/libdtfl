@@ -37,7 +37,7 @@
 static inline const uint64_t *
 __dtfl_ac_base(const __dtfl_antichain *a)
 {
-	return (const uint64_t *)a->elems.data;
+	return (const uint64_t *)(void *)a->elems.data;
 }
 
 /*
@@ -96,7 +96,7 @@ __dtfl_slices_len(const __dtfl_slices *s)
 static inline const void *
 __dtfl_slices_get(const __dtfl_slices *s, size_t i, size_t *len)
 {
-	const size_t *o = (const size_t *)s->offs.data;
+	const size_t *o = (const size_t *)(void *)s->offs.data;
 
 	*len = o[i + 1] - o[i];
 	return s->arena.data + o[i];
@@ -186,7 +186,7 @@ __dtfl_upds_len(const __dtfl_upds *u)
 static inline const uint64_t *
 __dtfl_upds_time(const __dtfl_upds *u, size_t i)
 {
-	return (const uint64_t *)u->times.data + (size_t)u->tw * i;
+	return (const uint64_t *)(void *)u->times.data + (size_t)u->tw * i;
 }
 
 static inline const void *

@@ -57,7 +57,7 @@ src_notify(const __dtfl_operate *op) { (void)op; return no_interest; }
 static bool
 src_schedule(__dtfl_schedule *s)
 {
-	src_op *o = (src_op *)((char *)s - offsetof(src_op, sched));
+	src_op *o = (src_op *)(void *)((char *)s - offsetof(src_op, sched));
 	uint64_t next;
 
 	if (o->released)
@@ -78,7 +78,7 @@ src_schedule(__dtfl_schedule *s)
 static void
 src_destroy(__dtfl_schedule *s)
 {
-	src_op *o = (src_op *)((char *)s - offsetof(src_op, sched));
+	src_op *o = (src_op *)(void *)((char *)s - offsetof(src_op, sched));
 
 	__dtfl_free(s->name);
 	__dtfl_free(s->path);
@@ -140,7 +140,7 @@ sink_notify(const __dtfl_operate *op) { (void)op; return always; }
 static bool
 sink_schedule(__dtfl_schedule *s)
 {
-	sink_op *o = (sink_op *)((char *)s - offsetof(sink_op, sched));
+	sink_op *o = (sink_op *)(void *)((char *)s - offsetof(sink_op, sched));
 	uint64_t t;
 
 	__dtfl_mantichain_update_batch(&o->frontier, &o->sp->frontiers[0]);
@@ -159,7 +159,7 @@ sink_schedule(__dtfl_schedule *s)
 static void
 sink_destroy(__dtfl_schedule *s)
 {
-	sink_op *o = (sink_op *)((char *)s - offsetof(sink_op, sched));
+	sink_op *o = (sink_op *)(void *)((char *)s - offsetof(sink_op, sched));
 
 	__dtfl_mantichain_free(&o->frontier);
 	__dtfl_free(s->name);

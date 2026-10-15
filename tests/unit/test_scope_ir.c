@@ -176,13 +176,13 @@ DTFL_TEST(scope_ir__expresses_a_scoped_iterative_program)
 	assert_int(item0->kind, ==, DD_I_SUB);
 	reach = item0->sub;
 	assert_size(reach->vars.len, ==, 1);
-	assert_int(((dd_export *)prog.root.exports.data[0])->value.kind, ==,
+	assert_int(((dd_export *)(void *)prog.root.exports.data[0])->value.kind, ==,
 	    DD_REF_CHILD_EXPORT);
-	assert_int(((dd_import *)prog.root.imports.data[0])->from.kind, ==,
+	assert_int(((dd_import *)(void *)prog.root.imports.data[0])->from.kind, ==,
 	    DD_SRC_INPUT);
-	assert_int(((dd_bind *)reach->binds.data[0])->value.kind, ==,
+	assert_int(((dd_bind *)(void *)reach->binds.data[0])->value.kind, ==,
 	    DD_REF_LOCAL);
-	assert_size(((dd_bind *)reach->binds.data[0])->value.u.item, ==, 1);
+	assert_size(((dd_bind *)(void *)reach->binds.data[0])->value.u.item, ==, 1);
 
 	dd_scope_free_fields(&prog.root);
 	return MUNIT_OK;

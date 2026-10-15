@@ -451,11 +451,11 @@ join_logic(dtfl_op *op, void *vctx)
 
 		__dtfl_trace_agent_set_logical(&jc->reader1, f2, n2);
 		__dtfl_trace_agent_set_physical(&jc->reader1,
-		    (const uint64_t *)jc->acknowledged1.elems.data,
+		    (const uint64_t *)(void *)jc->acknowledged1.elems.data,
 		    __dtfl_antichain_len(&jc->acknowledged1));
 		__dtfl_trace_agent_set_logical(&jc->reader2, f1, n1);
 		__dtfl_trace_agent_set_physical(&jc->reader2,
-		    (const uint64_t *)jc->acknowledged2.elems.data,
+		    (const uint64_t *)(void *)jc->acknowledged2.elems.data,
 		    __dtfl_antichain_len(&jc->acknowledged2));
 	}
 	return false;

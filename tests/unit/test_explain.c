@@ -182,7 +182,7 @@ DTFL_TEST(explain__nested_exports_carry_one_lift_per_level)
 		n = it->op;
 		assert_int(n->kind, ==, DD_N_LINEAR);
 		assert_size(n->ops.len, ==, 1);
-		assert_int(((dd_linear_op *)n->ops.data[0])->kind, ==,
+		assert_int(((dd_linear_op *)(void *)n->ops.data[0])->kind, ==,
 		    DD_LIN_LIFT_ITER);
 		if (n->input.kind == DD_REF_CHILD_EXPORT)
 			depth2_chains++;
@@ -206,7 +206,7 @@ DTFL_TEST(explain__identity_clone_preserves_structure)
 	c = dd_clone_identity(p);
 	assert_size(c->root.exports.len, ==, p->root.exports.len);
 	assert_string_equal(
-	    ((dd_export *)c->root.exports.data[0])->name, "result");
+	    ((dd_export *)(void *)c->root.exports.data[0])->name, "result");
 	assert_size(vars_total(&c->root), ==, vars_total(&p->root));
 	assert_size(dd_op_count(c), >, dd_op_count(p));
 	dtfl_ddir_program_free(c);

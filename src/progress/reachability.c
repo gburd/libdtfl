@@ -152,7 +152,7 @@ loc_index(const size_t *offsets, const reach_node *nodes, __dtfl_location l)
 bool
 __dtfl_reach_builder_is_acyclic(const __dtfl_reach_builder *b)
 {
-	const reach_node *nodes = (const reach_node *)b->nodes.data;
+	const reach_node *nodes = (const reach_node *)(void *)b->nodes.data;
 	size_t nn = b->nodes.len, locations = 0, remaining = 0, i, p, e;
 	size_t *offsets = __dtfl_calloc(DTFL_MAX(nn, 1), sizeof *offsets);
 	size_t *in_degree;
@@ -187,7 +187,7 @@ __dtfl_reach_builder_is_acyclic(const __dtfl_reach_builder *b)
 				size_t k, ns = ent->summaries.len / sw;
 
 				for (k = 0; k < ns; k++)
-					if (memcmp((const uint64_t *)ent->summaries.data + k * sw,
+					if (memcmp((const uint64_t *)(void *)ent->summaries.data + k * sw,
 					    def, sw * sizeof(uint64_t)) == 0)
 						in_degree[loc_index(offsets, nodes, src)]++;
 			}
@@ -236,7 +236,7 @@ __dtfl_reach_builder_is_acyclic(const __dtfl_reach_builder *b)
 				size_t ns = ent->summaries.len / sw;
 
 				for (k = 0; k < ns; k++) {
-					if (memcmp((const uint64_t *)ent->summaries.data + k * sw,
+					if (memcmp((const uint64_t *)(void *)ent->summaries.data + k * sw,
 					    def, sw * sizeof(uint64_t)) != 0)
 						continue;
 					if (--in_degree[ix] == 0) {
@@ -367,7 +367,7 @@ static bool
 acc_insert(const dtfl_time_class *tc, __dtfl_vec *v, const uint64_t *s)
 {
 	size_t w = DTFL_MAX(tc->sdepth, 1u), n = v->len / w, i;
-	uint64_t *e = (uint64_t *)v->data;
+	uint64_t *e = (uint64_t *)(void *)v->data;
 
 	for (i = 0; i < n; i++)
 		if (dtfl_summary_less_equal(tc, e + i * w, s))
@@ -415,10 +415,10 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				r.source.source = true;
 				__dtfl_vec_push(&rev_edges, &r);
 			}
-	sort_rev_edges((rev_edge *)rev_edges.data, rev_edges.len);
+	sort_rev_edges((rev_edge *)(void *)rev_edges.data, rev_edges.len);
 	/* dedup */
 	if (rev_edges.len > 1) {
-		rev_edge *v = (rev_edge *)rev_edges.data;
+		rev_edge *v = (rev_edge *)(void *)rev_edges.data;
 		size_t k = 1;
 
 		for (i = 1; i < rev_edges.len; i++)
@@ -444,7 +444,7 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				__dtfl_vec_push(&rev_int, &r);
 			}
 		}
-	sort_rev_internal((rev_internal *)rev_int.data, rev_int.len);
+	sort_rev_internal((rev_internal *)(void *)rev_int.data, rev_int.len);
 
 	/* Seed: every edge into a scope output, with the default summary. */
 	for (i = 0; i < nn; i++)
@@ -473,7 +473,7 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 
 			if (t->loc.source) {
 				/* Walk up the operator to its inputs. */
-				const rev_internal *ri = (const rev_internal *)rev_int.data;
+				const rev_internal *ri = (const rev_internal *)(void *)rev_int.data;
 				size_t lo = 0, hi = rev_int.len, k;
 
 				while (lo < hi) {
@@ -496,14 +496,14 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 						pr.loc.source = false;
 						pr.output = t->output;
 						if (dtfl_summary_followed_by(tc,
-						    (const uint64_t *)ri[k].summaries->data + m * sw,
+						    (const uint64_t *)(void *)ri[k].summaries->data + m * sw,
 						    t->s, pr.s))
 							__dtfl_vec_push(&proposals, &pr);
 					}
 				}
 			} else {
 				/* Walk back the unique edge into this target. */
-				const rev_edge *re = (const rev_edge *)rev_edges.data;
+				const rev_edge *re = (const rev_edge *)(void *)rev_edges.data;
 				size_t lo = 0, hi = rev_edges.len;
 
 				while (lo < hi) {
@@ -539,7 +539,7 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				acc_entry *base;
 
 				__dtfl_vec_push(acc, NULL);
-				base = (acc_entry *)acc->data;
+				base = (acc_entry *)(void *)acc->data;
 				memmove(base + at + 1, base + at,
 				    (acc->len - at - 1) * sizeof fresh);
 				base[at] = fresh;
@@ -617,7 +617,7 @@ wl_push(__dtfl_tracker *t, const uint64_t *time, __dtfl_location loc, int64_t di
 	__dtfl_time_copy(t->tc, e, time);
 	__dtfl_location_key(loc, e + t->depth);
 	e[t->depth + 2] = (uint64_t)diff;
-	heap = (uint64_t *)t->worklist.data;
+	heap = (uint64_t *)(void *)t->worklist.data;
 	i = t->worklist.len / w - 1;
 	while (i > 0) {
 		size_t parent = (i - 1) / 2;
@@ -637,7 +637,7 @@ wl_peek(const __dtfl_tracker *t, const uint64_t **top)
 {
 	if (t->worklist.len == 0)
 		return false;
-	*top = (const uint64_t *)t->worklist.data;
+	*top = (const uint64_t *)(void *)t->worklist.data;
 	return true;
 }
 
@@ -645,7 +645,7 @@ static void
 wl_pop(__dtfl_tracker *t, uint64_t *out)
 {
 	size_t w = wl_words(t), n = t->worklist.len / w, i = 0;
-	uint64_t *heap = (uint64_t *)t->worklist.data;
+	uint64_t *heap = (uint64_t *)(void *)t->worklist.data;
 
 	memcpy(out, heap, w * sizeof(uint64_t));
 	n--;
@@ -695,7 +695,7 @@ flatten_conn(__dtfl_vec *dst, const __dtfl_port_conn_entry *ent, size_t sw)
 		uint64_t port = ent->port;
 
 		__dtfl_vec_push(dst, &port);
-		__dtfl_vec_push_n(dst, (const uint64_t *)ent->summaries.data + k * sw, sw);
+		__dtfl_vec_push_n(dst, (const uint64_t *)(void *)ent->summaries.data + k * sw, sw);
 	}
 }
 
@@ -710,7 +710,7 @@ __dtfl_reach_builder_build(__dtfl_reach_builder *b, __dtfl_connectivity *scope_s
 {
 	const dtfl_time_class *tc = b->tc;
 	__dtfl_tracker *t = __dtfl_calloc(1, sizeof *t);
-	reach_node *nodes = (reach_node *)b->nodes.data;
+	reach_node *nodes = (reach_node *)(void *)b->nodes.data;
 	size_t nn = b->nodes.len, i, p, e, sw;
 	__dtfl_vec acc;
 
@@ -774,7 +774,7 @@ __dtfl_reach_builder_build(__dtfl_reach_builder *b, __dtfl_connectivity *scope_s
 			if (a->loc.source)
 				for (k = 0; k < ns; k++)
 					__dtfl_port_conn_insert(&scope_summary->ports[a->loc.port],
-					    a->output, (const uint64_t *)a->summaries.data + k * sw);
+					    a->output, (const uint64_t *)(void *)a->summaries.data + k * sw);
 		} else {
 			port_info *pi = a->loc.source
 			    ? &t->ops[a->loc.node].sources[a->loc.port]
@@ -785,7 +785,7 @@ __dtfl_reach_builder_build(__dtfl_reach_builder *b, __dtfl_connectivity *scope_s
 
 				__dtfl_vec_push(&pi->out_sum, &port);
 				__dtfl_vec_push_n(&pi->out_sum,
-				    (const uint64_t *)a->summaries.data + k * sw, sw);
+				    (const uint64_t *)(void *)a->summaries.data + k * sw, sw);
 			}
 		}
 		__dtfl_vec_free(&a->summaries);
@@ -856,7 +856,7 @@ project_outputs(__dtfl_tracker *t, const port_info *pi, const uint64_t *time,
     int64_t diff)
 {
 	size_t step = 1 + t->sw, n = pi->out_sum.len / step, k;
-	const uint64_t *w = (const uint64_t *)pi->out_sum.data;
+	const uint64_t *w = (const uint64_t *)(void *)pi->out_sum.data;
 	uint64_t out[DTFL_TIME_MAX];
 
 	for (k = 0; k < n; k++) {
@@ -954,7 +954,7 @@ __dtfl_tracker_propagate_all(__dtfl_tracker *t)
 				uint64_t key[2 + DTFL_TIME_MAX];
 
 				for (k = 0; k < nk; k++) {
-					const uint64_t *ws = (const uint64_t *)ns->data + k * step;
+					const uint64_t *ws = (const uint64_t *)(void *)ns->data + k * step;
 					uint64_t nt[DTFL_TIME_MAX];
 					__dtfl_location src = { loc.node, (size_t)ws[0], true };
 

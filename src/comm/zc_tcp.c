@@ -206,7 +206,7 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 
 			if (s->len > 0) {
 				__dtfl_merge_queue_extend(queues[i],
-				    (__dtfl_bytes *)s->data, s->len);
+				    (__dtfl_bytes *)(void *)s->data, s->len);
 				__dtfl_vec_clear(s);
 			}
 		}

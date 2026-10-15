@@ -327,7 +327,7 @@ heap_push(__dtfl_vec *h, size_t x)
 	size_t *v, i;
 
 	__dtfl_vec_push(h, &x);
-	v = (size_t *)h->data;
+	v = (size_t *)(void *)h->data;
 	for (i = h->len - 1; i > 0;) {
 		size_t p = (i - 1) / 2, t;
 
@@ -341,7 +341,7 @@ heap_push(__dtfl_vec *h, size_t x)
 static size_t
 heap_pop(__dtfl_vec *h)
 {
-	size_t *v = (size_t *)h->data, top = v[0], n = h->len - 1, i = 0;
+	size_t *v = (size_t *)(void *)h->data, top = v[0], n = h->len - 1, i = 0;
 
 	v[0] = v[n];
 	__dtfl_vec_truncate(h, n);
@@ -695,7 +695,7 @@ push_active(void *ctx, size_t ext)
 static bool
 subgraph_schedule(__dtfl_schedule *s)
 {
-	subgraph *sg = (subgraph *)((char *)s - offsetof(subgraph, sched));
+	subgraph *sg = (subgraph *)(void *)((char *)s - offsetof(subgraph, sched));
 	size_t previous = 0;
 
 	accept_frontier(sg);
@@ -763,7 +763,7 @@ subgraph_destroy(subgraph *sg)
 static void
 sched_destroy(__dtfl_schedule *s)
 {
-	subgraph_destroy((subgraph *)((char *)s - offsetof(subgraph, sched)));
+	subgraph_destroy((subgraph *)(void *)((char *)s - offsetof(subgraph, sched)));
 }
 
 static const __dtfl_schedule_ops subgraph_sched_ops = {
@@ -826,7 +826,7 @@ sg_initialize(__dtfl_operate *op, __dtfl_connectivity *conn,
 
 			for (k = 0; k < ns; k++) {
 				__dtfl_summary_to_outer(sg->inner, sg->outer,
-				    (const uint64_t *)ent->summaries.data + k * sw, outer_s);
+				    (const uint64_t *)(void *)ent->summaries.data + k * sw, outer_s);
 				__dtfl_port_conn_insert(&conn->ports[i], ent->port, outer_s);
 			}
 		}

@@ -277,9 +277,9 @@ for_each_ref(dd_scope *s, void (*f)(dd_ref *, void *), void *ctx)
 		}
 	}
 	for (i = 0; i < s->binds.len; i++)
-		f(&((dd_bind *)s->binds.data[i])->value, ctx);
+		f(&((dd_bind *)(void *)s->binds.data[i])->value, ctx);
 	for (i = 0; i < s->exports.len; i++)
-		f(&((dd_export *)s->exports.data[i])->value, ctx);
+		f(&((dd_export *)(void *)s->exports.data[i])->value, ctx);
 }
 
 /* Count references to each item from LIVE holders only (use_counts). */
@@ -335,9 +335,9 @@ use_counts(dd_scope *s, const bool *dead, size_t *counts)
 		}
 	}
 	for (i = 0; i < s->binds.len; i++)
-		tally_ref(&((dd_bind *)s->binds.data[i])->value, counts);
+		tally_ref(&((dd_bind *)(void *)s->binds.data[i])->value, counts);
 	for (i = 0; i < s->exports.len; i++)
-		tally_ref(&((dd_export *)s->exports.data[i])->value, counts);
+		tally_ref(&((dd_export *)(void *)s->exports.data[i])->value, counts);
 }
 
 struct redirect_ctx {
