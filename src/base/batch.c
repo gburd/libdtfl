@@ -134,6 +134,24 @@ __dtfl_batch_clear(__dtfl_batch *b)
 }
 
 /*
+ * Reserves room for `rows` more records: the offsets, time and diff
+ * columns exactly, and `bytes` more arena bytes.  A hint only; the batch
+ * still grows if more is pushed.  Lets a caller that knows a chunk's
+ * capacity fill it without per-record reallocation.
+ */
+void
+__dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes)
+{
+	__dtfl_vec_reserve(&b->offs, rows);
+	if (bytes != 0)
+		__dtfl_vec_reserve(&b->arena, bytes);
+	if (b->tw != 0)
+		__dtfl_vec_reserve(&b->times, rows * b->tw);
+	if (b->dw != 0)
+		__dtfl_vec_reserve(&b->diffs, rows * b->dw);
+}
+
+/*
  * Appends a record of len uninitialized bytes and returns them; the
  * pointer is valid until the next push.  A NULL time or diff stores
  * zeros.
@@ -147,7 +165,8 @@ __dtfl_batch_push_uninit(__dtfl_batch *b, size_t len, const uint64_t *time,
 	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&b->ref) == 1);
 	if (end < start)
 		__dtfl_panic("batch arena overflow");
-	__dtfl_vec_push_n(&b->arena, NULL, len);
+	/* The caller fully overwrites these len bytes, so leave them uninit. */
+	__dtfl_vec_push_n_uninit(&b->arena, len);
 	__dtfl_vec_push(&b->offs, &end);
 	__dtfl_vec_push_n(&b->times, time, b->tw);
 	__dtfl_vec_push_n(&b->diffs, diff, b->dw);
@@ -196,6 +215,50 @@ size_t
 __dtfl_batch_bytes(const __dtfl_batch *b)
 {
 	return b->arena.len;
+}
+
+/*
+ * Appends records [i, i + count) of src in bulk (b != src).  Equivalent
+ * to count calls to __dtfl_batch_push_from but with one memcpy per column
+ * instead of per record.  src's offsets are rebased onto b's arena.
+ */
+void
+__dtfl_batch_push_run(__dtfl_batch *b, const __dtfl_batch *src, size_t i,
+    size_t count)
+{
+	const size_t *o;
+	size_t base, span, j, dst0, *doffs;
+	unsigned char *p;
+
+	DTFL_ASSERT(b->tw == src->tw && b->dw == src->dw);
+	if (count == 0)
+		return;
+	DTFL_ASSERT(i + count <= __dtfl_batch_len(src));
+	o = (const size_t *)(void *)src->offs.data;
+	base = o[i];
+	span = o[i + count] - base;
+
+	/* Arena: one copy of the whole span. */
+	p = __dtfl_vec_push_n_uninit(&b->arena, span);
+	if (span != 0)
+		memcpy(p, src->arena.data + base, span);
+
+	/* Offsets: count new entries, each rebased to b's arena start. */
+	dst0 = (size_t)(p - b->arena.data);
+	doffs = __dtfl_vec_push_n_uninit(&b->offs, count);
+	for (j = 0; j < count; j++)
+		doffs[j] = dst0 + (o[i + j + 1] - base);
+
+	/* Times and diffs: contiguous blocks copied whole. */
+	if (b->tw != 0) {
+		p = __dtfl_vec_push_n_uninit(&b->times, count * b->tw);
+		memcpy(p, __dtfl_batch_time(src, i),
+		    (size_t)count * b->tw * sizeof(uint64_t));
+	}
+	if (b->dw != 0) {
+		p = __dtfl_vec_push_n_uninit(&b->diffs, count * b->dw);
+		memcpy(p, __dtfl_batch_diff(src, i), (size_t)count * b->dw);
+	}
 }
 
 /* ------------------------------------------------------------------ */

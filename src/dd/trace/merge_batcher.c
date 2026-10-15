@@ -199,16 +199,19 @@ typedef struct chunk_sink {
 	unsigned tw;
 	unsigned dw;
 	size_t cap;
+	size_t abytes;		/* arena bytes to reserve per chunk (hint) */
 } chunk_sink;
 
 static void
-sink_init(chunk_sink *s, unsigned tw, unsigned dw, size_t cap)
+sink_init(chunk_sink *s, unsigned tw, unsigned dw, size_t cap, size_t abytes)
 {
 	__dtfl_vec_init(&s->chunks, sizeof(__dtfl_batch *));
 	s->cur = __dtfl_batch_new(tw, dw);
 	s->tw = tw;
 	s->dw = dw;
 	s->cap = cap;
+	s->abytes = abytes;
+	__dtfl_batch_reserve(s->cur, cap, abytes);
 }
 
 static void
@@ -219,6 +222,7 @@ sink_push(chunk_sink *s, const void *rec, size_t len, const uint64_t *time,
 	if (__dtfl_batch_len(s->cur) >= s->cap) {
 		__dtfl_vec_push(&s->chunks, &s->cur);
 		s->cur = __dtfl_batch_new(s->tw, s->dw);
+		__dtfl_batch_reserve(s->cur, s->cap, s->abytes);
 	}
 }
 
@@ -244,6 +248,34 @@ sink_finish(chunk_sink *s, __dtfl_batch ***out, size_t *nout)
 	__dtfl_vec_free(&s->chunks);
 }
 
+/* Chain totals, to size output chunks without dereferencing the type. */
+static void
+chain_totals(const __dtfl_chain *ch, size_t *rows, size_t *bytes)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++) {
+		*rows += __dtfl_batch_len(ch->chunks[i]);
+		*bytes += __dtfl_batch_bytes(ch->chunks[i]);
+	}
+}
+
+/*
+ * Per-chunk arena bytes to reserve: cap rows times the mean record size
+ * of the merged inputs.  Derived from the actual input bytes, so it never
+ * depends on the (borrowed, possibly stale) record type descriptor.
+ */
+static size_t
+abytes_for(const __dtfl_merge_batcher *mb, size_t rows, size_t bytes)
+{
+	size_t avg;
+
+	if (rows == 0)
+		return 0;
+	avg = bytes / rows + 1;
+	return mb->cap * avg;
+}
+
 /*
  * VecMerger::merge: merge two chains into one, consolidating equal
  * (record, time) rows and dropping zero diffs.  The output is a single
@@ -256,10 +288,13 @@ merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
 	chunk_sink sink;
 	__dtfl_chain out;
 	unsigned char *accum = __dtfl_alloc(DTFL_MAX(mb->dw, 1u));
+	size_t rows = 0, bytes = 0;
 
+	chain_totals(&a, &rows, &bytes);
+	chain_totals(&b, &rows, &bytes);
 	cc_init(&ca, &a);
 	cc_init(&cb, &b);
-	sink_init(&sink, mb->tw, mb->dw, mb->cap);
+	sink_init(&sink, mb->tw, mb->dw, mb->cap, abytes_for(mb, rows, bytes));
 
 	while (cc_valid(&ca) && cc_valid(&cb)) {
 		int r = row_cmp(mb, cc_batch(&ca), ca.row, cc_batch(&cb),
@@ -390,12 +425,15 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 	chunk_sink ready;
 	__dtfl_chain kept;
 	chain_cursor cc;
+	size_t rows = 0, bytes = 0, ab;
 
-	sink_init(&ready, mb->tw, mb->dw, mb->cap);
+	chain_totals(&merged, &rows, &bytes);
+	ab = abytes_for(mb, rows, bytes);
+	sink_init(&ready, mb->tw, mb->dw, mb->cap, ab);
 	{
 		chunk_sink keep;
 
-		sink_init(&keep, mb->tw, mb->dw, mb->cap);
+		sink_init(&keep, mb->tw, mb->dw, mb->cap, ab);
 		cc_init(&cc, &merged);
 		while (cc_valid(&cc)) {
 			const __dtfl_batch *bb = cc_batch(&cc);
