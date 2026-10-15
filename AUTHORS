@@ -1,0 +1,24 @@
+libdtfl -- authors and contributors
+
+Founding contributors
+
+	Greg Burd <greg@burd.me>
+
+Acknowledgements
+
+	libdtfl is a port of three Rust projects.  It ports working code,
+	algorithms, comments, and tests from each; every ported source file
+	carries the upstream copyright notice in its provenance header, and
+	COPYING carries the project notices.
+
+	timely dataflow
+		Frank McSherry and the Timely Dataflow contributors.
+		https://github.com/TimelyDataflow/timely-dataflow
+
+	differential dataflow
+		Frank McSherry and the Differential Dataflow contributors.
+		https://github.com/TimelyDataflow/differential-dataflow
+
+	timely diagnostics
+		The Timely Dataflow contributors.
+		https://github.com/TimelyDataflow/diagnostics

@@ -1,0 +1,78 @@
+# BSD/KNF-style clang-format config for libdtfl
+#
+# Approximates style(9) "Kernel Normal Form" / 4.4BSD style as far as
+# clang-format can express it.  This is a GUIDE for new code and review,
+# not an auto-formatter to run over the tree: the sources are hand
+# written in KNF, and several KNF rules clang-format cannot reproduce
+# (the function return type on its own line, tab-aligned trailing
+# comments, and KNF's break-after-operator continuation at a 4-column
+# indent), so reformatting an existing file churns it without improving
+# it.  Use it on a new file, or to check a diff, and let review enforce
+# the rest.  The style rules themselves are in the AGENTS.md style
+# section.
+
+BasedOnStyle: WebKit
+Language: Cpp
+Standard: c++03
+IndentWidth: 8
+TabWidth: 8
+UseTab: ForIndentation
+ColumnLimit: 80
+ContinuationIndentWidth: 4
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Right
+AlignOperands: true
+AlignTrailingComments: true
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakAfterReturnType: TopLevelDefinitions
+AlwaysBreakBeforeMultilineStrings: false
+BinPackArguments: true
+BinPackParameters: true
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+BreakBeforeBinaryOperators: None
+BreakBeforeBraces: Custom
+BreakBeforeTernaryOperators: false
+BreakStringLiterals: false
+Cpp11BracedListStyle: false
+DerivePointerAlignment: false
+DisableFormat: false
+ForEachMacros: ['STAILQ_FOREACH', 'TAILQ_FOREACH', 'LIST_FOREACH', 'SLIST_FOREACH']
+IndentCaseLabels: false
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+PenaltyBreakBeforeFirstCallParameter: 1000
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 0
+PointerAlignment: Right
+SortIncludes: false
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false

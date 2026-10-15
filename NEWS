@@ -1,0 +1,35 @@
+libdtfl NEWS -- user-visible changes, newest first.
+
+Version 0.1.0 (unreleased)
+
+	First development release.
+
+	A C11 port of timely dataflow (pinned at timely-v0.31.0),
+	differential dataflow (differential-dataflow-v0.25.1), and the
+	timely diagnostics tools.  Functionally complete: the timely
+	runtime and all operators across five execution modes (single
+	thread, threads, processes, simulated, and a TCP cluster);
+	differential collections, traces, and shared arrangements; join,
+	reduce, iterate, count, threshold, and distinct; the graph
+	algorithms and the dogsdogsdogs worst-case-optimal joins; the
+	diagnostics WebSocket server with the dtfl-diag program; and the
+	DDIR dataflow compiler with the dtfl-ddir and dtfl-server tools.
+
+	Thread-safe, with allocation, panic, logging, and thread hooks for
+	embedding (for example in PostgreSQL).  A Texinfo manual and 73 man
+	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
+	(clang), and Linux riscv64 (gcc).
+
+	Known limitations in this release, both tracked in dev/COMPLETION.md
+	and dev/P15-measurements.md:
+
+	* A reduce interesting-time replayer bug on deeply nested Product
+	  times under adversarial inputs, which also blocks one
+	  self-referential-ARRANGE DDIR program shape.  The affected tests
+	  SKIP; all other paths are correct.
+
+	* Performance about 13 to 24 times slower than the Rust originals on
+	  the arrange and count benchmarks, the cost of the fidelity-first
+	  record and container decisions.
+
+	Both must be closed before a 1.0 release.
