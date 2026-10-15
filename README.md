@@ -3,6 +3,7 @@
 Timely and differential dataflow for C.
 
 [![CI](https://github.com/gburd/libdtfl/actions/workflows/ci.yml/badge.svg)](https://github.com/gburd/libdtfl/actions/workflows/ci.yml)
+[![Docs](https://github.com/gburd/libdtfl/actions/workflows/pages.yml/badge.svg)](https://gburd.github.io/libdtfl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](COPYING)
 [![C11](https://img.shields.io/badge/C-11-blue.svg)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
 [![Sanitizers](https://img.shields.io/badge/tested-ASan%20%2B%20UBSan%20%2B%20TSan-brightgreen)](.github/workflows/ci.yml)
