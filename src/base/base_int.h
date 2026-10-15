@@ -107,6 +107,11 @@ void __dtfl_vec_reserve(__dtfl_vec *v, size_t additional);
 void __dtfl_vec_shrink(__dtfl_vec *v);
 void *__dtfl_vec_push(__dtfl_vec *v, const void *elem);	/* returns slot */
 void *__dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n);
+/*
+ * Grows by n elements and returns the first new slot without zeroing it.
+ * The caller must fully overwrite the returned [slot, slot + n*elem).
+ */
+void *__dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n);
 void __dtfl_vec_truncate(__dtfl_vec *v, size_t len);
 void __dtfl_vec_remove(__dtfl_vec *v, size_t index);	/* order preserving */
 void __dtfl_vec_swap_remove(__dtfl_vec *v, size_t index);

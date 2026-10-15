@@ -89,6 +89,19 @@ __dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n)
 	return slot;
 }
 
+void *
+__dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n)
+{
+	void *slot;
+
+	if (n == 0)
+		return v->data + v->len * v->elem;
+	__dtfl_vec_reserve(v, n);
+	slot = v->data + v->len * v->elem;
+	v->len += n;
+	return slot;
+}
+
 void
 __dtfl_vec_truncate(__dtfl_vec *v, size_t len)
 {

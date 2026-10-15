@@ -32,6 +32,7 @@ typedef struct rtype {
 	size_t min;		/* smallest encoded value */
 	bool zw;		/* every value is zero bytes */
 	bool tail;		/* a value runs to the end of its span */
+	bool mcmp;		/* byte order == logical order (memcmp works) */
 	size_t n;		/* fields (tuple), 1 (option, vec), 0 (user) */
 	const dtfl_type *fields[];
 } rtype;
@@ -317,6 +318,29 @@ static bool
 type_zw(const dtfl_type *t)
 {
 	return t == &T_UNIT || (t->internal != NULL && RT(t)->zw);
+}
+
+/*
+ * True when the type's byte encoding sorts identically to its logical
+ * order, so a plain memcmp (cmp_raw) reproduces dtfl_type_cmp.  Holds for
+ * unit (zero bytes), the big-endian / sign-flipped integers, and tuples
+ * and options built only from such types (every tuple field but the last
+ * must be fixed width, so an equal prefix means an equal byte span).  It
+ * does not hold for bytes/string or vec (length/count prefixed, so the
+ * encoding would order by length first) or for user types (their cmp is
+ * authoritative).  Setting cmp = NULL on a memcmp-ordered composite lets
+ * dtfl_type_cmp take the cmp_raw fast path instead of recursing.
+ */
+static bool
+type_mcmp(const dtfl_type *t)
+{
+	if (t == &T_UNIT || t == &T_U8 || t == &T_U16 || t == &T_U32 ||
+	    t == &T_U64 || t == &T_I8 || t == &T_I16 || t == &T_I32 ||
+	    t == &T_I64)
+		return true;
+	if (t->internal != NULL)
+		return RT(t)->mcmp;
+	return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -625,6 +649,7 @@ dtfl_type_tuple(const dtfl_type *const *fields, size_t n)
 {
 	rtype *r = rtype_new(K_TUPLE, n);
 	bool fixed = true;
+	bool mcmp = true;
 	size_t i, fs = 0;
 
 	r->zw = true;
@@ -640,13 +665,22 @@ dtfl_type_tuple(const dtfl_type *const *fields, size_t n)
 		r->zw = r->zw && type_zw(f);
 		fixed = fixed && f->fixed_size != 0;
 		fs += f->fixed_size;
+		/*
+		 * memcmp order survives concatenation only when every field is
+		 * memcmp-ordered and every field but the last is fixed width (so
+		 * two values that agree on a field agree on its byte span).
+		 */
+		mcmp = mcmp && type_mcmp(f) &&
+		    (i + 1 == n || f->fixed_size != 0);
 	}
 	r->tail = n > 0 && is_tail(fields[n - 1]);
+	r->mcmp = mcmp;
 	r->pub.name = "tuple";
 	/* fixed_size 0 means variable, so an all-fixed tuple needs fs > 0. */
 	r->pub.fixed_size = fixed && fs > 0 ? fs : 0;
 	r->pub.len = r->tail ? NULL : tuple_len;
-	r->pub.cmp = tuple_cmp;
+	/* A memcmp-ordered tuple uses the cmp_raw fast path (cmp == NULL). */
+	r->pub.cmp = mcmp ? NULL : tuple_cmp;
 	r->pub.fmt = tuple_fmt;
 	return &r->pub;
 }
@@ -667,9 +701,11 @@ dtfl_type_option(const dtfl_type *inner)
 	r->fields[0] = dtfl_type_retain(inner);
 	r->min = 1;
 	r->tail = is_tail(inner);
+	r->mcmp = type_mcmp(inner);
 	r->pub.name = "option";
 	r->pub.len = r->tail ? NULL : option_len;
-	r->pub.cmp = option_cmp;
+	/* None (tag 0) sorts before Some (tag 1), then the inner value. */
+	r->pub.cmp = r->mcmp ? NULL : option_cmp;
 	r->pub.fmt = option_fmt;
 	return &r->pub;
 }

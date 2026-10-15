@@ -65,6 +65,17 @@ __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len)
  * otherwise.  The predicate "value < key" must stay false once false,
  * which holds because the values are sorted.
  */
+/* cmp_raw(a, b) < 0 for a memcmp-ordered type: by prefix, then length. */
+static inline bool
+slice_less_raw(const void *a, size_t alen, const void *b, size_t blen)
+{
+	size_t m = alen < blen ? alen : blen;
+	int c = m != 0 ? memcmp(a, b, m) : 0;
+
+	if (c != 0)
+		return c < 0;
+	return alen < blen;
+}
 size_t
 __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
     size_t end, const void *key, size_t klen)
@@ -72,10 +83,17 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 	const size_t small_limit = 8;
 	size_t index, step, len;
 	const void *v;
+	/*
+	 * A memcmp-ordered type (cmp == NULL) compares by cmp_raw: memcmp
+	 * over the common prefix, then by length.  Inline it so the hot seek
+	 * loop skips the dtfl_type_cmp dispatch; the result is identical.
+	 */
+	const bool raw = t->cmp == NULL;
 
 #define LESS(i)								\
 	(v = __dtfl_slices_get(s, (i), &len),				\
-	    dtfl_type_cmp(t, v, len, key, klen) < 0)
+	    raw ? slice_less_raw(v, len, key, klen)			\
+		: dtfl_type_cmp(t, v, len, key, klen) < 0)
 
 	if (end > start + small_limit && LESS(start + small_limit)) {
 		index = small_limit + 1;

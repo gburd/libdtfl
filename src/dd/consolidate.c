@@ -98,6 +98,7 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 
 	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
 	out = __dtfl_batch_new(b->tw, b->dw);
+	__dtfl_batch_reserve(out, n, b->arena.len);
 	for (i = 0; i < n; i = k) {
 		/* accum = sum of the diffs of rows idx[i..k), all equal. */
 		if (b->dw != 0)
@@ -163,18 +164,27 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 	__dtfl_consolidate_batch(cur, c->rt, c->dc);
 	n = __dtfl_batch_len(cur);
 	end = n / multiple * multiple;
-	for (i = 0; i < end; i = j) {
-		out = __dtfl_batch_new(cur->tw, cur->dw);
-		for (j = i; j < end && j - i < c->cap; j++)
-			__dtfl_batch_push_from(out, cur, j);
-		__dtfl_vec_push(&c->outbound, &out);
+	{
+		/* Pre-size each output chunk: cap rows and their arena bytes. */
+		size_t avg = n != 0 ? cur->arena.len / n : 0;
+
+		for (i = 0; i < end; i = j) {
+			size_t run;
+
+			out = __dtfl_batch_new(cur->tw, cur->dw);
+			__dtfl_batch_reserve(out, c->cap, c->cap * avg);
+			run = DTFL_MIN(c->cap, end - i);
+			__dtfl_batch_push_run(out, cur, i, run);
+			j = i + run;
+			__dtfl_vec_push(&c->outbound, &out);
+		}
+		if (end == 0)
+			return;
+		rest = __dtfl_batch_new(cur->tw, cur->dw);
+		__dtfl_batch_reserve(rest, n - end, (n - end) * avg);
+		__dtfl_batch_push_run(rest, cur, end, n - end);
+		replace_storage(cur, rest);
 	}
-	if (end == 0)
-		return;
-	rest = __dtfl_batch_new(cur->tw, cur->dw);
-	for (i = end; i < n; i++)
-		__dtfl_batch_push_from(rest, cur, i);
-	replace_storage(cur, rest);
 }
 
 /* push_into: buffers one update; flushes full batches at 2 * cap rows. */

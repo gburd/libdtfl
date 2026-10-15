@@ -139,8 +139,13 @@ void __dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
 /* Reserves space and returns a pointer for a record of `len` bytes. */
 void *__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len,
     const uint64_t *time, const void *diff);
+/* Reserves room for `rows` more records and `bytes` more arena bytes. */
+void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
 /* Appends record i of src. */
 void __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i);
+/* Appends records [i, i + count) of src in bulk (b != src). */
+void __dtfl_batch_push_run(__dtfl_batch *b, const __dtfl_batch *src, size_t i,
+    size_t count);
 
 static inline const void *
 __dtfl_batch_rec(const __dtfl_batch *b, size_t i, size_t *len)
