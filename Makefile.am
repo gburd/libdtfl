@@ -62,7 +62,8 @@ AM_TESTS_ENVIRONMENT = \
 	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM;
 
 dist_man_MANS =
-EXTRA_DIST = bootstrap COPYING README AGENTS.md dev src/libdtfl.map \
+EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \
+	AGENTS.md dev src/libdtfl.map \
 	doc/snippets tests/corpus data
 
 include src/base/local.mk

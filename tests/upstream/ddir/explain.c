@@ -757,12 +757,9 @@ DTFL_TEST(explain__fuzz_explanations_sufficient)
 
 	(void)params; (void)data;
 	/*
-	 * Heavy sweep, but also blocked on a distinct pre-existing bug (not
-	 * the batch-lifetime UAF, which is fixed): the reduce interesting-time
-	 * engine asserts idx != SIZE_MAX in rd_retire's output-tag match
-	 * (reduce.c:1198) and fails on this sweep's larger graphs.  Stays SKIP
-	 * until that assertion is fixed; tracked in dev/COMPLETION.md.  Forced
-	 * by DTFL_EXPLAIN_HEAVY so the fix can be re-checked.
+	 * Heavy sweep (the upstream #[ignore] fuzz test).  Gated behind
+	 * DTFL_EXPLAIN_HEAVY, matching upstream's #[ignore] run-on-demand
+	 * semantics; it runs the full generated-graph sweep and is slow.
 	 */
 	if (getenv("DTFL_EXPLAIN_HEAVY") == NULL)
 		return MUNIT_SKIP;

@@ -18,12 +18,12 @@
  * tools/dtfl-ddir/), feeds a small hand-chosen input, and checks the first
  * export's consolidated rows against the hand-computed answer.
  *
- * kcore and stable are SKIP'd: they do not converge on the current DDIR
- * backend (a self-referential ARRANGE feedback variable,
- * "var x = ARRANGE(CONCAT(x, NEGATE(...)))", parks the worker before it
- * produces output).  That is a backend convergence bug, not a program or
- * tool defect; the batch programs that do not use a self-referential
- * feedback var (reach, scc, adt, binders, unnest) all run.
+ * kcore and stable converge on the DDIR backend: ARRANGE renders as a
+ * consolidate (src/ddir/backend.c), so a self-referential ARRANGE feedback
+ * variable -- "var x = ARRANGE(CONCAT(x, NEGATE(...)))" -- gets the
+ * compaction it needs to cancel its own history and reach a fixpoint.  All
+ * eight batch programs (reach, scc, adt, binders, unnest, kcore, stable)
+ * run through the public API here.
  */
 #include "dtfl_test.h"
 
@@ -338,17 +338,90 @@ DTFL_TEST(programs__unnest_ddp)
 }
 
 /* ------------------------------------------------------------------ */
-/* kcore / stable: SKIP on the backend non-convergence (see header).   */
+/* kcore (k=2): the scc 6-edge graph {(1,2),(2,3),(3,1),(4,5),(5,4),    */
+/* (3,4)}.  Symmetrised, every node has degree >= 2, so all five nodes */
+/* survive the 2-core; REDUCE COUNT yields one (node ; degree) row per  */
+/* surviving node = 5 rows.  Exercises the self-referential ARRANGE     */
+/* feedback var that only converges with the consolidate backend.       */
 /* ------------------------------------------------------------------ */
 
-DTFL_TEST(programs__kcore_stable_skipped_on_backend_nonconvergence)
+DTFL_TEST(programs__kcore_ddir)
 {
+	dtfl_ddir_program *p;
+	int64_t es[6][2] = {
+		{ 1, 2 }, { 2, 3 }, { 3, 1 }, { 4, 5 }, { 5, 4 }, { 3, 4 } };
+	dtfl_ddir_row edges[6];
+	const dtfl_ddir_row *inputs[1];
+	size_t lens[1] = { 6 };
+	dtfl_ddir_output *out = NULL;
+	size_t n_out = 0, i;
+	int rc;
+
 	(void)params; (void)data;
-	/* kcore.ddir and stable.ddp/.ddir use a self-referential ARRANGE
-	 * feedback var that parks the worker before producing output.  Do
-	 * not run them here (they would hang); the files are copied
-	 * verbatim and the hang is a backend bug tracked in the ledger. */
-	return MUNIT_SKIP;
+	p = load("kcore.ddir");
+	assert_true(p != NULL);
+	assert_size(dtfl_ddir_program_input_count(p), ==, 1);
+	for (i = 0; i < 6; i++) {
+		edges[i].key = tup(es[i], 2);
+		edges[i].val = dtfl_ddir_value_unit();
+		edges[i].diff = 1;
+	}
+	inputs[0] = edges;
+	rc = dtfl_ddir_evaluate(p, inputs, lens, 1, &out, &n_out);
+	assert_int(rc, ==, 0);
+	assert_size(export_row_count(out, n_out, "result"), ==, 5);
+
+	dtfl_ddir_outputs_free(out, n_out);
+	for (i = 0; i < 6; i++) {
+		dtfl_ddir_value_free(edges[i].key);
+		dtfl_ddir_value_free(edges[i].val);
+	}
+	dtfl_ddir_program_free(p);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* stable (Gale-Shapley): a 2x2 instance.  Each row is                  */
+/* (l_node, l_pref, r_node, r_pref).  With l1 and l2 both preferring    */
+/* their rank-0 choice and the r-sides accepting disjoint partners,     */
+/* two proposals survive -- the result collapses to one (unit;unit) row */
+/* whose multiplicity is the number of matched pairs = 2.               */
+/* ------------------------------------------------------------------ */
+
+DTFL_TEST(programs__stable_ddir)
+{
+	dtfl_ddir_program *p;
+	int64_t es[4][4] = {
+		{ 1, 0, 1, 0 }, { 1, 1, 2, 1 },
+		{ 2, 0, 1, 1 }, { 2, 1, 2, 0 } };
+	dtfl_ddir_row edges[4];
+	const dtfl_ddir_row *inputs[1];
+	size_t lens[1] = { 4 };
+	dtfl_ddir_output *out = NULL;
+	size_t n_out = 0, i;
+	int rc;
+
+	(void)params; (void)data;
+	p = load("stable.ddir");
+	assert_true(p != NULL);
+	assert_size(dtfl_ddir_program_input_count(p), ==, 1);
+	for (i = 0; i < 4; i++) {
+		edges[i].key = tup(es[i], 4);
+		edges[i].val = dtfl_ddir_value_unit();
+		edges[i].diff = 1;
+	}
+	inputs[0] = edges;
+	rc = dtfl_ddir_evaluate(p, inputs, lens, 1, &out, &n_out);
+	assert_int(rc, ==, 0);
+	assert_int64(export_unit_count(out, n_out, "result"), ==, 2);
+
+	dtfl_ddir_outputs_free(out, n_out);
+	for (i = 0; i < 4; i++) {
+		dtfl_ddir_value_free(edges[i].key);
+		dtfl_ddir_value_free(edges[i].val);
+	}
+	dtfl_ddir_program_free(p);
+	return MUNIT_OK;
 }
 
 static MunitTest tests[] = {
@@ -359,7 +432,8 @@ static MunitTest tests[] = {
 	DTFL_T(programs__adt_ddp),
 	DTFL_T(programs__binders_ddp),
 	DTFL_T(programs__unnest_ddp),
-	DTFL_T(programs__kcore_stable_skipped_on_backend_nonconvergence),
+	DTFL_T(programs__kcore_ddir),
+	DTFL_T(programs__stable_ddir),
 	DTFL_T_END
 };
 
