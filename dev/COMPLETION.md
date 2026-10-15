@@ -109,12 +109,20 @@ Not started or partial -- MUST be finished before the project is done
         explain scc sufficiency tests (scc_row_explanations_sufficient_small,
         two_simultaneous_queries_sufficient, demand_is_a_subset_of_the_input)
         are un-SKIPped and pass under ASan + LSan.
-[ ] DDIR self-referential feedback hang: a program with
-        var x = ARRANGE(CONCAT(x, NEGATE(...))) parks the worker (lost
-        wake / non-convergence) in the backend/iterate rendering; kcore
-        and stable DDIR programs SKIP on it.  Minimal repro in the
-        p13-server report.  Distinct from the two bugs above; a backend
-        convergence fix before 1.0.
+[ ] DDIR self-referential feedback hang and the reduce interesting-time
+        assertion are the SAME coupled root cause (investigated
+        2026-10-15).  A program with var x = ARRANGE(CONCAT(x,
+        NEGATE(...))) parks the worker; kcore and stable SKIP.  The DDIR
+        backend renders ARRANGE as a pass-through copy; making it
+        consolidate DOES fix convergence (kcore then yields the 5-node
+        2-core, stable the 2 matched pairs, both hand-verified), BUT it
+        feeds the reduce HistoryReplayer a nested Product<u64,PointStamp>
+        time structure that trips the reduce assertion below MORE
+        broadly, regressing the non-heavy explain__scc_row_explanations_
+        sufficient_small.  So the self-ref fix cannot ship until the
+        reduce replayer is fixed for nested Product time; the consolidate
+        change then closes both.  Kept at the pass-through backend (HEAD)
+        where scc_small passes and kcore/stable SKIP.
 [x] trace new_listener empty-seal frontier bug: FIXED (feat/finish-
         import, merged).  An importer built after a pure empty seal-batch
         frontier advance stalled because new_listener seeded its start
@@ -123,13 +131,21 @@ Not started or partial -- MUST be finished before the project is done
         spine's tracked upper and new_listener seeds from it, matching
         upstream.  Regression test: import.c test_import_stalled_dataflow;
         full dd suite and scc/peek/shared_import pass under ASan.
-[ ] reduce interesting-time assertion: rd_retire's output-tag match
-        asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
-        DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
-        Distinct from the batch-lifetime UAF above (it was previously
-        masked by that UAF crashing first); the heavy fuzz sweep stays
-        SKIP until the reduce output-tag logic is fixed.  scc_100 remains
-        a time-gated heavy sweep, not blocked on this.
+[ ] reduce interesting-time assertion: in reduce_compute (the
+        HistoryReplayer), an in-band synthetic next_time is emitted for
+        which no held capability covers it (idx == SIZE_MAX in the
+        outputs[u].tag <= next_time search, reduce.c:1198); upstream
+        reduce.rs has the same expect('failed to find index').  Fails on
+        the DTFL_EXPLAIN_HEAVY fuzz sweep, and (per the coupled finding
+        above) on scc_small the moment ARRANGE consolidates.  Diagnosed
+        2026-10-15: the failing case is tw=9 Product<u64,PointStamp>
+        time, next_time=[0,8,3,1537] incomparable to the one held tag
+        [0,11,0,1792], so a stale low history time leaked into a
+        synthetic join; the fix is in the per-key meet/advance_buffer_by
+        sequencing for the nested time.  Only the nested-Product reduce
+        path under adversarial times is affected; all of dd/scc/the
+        non-fuzz explain suite is correct.  This is the keystone: fixing
+        it also unblocks the DDIR self-ref hang above.
 [x] P14 plugin server + its four example plugins.  Exit: the dd_server
         session scripts replay.  DONE (feat/p14-server): dd_server with a
         named shared-trace registry, the degr_dist/reachability/
