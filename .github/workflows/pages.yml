@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: MIT
+name: pages
+
+# Builds the Texinfo manual as HTML and deploys it to GitHub Pages.
+# Requires Pages enabled in repo settings (Source: GitHub Actions).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'doc/**'
+      - 'README.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config texinfo
+      - run: ./bootstrap
+      - run: mkdir build && cd build && ../configure
+      - name: Build the HTML manual
+        run: |
+          set -eu
+          make -C build html
+          # automake's html target emits doc/libdtfl.html/ (split) or
+          # doc/libdtfl.html (monolithic); normalize to a _site directory.
+          mkdir -p _site
+          if [ -d build/doc/libdtfl.html ]; then
+            cp -r build/doc/libdtfl.html/* _site/
+          elif [ -f build/doc/libdtfl.html ]; then
+            cp build/doc/libdtfl.html _site/index.html
+          else
+            echo "FAIL: make html produced no manual"; exit 1
+          fi
+          test -f _site/index.html || ls -R _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
