@@ -66,7 +66,10 @@ typedef struct half_join_ctx {
 	const dtfl_type *out_type;	/* retained; the record part */
 	const __dtfl_diff_class *odc;	/* output diff class (R * BatchDiff) */
 	size_t odw;
-	bool strict;			/* comparison: < vs <= */
+	bool strict;			/* comparison: < vs <= (when cmp NULL) */
+	dtfl_half_join_cmp_fn cmp;	/* half_join2 comparison, or NULL */
+	dtfl_half_join_frontier_fn frontier_func;  /* half_join2, or NULL */
+	void *cmp_ctx;			/* shared by cmp and frontier_func */
 	dtfl_half_join_output_fn output_func;
 	void *user;
 	void (*user_free)(void *);
@@ -107,10 +110,14 @@ find_stash(half_join_ctx *c, const uint64_t *t)
 	return SIZE_MAX;
 }
 
-/* The comparison: trace time2 against the initial time, strict or not. */
+/* The comparison: trace time2 against the initial time.  half_join2
+ * supplies a callback; half_join uses the strict/non-strict total-order
+ * test. */
 static bool
 hj_cmp(const half_join_ctx *c, const uint64_t *t2, const uint64_t *initial)
 {
+	if (c->cmp != NULL)
+		return c->cmp(c->cmp_ctx, t2, initial);
 	if (c->strict)
 		return dtfl_time_less_than(c->tc, t2, initial);
 	return dtfl_time_less_equal(c->tc, t2, initial);
@@ -376,7 +383,8 @@ half_join_logic(dtfl_op *op, void *vctx)
 		}
 	}
 
-	/* Logical compaction: input1 frontier joined with stashed cap times. */
+	/* Logical compaction: input1 frontier joined with each held cap time
+	 * transformed by frontier_func (half_join2) or the cap time itself. */
 	{
 		size_t f1n;
 		const uint64_t *f1 = dtfl_op_frontier(op, 0, &f1n);
@@ -390,8 +398,14 @@ half_join_logic(dtfl_op *op, void *vctx)
 		for (j = 0; j < c->stash.len; j++) {
 			hj_stash *s = DTFL_VEC_AT(&c->stash, hj_stash, j);
 
-			__dtfl_antichain_insert(&frontier,
-			    dtfl_cap_time(s->cap));
+			if (c->frontier_func != NULL) {
+				c->frontier_func(c->cmp_ctx,
+				    dtfl_cap_time(s->cap),
+				    (dtfl_half_join_frontier *)&frontier);
+			} else {
+				__dtfl_antichain_insert(&frontier,
+				    dtfl_cap_time(s->cap));
+			}
 		}
 		__dtfl_trace_agent_set_logical(&c->reader,
 		    (const uint64_t *)frontier.elems.data,
@@ -399,6 +413,13 @@ half_join_logic(dtfl_op *op, void *vctx)
 		__dtfl_antichain_free(&frontier);
 	}
 	return false;
+}
+
+void
+dtfl_half_join_frontier_insert(dtfl_half_join_frontier *f,
+    const uint64_t *time)
+{
+	__dtfl_antichain_insert((__dtfl_antichain *)f, time);
 }
 
 static void
@@ -426,10 +447,12 @@ half_join_free(void *vctx)
 	__dtfl_free(c);
 }
 
-dtfl_collection *
-dtfl_dogs_half_join(dtfl_collection *stream, dtfl_arranged *arr,
+static dtfl_collection *
+half_join_build(dtfl_collection *stream, dtfl_arranged *arr,
     const dtfl_type *kt, const dtfl_type *v1t, const dtfl_type *out_type,
-    bool strict, dtfl_half_join_output_fn output_func, dtfl_ctx ctx)
+    bool strict, dtfl_half_join_cmp_fn cmp,
+    dtfl_half_join_frontier_fn frontier_func, void *cmp_ctx,
+    dtfl_half_join_output_fn output_func, dtfl_ctx ctx)
 {
 	const __dtfl_trace_agent *g = __dtfl_arranged_agent(arr);
 	dtfl_scope *scope = dtfl_stream_scope(stream->stream);
@@ -472,6 +495,9 @@ dtfl_dogs_half_join(dtfl_collection *stream, dtfl_arranged *arr,
 	c->odc = odc;
 	c->odw = odc->width;
 	c->strict = strict;
+	c->cmp = cmp;
+	c->frontier_func = frontier_func;
+	c->cmp_ctx = cmp_ctx;
 	c->output_func = output_func;
 	c->user = ctx.ptr;
 	c->user_free = ctx.free;
@@ -495,4 +521,26 @@ dtfl_dogs_half_join(dtfl_collection *stream, dtfl_arranged *arr,
 	dtfl_op_builder_build(b, half_join_logic, c, half_join_free);
 	dtfl_type_free(ut);
 	return __dtfl_as_collection(st, out_type, out_diff, depth);
+}
+
+dtfl_collection *
+dtfl_dogs_half_join(dtfl_collection *stream, dtfl_arranged *arr,
+    const dtfl_type *kt, const dtfl_type *v1t, const dtfl_type *out_type,
+    bool strict, dtfl_half_join_output_fn output_func, dtfl_ctx ctx)
+{
+	return half_join_build(stream, arr, kt, v1t, out_type, strict,
+	    NULL, NULL, NULL, output_func, ctx);
+}
+
+dtfl_collection *
+dtfl_dogs_half_join2(dtfl_collection *stream, dtfl_arranged *arr,
+    const dtfl_type *kt, const dtfl_type *v1t, const dtfl_type *out_type,
+    dtfl_half_join_cmp_fn comparison,
+    dtfl_half_join_frontier_fn frontier_func,
+    dtfl_half_join_output_fn output_func, dtfl_ctx ctx)
+{
+	/* comparison and frontier_func share ctx.ptr; a NULL comparison
+	 * falls back to the strict total-order test (half_join's default). */
+	return half_join_build(stream, arr, kt, v1t, out_type, true,
+	    comparison, frontier_func, ctx.ptr, output_func, ctx);
 }

@@ -3,7 +3,9 @@
 .Dt DTFL_DOGS_HALF_JOIN 3
 .Os
 .Sh NAME
-.Nm dtfl_dogs_half_join
+.Nm dtfl_dogs_half_join ,
+.Nm dtfl_dogs_half_join2 ,
+.Nm dtfl_half_join_frontier_insert
 .Nd a half-join over partially ordered times for delta queries
 .Sh LIBRARY
 Timely and differential dataflow library
@@ -12,6 +14,10 @@ Timely and differential dataflow library
 .In dtfl/dogs.h
 .Ft dtfl_collection *
 .Fn dtfl_dogs_half_join "dtfl_collection *stream" "dtfl_arranged *arr" "const dtfl_type *kt" "const dtfl_type *v1t" "const dtfl_type *out_type" "bool strict" "dtfl_half_join_output_fn output_func" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_dogs_half_join2 "dtfl_collection *stream" "dtfl_arranged *arr" "const dtfl_type *kt" "const dtfl_type *v1t" "const dtfl_type *out_type" "dtfl_half_join_cmp_fn comparison" "dtfl_half_join_frontier_fn frontier_func" "dtfl_half_join_output_fn output_func" "dtfl_ctx ctx"
+.Ft void
+.Fn dtfl_half_join_frontier_insert "dtfl_half_join_frontier *f" "const uint64_t *time"
 .Sh DESCRIPTION
 .Fn dtfl_dogs_half_join
 is a binary equijoin that responds only to updates on its first input, the
@@ -49,6 +55,34 @@ and
 split the streamed record into its key and value; the hoisted
 .Va time1
 is the scope's time words that follow them.
+.Pp
+.Fn dtfl_dogs_half_join2
+is the general form with the two closures upstream exposes, for delta
+joins whose time arithmetic is more than the AltNeu strict/non-strict
+choice.
+.Fa comparison
+decides whether a trace
+.Va time2
+joins against the initial time, replacing the
+.Va strict
+bool; passing
+.Dv NULL
+selects the strict less-than test.
+.Fa frontier_func
+builds, from a held initial time, the antichain of trace times the
+arrangement must still retain, writing each element with
+.Fn dtfl_half_join_frontier_insert
+through the
+.Vt dtfl_half_join_frontier
+handle;
+delta_query2
+uses time ->
+.Pq outer - 1 , inner - 1 .
+Passing
+.Dv NULL
+holds the initial time itself.
+Both closures share
+.Fa ctx .
 .Pp
 A
 .Vt dtfl_half_join_output_fn

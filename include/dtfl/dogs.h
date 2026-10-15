@@ -247,6 +247,35 @@ DTFL_API dtfl_collection *dtfl_dogs_half_join(dtfl_collection *stream,
     const dtfl_type *out_type, bool strict,
     dtfl_half_join_output_fn output_func, dtfl_ctx ctx);
 
+/*
+ * half_join2 (operators/half_join2.rs): the general half_join with the
+ * two closures upstream exposes, for delta joins whose time arithmetic
+ * is not just the AltNeu strict/non-strict choice.
+ *
+ * `comparison` decides, for each trace time2 and the streamed update's
+ * initial time, whether (key, val2) joins (the total-order test
+ * upstream calls `comparison`); it returns true to join.  Passing NULL
+ * selects the strict less-than test, the half_join default.
+ *
+ * `frontier_func` builds, from a held initial time, the antichain of
+ * trace times the operator still needs the arrangement to retain (it
+ * writes the frontier elements through the emit handle).  delta_query2
+ * uses time -> (outer - 1, inner - 1).  Passing NULL holds the initial
+ * time itself (the half_join default).  Both closures share `ctx`.
+ */
+typedef bool (*dtfl_half_join_cmp_fn)(void *ctx, const uint64_t *time2,
+    const uint64_t *initial);
+typedef struct dtfl_half_join_frontier dtfl_half_join_frontier;
+DTFL_API void dtfl_half_join_frontier_insert(dtfl_half_join_frontier *f,
+    const uint64_t *time);
+typedef void (*dtfl_half_join_frontier_fn)(void *ctx, const uint64_t *initial,
+    dtfl_half_join_frontier *out);
+DTFL_API dtfl_collection *dtfl_dogs_half_join2(dtfl_collection *stream,
+    dtfl_arranged *arr, const dtfl_type *kt, const dtfl_type *v1t,
+    const dtfl_type *out_type, dtfl_half_join_cmp_fn comparison,
+    dtfl_half_join_frontier_fn frontier_func,
+    dtfl_half_join_output_fn output_func, dtfl_ctx ctx);
+
 #ifdef __cplusplus
 }
 #endif
