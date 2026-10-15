@@ -208,6 +208,7 @@ examples_dd_multitemporal_LDADD = $(EXAMPLE_LDADD)
 
 noinst_PROGRAMS += \
 	examples/dogs/delta_query_wcoj \
+	examples/dogs/delta_query \
 	examples/dogs/delta_query2 \
 	examples/dogs/ngo \
 	examples/dogs/dogsdogsdogs
@@ -215,6 +216,10 @@ noinst_PROGRAMS += \
 examples_dogs_delta_query_wcoj_SOURCES = examples/dogs/delta_query_wcoj.c
 examples_dogs_delta_query_wcoj_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dogs_delta_query_wcoj_LDADD = $(EXAMPLE_LDADD)
+
+examples_dogs_delta_query_SOURCES = examples/dogs/delta_query.c
+examples_dogs_delta_query_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dogs_delta_query_LDADD = $(EXAMPLE_LDADD)
 
 examples_dogs_delta_query2_SOURCES = examples/dogs/delta_query2.c
 examples_dogs_delta_query2_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -248,6 +253,7 @@ check_PROGRAMS += \
 	examples/dd/compact \
 	examples/dd/stackoverflow \
 	examples/dogs/delta_query_wcoj \
+	examples/dogs/delta_query \
 	examples/dogs/delta_query2 \
 	examples/dogs/ngo \
 	examples/dogs/dogsdogsdogs \
@@ -280,6 +286,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/compact.expected \
 	examples/dd/stackoverflow.expected \
 	examples/dogs/delta_query_wcoj.expected \
+	examples/dogs/delta_query.expected \
 	examples/dogs/delta_query2.expected \
 	examples/dogs/ngo.expected \
 	examples/dogs/dogsdogsdogs.expected \
