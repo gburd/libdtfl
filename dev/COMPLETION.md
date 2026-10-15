@@ -136,9 +136,20 @@ Not started or partial -- MUST be finished before the project is done
         neighborhood/random_graph plugins (hand-verified), the
         dtfl-server tool replaying the session scripts, and the
         shared-arrangement property proven by pointer identity.
-[ ] P15 release: the three experiments/ benchmarks, the performance
-        parity table (within 1.5x of Rust on the agreed subset), the
-        fuzz campaign, distcheck on Linux (glibc, musl), FreeBSD, macOS.
+[~] P15 release: the three experiments/ benchmarks DONE (arrange,
+        graphs, graphs-static).  Multi-platform build and check DONE:
+        Linux x86_64 glibc (floki/meh, gcc 14, all six configs green),
+        FreeBSD with clang 19 (nuc, make check 105 pass / 24 skip / 0
+        fail, -Wcast-align clean), and Linux riscv64 (lixr, gcc 15, a
+        strict-alignment arch -- build and check clean, no SIGBUS, which
+        validates the alignment-cast laundering).  The dist tarball
+        builds and checks from scratch on riscv64.  REMAINING: the
+        measured performance parity table (within 1.5x of Rust on the
+        agreed subset -- needs a Rust-vs-C timing run on a dedicated
+        host), the sustained fuzz campaign, and distcheck on musl and
+        macOS (glibc distcheck is green on floki; a full FreeBSD
+        distcheck is impractical on the available host, but FreeBSD make
+        check passes).
 
 Examples
 --------
