@@ -296,13 +296,13 @@ differential-dataflow	dogsdogsdogs/examples/delta_query.rs	152	examples/dogs/del
 differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/delta_query2.c	P9	done	half_join delta join over a Product<usize,usize> partial order via dtfl_dogs_half_join2 with the (outer-1,inner-1) frontier closure and the strict/non-strict comparison pair; the time hoist is done at the unordered input (change record carries its own time); C half_join already delays to the joined time so upstream's trailing inner.map lower is dropped; fixed graph at comparable times in place of the two-edge demo, exact hand-verified join set
 differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	done	fixed graph in place of GraphMMap; triangle WCOJ delta query via CollectionIndex/extend in an AltNeu scope; exact triangle set
 differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dogsdogsdogs.c	P9	done	fixed graph in place of GraphMMap; triangle count via the generic extend() join (count/propose/validate internally); exact extensions
-differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	todo	blocked: needs arrange_by_self/by_key and the leapfrog triangle join; the hand-wired arrangement path is not on the public API
+differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	done	fixed graph in place of GraphMMap; triangle query via the full count-min dataflow join (arrange_by_self/by_key, join_core, reduce picks the fewest-extension index); exact triangle set
 differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
 differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	done	
-differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join2.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join.c	P9	done	the general half_join (comparison + frontier_func closures) ported as dtfl_dogs_half_join2 in src/dogs/half_join.c (the two share the operator; dtfl_dogs_half_join is a thin wrapper).  Exercised end to end by examples/dogs/delta_query2.c, which drives the (outer-1, inner-1) frontier_func and both the strict and non-strict comparison closures and matches the hand-computed join set; the existing half_join path stays unregressed
 differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	done	
