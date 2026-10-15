@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+# debian/rules -- build libdtfl as Debian packages.
+#
+# libdtfl uses a standard autoconf/automake build driven from ./configure
+# at the source root, with an out-of-source build directory.  dh's
+# autotools sequence works directly; we only point it at a build subdir
+# and the multiarch libdir.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --builddirectory=debian/build
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
+		--enable-shared

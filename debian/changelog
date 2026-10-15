@@ -1,0 +1,9 @@
+libdtfl (0.1.0-1) unstable; urgency=medium
+
+  * First development release.  A C11 port of timely dataflow
+    (timely-v0.31.0), differential dataflow (differential-dataflow-
+    v0.25.1), and the timely diagnostics tools.
+  * Known limitation tracked in dev/P15-measurements.md: performance
+    behind the Rust originals on the arrange and count benchmarks.
+
+ -- Greg Burd <greg@burd.me>  Thu, 15 Oct 2026 00:00:00 +0000

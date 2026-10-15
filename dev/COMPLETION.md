@@ -238,16 +238,22 @@ Verification (fidelity against real Rust) -- a release requirement
         another target), 21 deferred (need a feature not yet ported, each
         with a reason), 9 excluded (no C analog).
 [~] the P15 fuzz campaign and the performance parity table (measured
-        2026-10-15, dev/P15-measurements.md).  Fuzz campaign DONE: 24
-        property suites at 10000 cases each (~230000 cases) under ASan,
-        zero violations / crashes / leaks.  Parity table MEASURED but
-        not passing: the C port is ~13 to 24x slower than the pinned Rust
-        experiments crate on arrange/count (same host, same params), well
-        outside the 1.5x target.  That is the measured cost of the
-        fidelity-first decisions (D1/D2) and the unoptimised hot paths;
-        reaching parity is a dedicated optimisation project (profile and
-        cut allocation/copies in arrange and reduce).  The measurement is
-        complete; the within-1.5x goal is the open part.
+        2026-10-15, re-measured and improved same day, dev/P15-
+        measurements.md).  Fuzz campaign DONE: 24 property suites at
+        10000 cases each (~230000 cases) under ASan, zero violations /
+        crashes / leaks.  Parity: a first optimisation pass (memcmp fast
+        path for memcmp-ordered composite types, bulk batch-build copies,
+        inlined trace seek) cut the gap from the originally reported ~13
+        to 24x to about 8x on arrange and ~29x on count throughput
+        (the earlier figure was partly a benchmark-argument-order
+        mismeasurement, corrected here).  Still outside the 1.5x target.
+        The residual is the STRUCTURAL cost of the D1/D2 fidelity
+        decisions: byte-span records with separate time/diff columns and
+        a byte-arena trie, versus Rust's inline typed tuples and a
+        columnar trie.  Closing it to 1.5x would require undoing D1/D2;
+        the achievable within-fidelity wins are taken.  The open part is
+        a decision: pursue a non-fidelity layout behind a flag, or relax
+        the 1.5x goal for a fidelity-first port.
 
 Deferred-with-reason items that MUST still be finished before 1.0
 ----------------------------------------------------------------

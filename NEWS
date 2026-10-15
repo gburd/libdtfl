@@ -20,16 +20,10 @@ Version 0.1.0 (unreleased)
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
-	Known limitations in this release, both tracked in dev/COMPLETION.md
-	and dev/P15-measurements.md:
-
-	* A reduce interesting-time replayer bug on deeply nested Product
-	  times under adversarial inputs, which also blocks one
-	  self-referential-ARRANGE DDIR program shape.  The affected tests
-	  SKIP; all other paths are correct.
-
-	* Performance about 13 to 24 times slower than the Rust originals on
-	  the arrange and count benchmarks, the cost of the fidelity-first
-	  record and container decisions.
-
-	Both must be closed before a 1.0 release.
+	Known limitation in this release, tracked in
+	dev/P15-measurements.md: performance behind the Rust originals,
+	about 8 times slower on the arrange benchmark and about 29 times
+	slower on count throughput after a first optimisation pass, the
+	structural cost of the fidelity-first record and container
+	decisions.  Closing it to the 1.5x goal is the main item before a
+	1.0 release.

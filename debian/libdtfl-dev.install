@@ -1,0 +1,6 @@
+usr/include/dtfl/*.h
+usr/lib/*/libdtfl.a
+usr/lib/*/libdtfl.so
+usr/lib/*/pkgconfig/dtfl.pc
+usr/share/man/man3/*
+usr/share/man/man7/*

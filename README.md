@@ -105,23 +105,20 @@ binding definition of done and `tests/dist/test_completion.sh` enforces it.
 
 ### Known gaps before 1.0
 
-Two substantive items are tracked honestly rather than hidden:
+One substantive item is tracked honestly rather than hidden:
 
-* **A coupled reduce / DDIR bug.** The reduce interesting-time replayer, on
-  deeply nested `Product` times under adversarial inputs, can emit an output
-  at a time it holds no capability for (`reduce.c` assertion).  This also
-  blocks a self-referential-`ARRANGE` DDIR program shape (`kcore`, `stable`),
-  which otherwise converge.  All of differential, scc, and the non-fuzz
-  explain suite are correct; only the nested-`Product` path under the heavy
-  fuzz sweep is affected, and the relevant tests SKIP.  See
-  `dev/COMPLETION.md`.
-* **Performance.** The port is correct but not yet performance-competitive:
-  measured about 13 to 24 times slower than the Rust originals on the
-  `arrange` and `count` benchmarks, the cost of the fidelity-first record and
-  container decisions (ADR-0001, ADR-0002).  See `dev/P15-measurements.md`.
+* **Performance.** The port is correct but not yet performance-competitive.
+  After a first optimisation pass it runs about 8 times slower than the Rust
+  originals on the `arrange` benchmark and about 29 times slower on `count`
+  throughput, measured against the pinned Rust on the same host.  The
+  residual is the structural cost of the fidelity-first record and container
+  decisions (ADR-0001, ADR-0002): byte-span records with separate time and
+  diff columns, and a byte-arena trie rather than inline typed tuples and a
+  columnar trie.  Closing it to the 1.5x goal would require undoing those
+  decisions.  See `dev/P15-measurements.md`.
 
-A `1.0` release requires both to be closed; a `0.y` release ships with them
-documented.
+A `1.0` release requires this closed or a decision to relax the goal; a `0.y`
+release ships with it documented.
 
 ## Documentation
 
