@@ -296,7 +296,7 @@ differential-dataflow	dogsdogsdogs/examples/delta_query.rs	152	examples/dogs/del
 differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/delta_query2.c	P9	todo	arrange_by_key is now public, but this needs half_join with a user frontier closure (the public dtfl_dogs_half_join exposes only the strict flag, not an arbitrary antichain-insert closure) and an unordered input over Product<usize,usize> lex time
 differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	done	fixed graph in place of GraphMMap; triangle WCOJ delta query via CollectionIndex/extend in an AltNeu scope; exact triangle set
 differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dogsdogsdogs.c	P9	done	fixed graph in place of GraphMMap; triangle count via the generic extend() join (count/propose/validate internally); exact extensions
-differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	todo	blocked: needs arrange_by_self/by_key and the leapfrog triangle join; the hand-wired arrangement path is not on the public API
+differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	done	fixed graph in place of GraphMMap; triangle query via the full count-min dataflow join (arrange_by_self/by_key, join_core, reduce picks the fewest-extension index); exact triangle set
 differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
 differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	

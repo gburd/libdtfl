@@ -79,6 +79,7 @@ run dd dynamic dynamic.expected sort
 run dd cursors cursors.expected cat
 run dd multitemporal multitemporal.expected cat
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
+run dogs ngo ngo.expected sort
 run dogs dogsdogsdogs dogsdogsdogs.expected sort
 
 if [ "$fail" -eq 0 ]; then
