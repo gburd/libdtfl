@@ -40,9 +40,10 @@
 /* Rendered items                                                      */
 /* ------------------------------------------------------------------ */
 
-/* A rendered item is a collection (we treat Arrange as the identity: the
- * collection-level join/reduce arrange their inputs internally, so an
- * explicit Arrange node renders as a passthrough). */
+/* A rendered item is a collection.  An explicit Arrange node renders as a
+ * consolidate: the collection-level join/reduce arrange their inputs
+ * internally, but a self-referential Arrange feedback var needs the
+ * compaction that consolidate gives to converge (see render_node). */
 typedef struct ritem {
 	bool is_sub;
 	dtfl_collection *col;	 /* Op: the rendered collection (owned) */
@@ -168,9 +169,15 @@ render_node(render_ctx *rc, const dd_node *n)
 	case DD_N_CONCAT:
 		return render_concat(rc, n);
 	case DD_N_ARRANGE:
-		/* Arrange is the identity for the collection-level ops that
-		 * arrange internally; pass the input through as a copy. */
-		return copy_collection(resolve(rc, &n->input));
+		/* Arrange both indexes and compacts its input: equal
+		 * (record, time) updates sum and cancel.  A pass-through copy
+		 * loses that compaction, so a self-referential ARRANGE feedback
+		 * var -- var x = ARRANGE(CONCAT(x, NEGATE(...))) -- never
+		 * cancels its own history and the scope cannot reach a fixpoint
+		 * (the worker parks).  Consolidating gives the feedback the
+		 * compaction it needs to converge; it returns a fresh owned
+		 * collection and does not consume its borrowed argument. */
+		return dtfl_collection_consolidate(resolve(rc, &n->input));
 	case DD_N_JOIN: {
 		dtfl_collection *l = resolve(rc, &n->input);
 		dtfl_collection *r = resolve(rc, &n->right);
