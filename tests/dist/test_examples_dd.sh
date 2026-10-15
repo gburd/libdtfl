@@ -47,8 +47,11 @@ run() {
 		return
 	fi
 	if [ "$norm" = "sort" ]; then
-		sort "$out" >"$out.n"
-		sort "$exp/$expected" >"$tmp/$expected.n"
+		# LC_ALL=C so the collation is deterministic across locales
+		# and architectures (a plain sort orders "((), -1)" vs
+		# "((), 1)" differently under different locales).
+		LC_ALL=C sort "$out" >"$out.n"
+		LC_ALL=C sort "$exp/$expected" >"$tmp/$expected.n"
 	else
 		cp "$out" "$out.n"
 		cp "$exp/$expected" "$tmp/$expected.n"
