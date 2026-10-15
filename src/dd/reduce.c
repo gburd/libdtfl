@@ -1561,7 +1561,19 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 		__dtfl_antichain_insert(&held,
 		    dtfl_cap_time(*DTFL_VEC_AT(&c->caps, dtfl_cap *, i)));
 
-	/* Need compute only if some held time is not in advance of upper. */
+	/*
+	 * Need compute only if some held time is not in advance of upper.  When
+	 * none is, upstream's CursorTactic::retire takes the no-work branch and
+	 * returns `(produced, held.clone())` (reduce.rs:493-496): the new
+	 * frontier is the held antichain itself, so the driver's capability
+	 * downgrade is a no-op and every capability is preserved.  The port must
+	 * do the same.  Returning without setting *new_frontier would leave it
+	 * empty, and the unconditional downgrade in reduce_logic would then drop
+	 * every capability while pending times still reference them; a later
+	 * activation whose frontier re-enters that region would hold no
+	 * capability covering a pending interesting time, tripping the
+	 * output-tag assertion in the engine (idx != SIZE_MAX).
+	 */
 	any_in_interval = false;
 	for (i = 0; i < __dtfl_antichain_len(&held); i++)
 		if (!__dtfl_frontier_less_equal(c->tc, frontier, fn,
@@ -1570,6 +1582,11 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 			break;
 		}
 	if (!any_in_interval) {
+		/* No work: leave the held times unchanged (upstream held.clone()). */
+		__dtfl_antichain_clear(new_frontier);
+		for (i = 0; i < __dtfl_antichain_len(&held); i++)
+			__dtfl_antichain_insert(new_frontier,
+			    __dtfl_antichain_at(&held, i));
 		__dtfl_antichain_free(&held);
 		return;
 	}
