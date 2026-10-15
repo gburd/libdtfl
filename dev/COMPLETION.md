@@ -179,8 +179,18 @@ Embedding (host = PostgreSQL etc.) -- a release requirement
 [x] thread-spawn hook: dtfl_set_thread_hooks (maps to bgworkers), or the
         documented single-thread cooperative mode
 [x] embedding contract man page dtfl_embedding(7)
-[ ] a worked PostgreSQL embedding example or an extension skeleton
-        (alloc->palloc, panic->ereport, log->elog, threads->bgworker)
+[x] a worked PostgreSQL embedding example or an extension skeleton
+        (alloc->palloc, panic->ereport, log->elog, threads->bgworker).
+        DONE: examples/embed/pg_extension.c, a self-contained extension
+        skeleton that installs all four host hooks (alloc->palloc/pfree,
+        panic->ereport(ERROR) with a sigsetjmp PG_TRY so a panic unwinds
+        rather than crashes, log->elog at matching levels, and the
+        single-thread cooperative mode -- dtfl_worker_new_standalone +
+        dtfl_worker_step -- in place of thread hooks, with the bgworker
+        spawn/join option documented).  The PostgreSQL symbols are
+        stubbed so it builds and runs with no server; it runs a small
+        distinct-residue dataflow and is in its own smoke test, ASan-
+        clean.
 
 Verification (fidelity against real Rust) -- a release requirement
 ------------------------------------------------------------------

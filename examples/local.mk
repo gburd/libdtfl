@@ -322,6 +322,24 @@ TESTS += tests/dist/test_examples_diag.sh
 EXTRA_DIST += examples/diag/smoke.expected examples/diag/scc-bench.expected
 
 # ----------------------------------------------------------------------
+# Embedding skeleton: a worked PostgreSQL extension showing the four
+# host hooks (alloc->palloc, panic->ereport, log->elog, threads->bgworker
+# or the single-thread cooperative mode).  The PostgreSQL symbols are
+# stubbed so it builds and runs with no server; the real mapping is in
+# each hook (dtfl_embedding(7)).  A noinst example with its own smoke
+# test.
+# ----------------------------------------------------------------------
+noinst_PROGRAMS += examples/embed/pg_extension
+examples_embed_pg_extension_SOURCES = examples/embed/pg_extension.c
+examples_embed_pg_extension_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_embed_pg_extension_LDADD = libdtfl.la
+
+check_PROGRAMS += examples/embed/pg_extension
+dist_check_SCRIPTS += tests/dist/test_examples_embed.sh
+TESTS += tests/dist/test_examples_embed.sh
+EXTRA_DIST += examples/embed/pg_extension.expected
+
+# ----------------------------------------------------------------------
 # Shared-dataflow plugins (P14).  The four example dd_server plugins
 # (degr_dist, reachability, neighborhood, random_graph).  Divergence from
 # upstream: a plugin is a statically registered dtfl_dataflow_plugin
