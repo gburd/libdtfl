@@ -143,8 +143,21 @@ pbt_run_one(hegel_context_t *ctx, const char *suite, const pbt_prop *p)
 		printf("[PBT] %s/%s ERROR: settings_new\n", suite, p->name);
 		return 1;
 	}
-	(void)hegel_settings_set_test_cases(ctx, settings,
-	    (uint64_t)(p->cases > 0 ? p->cases : 200));
+	{
+		/* The default case count, or DTFL_PBT_CASES to scale up for a
+		 * fuzz campaign (a sustained high-iteration run).  A test-only
+		 * override; the normal suite uses the per-property default. */
+		uint64_t cases = (uint64_t)(p->cases > 0 ? p->cases : 200);
+		const char *env = getenv("DTFL_PBT_CASES");
+
+		if (env != NULL) {
+			unsigned long long v = strtoull(env, NULL, 0);
+
+			if (v > 0)
+				cases = (uint64_t)v;
+		}
+		(void)hegel_settings_set_test_cases(ctx, settings, cases);
+	}
 	if (getenv("DTFL_PBT_SEED") != NULL)
 		(void)hegel_settings_set_seed(ctx, settings, true,
 		    strtoull(getenv("DTFL_PBT_SEED"), NULL, 0));
