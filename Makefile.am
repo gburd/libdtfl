@@ -63,7 +63,7 @@ AM_TESTS_ENVIRONMENT = \
 
 dist_man_MANS =
 EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \
-	AGENTS.md debian flake.nix dev src/libdtfl.map \
+	AGENTS.md debian flake.nix flake.lock dev src/libdtfl.map \
 	doc/snippets tests/corpus data
 
 include src/base/local.mk
