@@ -159,13 +159,15 @@ Not started or partial -- MUST be finished before the project is done
         fail, -Wcast-align clean), and Linux riscv64 (lixr, gcc 15, a
         strict-alignment arch -- build and check clean, no SIGBUS, which
         validates the alignment-cast laundering).  The dist tarball
-        builds and checks from scratch on riscv64.  REMAINING: the
-        measured performance parity table (within 1.5x of Rust on the
-        agreed subset -- needs a Rust-vs-C timing run on a dedicated
-        host), the sustained fuzz campaign, and distcheck on musl and
-        macOS (glibc distcheck is green on floki; a full FreeBSD
-        distcheck is impractical on the available host, but FreeBSD make
-        check passes).
+        builds and checks from scratch on riscv64.  Fuzz campaign DONE
+        (24 suites, ~230000 cases, ASan-clean; dev/P15-measurements.md).
+        Performance parity MEASURED (dev/P15-measurements.md): the port
+        is ~13 to 24x slower than Rust on arrange/count, not within the
+        1.5x target -- closing that is a dedicated optimisation project.
+        REMAINING: the parity optimisation to actually meet 1.5x, and
+        distcheck on musl and macOS (glibc distcheck green on floki; a
+        full FreeBSD distcheck is impractical on the available host, but
+        FreeBSD make check passes).
 
 Examples
 --------
@@ -232,7 +234,17 @@ Verification (fidelity against real Rust) -- a release requirement
         deferred/excluded, 0 todo/wip): 110 done, 23 subsumed (covered by
         another target), 21 deferred (need a feature not yet ported, each
         with a reason), 9 excluded (no C analog).
-[ ] the P15 fuzz campaign and the performance parity table
+[~] the P15 fuzz campaign and the performance parity table (measured
+        2026-10-15, dev/P15-measurements.md).  Fuzz campaign DONE: 24
+        property suites at 10000 cases each (~230000 cases) under ASan,
+        zero violations / crashes / leaks.  Parity table MEASURED but
+        not passing: the C port is ~13 to 24x slower than the pinned Rust
+        experiments crate on arrange/count (same host, same params), well
+        outside the 1.5x target.  That is the measured cost of the
+        fidelity-first decisions (D1/D2) and the unoptimised hot paths;
+        reaching parity is a dedicated optimisation project (profile and
+        cut allocation/copies in arrange and reduce).  The measurement is
+        complete; the within-1.5x goal is the open part.
 
 Deferred-with-reason items that MUST still be finished before 1.0
 ----------------------------------------------------------------
