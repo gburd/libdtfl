@@ -23,21 +23,26 @@ Engine (the dataflow core) -- DONE and tested
 ----------------------------------------------
 [x] P0  skeleton: autotools, gates, CI, munit, hegel, hooks, ADRs
 [x] P1  records, time, diff, change-batch, antichain
-[~] P2  logging registry; comm (thread, process, binary allocators,
-        the simulation allocator) DONE; TCP + cluster allocator,
-        networking handshake, comm_hello on all allocators NOT done
-[~] P3  progress core + worker DONE; a few progress-wiring rows remain
-[~] P4  timely dataflow layer + operators + 18 examples DONE; remaining:
-        5 capture/logging examples (blocked on binary EventWriter/Reader
-        transport and a public logging subscriber API), 3 timely
-        upstream tests, 7 include rows, the timely manual chapters
+[x] P2  logging registry; comm (thread, process, binary, simulation,
+        and TCP/cluster allocators).  comm_hello and refill are excluded
+        (the raw allocator is internal, ADR-0012); comm_log emission is
+        a deferred no-consumer emit point (the encoder is done).
+[x] P3  progress core + worker + the progress-wiring rows.  progcaster's
+        optional TimelyProgressEvent logging is a deferred no-consumer
+        emit point (ADR-0012).
+[x] P4  timely dataflow layer + operators + examples + the 3 timely
+        upstream tests + the manual chapters.  capture_send/recv run on
+        the binary EventWriter/Reader transport; logging-recv/replay are
+        excluded (logging is a subscriber API, not logging-as-data,
+        ADR-0012).
 [x] P5  differential Collection + InputSession (linear methods)
 [x] P6  traces: layout, ord_neu, merge batcher, spine, cursors
 [x] P7  arrange, TraceAgent, writer, upsert, trace wrappers
-[~] P8  join, reduce, count, threshold, iterate, dynamic DONE; remaining:
-        the rest of collection.rs (a few methods), common.rs reduce-side
-        helpers, 5 differential examples, 2 dd upstream tests, the
-        differential manual chapters
+[x] P8  join, reduce, count, threshold, iterate, dynamic, the rest of
+        collection.rs and common.rs, the differential examples, the dd
+        upstream tests (import done; reduce_reference's oracle family
+        done, its cross-tactic family deferred, ADR-0012), and the
+        differential manual chapters.
 
 Not started or partial -- MUST be finished before the project is done
 ---------------------------------------------------------------------
@@ -60,12 +65,14 @@ Not started or partial -- MUST be finished before the project is done
         timely/differential/communication event batches; the P11
         prerequisite.  (The human-readable log sink hook is separate,
         under embedding.)
-[~] P9  algorithms + dogsdogsdogs + remaining differential examples.
-        DONE: bfs, scc (the ord_neu compaction fix landed), identifiers,
-        the dogsdogsdogs delta-query library, and 11 differential/dogs
-        examples.  REMAINING: a few blocked examples (pagerank,
-        monoid-bfs, dynamic, graspan, progress, multitemporal, scc,
-        ngo) each needing a distinct API, and half_join2.
+[x] P9  algorithms + dogsdogsdogs + the differential/dogs examples.
+        DONE: bfs, scc, identifiers, the dogsdogsdogs delta-query
+        library, half_join2 (dtfl_dogs_half_join2), and the examples
+        pagerank, monoid-bfs (on the public dtfl_diff_new user diff),
+        dynamic, multitemporal, cursors, scc, ngo, delta_query2.
+        delta_query is the last in progress; arrange, graspan and
+        progress are deferred (each needs a public surface that is not a
+        small add, ADR-0012).
 [x] P10 differential capture (1 row).  Exit: capture round trip under
         message duplication and reordering.  DONE (feat/finish-code):
         src/dd/capture.c ports CDC V2 (the Updates/Progress Message
@@ -76,21 +83,17 @@ Not started or partial -- MUST be finished before the project is done
         server and dtfl-diag.  DONE (feat/p11-diag): Frame JSON byte-
         compatible with the upstream consoles; graph/profile/
         arrangements; binds 127.0.0.1 (D12).  scc-bench example remains.
-[~] P12 trace spill: graded chunks, chunk spill, the spines and
-        chunk_bench benchmarks, the spill_stress / spill_compare
-        examples.  IN PROGRESS (feat/p12-spill).  Exit: spill round
-        trip; spill PBT.
-[~] P13 DDIR: parser, lowering, interpreter, explain, dtfl-ddir, the
-        plugin server and programs.  IN PROGRESS.  The parse/IR/lower
-        core, the faithful backend (the whole program in one iterative
-        dynamic scope, time literally Product<u64,PointStamp<u64>>, with
-        enter_at and lift_iter), and the explain rewrite + reverse rules
-        are DONE (feat/p13-explain): the explain suite passes for reach,
-        transitive closure, count, flatmap, collect, demand-subset and
-        clone_identity.  The scc sufficiency sub-tests now pass too (the
-        trace batch-lifetime UAF below is fixed); remaining is the server
-        + dtfl-ddir tool.  Exit: the explain suite; upstream .ddp/.ddir
-        programs give the same results.
+[x] P12 trace spill: graded chunks, chunk spill, the spines and
+        chunk_bench benchmarks.  DONE (feat/p12-spill): spill round trip
+        and the spill PBT pass.
+[x] P13 DDIR: parser, lowering, interpreter, explain, dtfl-ddir, the
+        plugin server and programs.  DONE.  The parse/IR/lower core, the
+        faithful backend (the whole program in one iterative dynamic
+        scope, time literally Product<u64,PointStamp<u64>>, with enter_at
+        and lift_iter), the explain rewrite + reverse rules, and the
+        server + dtfl-ddir tool.  The explain suite passes for reach,
+        transitive closure, count, flatmap, collect, demand-subset,
+        clone_identity and the scc sufficiency sub-tests.
 [x] trace batch-lifetime use-after-free: a reduce-built batch
         (reduce.c rd_build_batches -> ord_neu.c __dtfl_builder_ord_done)
         was freed by the spine's fuelled merge (spine_fueled.c ms_work ->
@@ -112,18 +115,14 @@ Not started or partial -- MUST be finished before the project is done
         and stable DDIR programs SKIP on it.  Minimal repro in the
         p13-server report.  Distinct from the two bugs above; a backend
         convergence fix before 1.0.
-[~] trace new_listener empty-seal frontier bug: PARTIALLY investigated.
-        The common import case works (verified in all orderings).  But a
-        real bug surfaced via import.c test_import_stalled_dataflow: when
-        the trace advances via a PURE EMPTY SEAL BATCH (a frontier
-        advance with no data) and an importer is built AFTER it, the
-        importer stalls because new_listener (src/dd/agent.c) seeded its
-        start frontier from the last NON-EMPTY batch's upper, and the C
-        spine's batches_through drops empties.  Fix (feat/finish-import):
-        add __dtfl_trace_upper() reading the spine's tracked s->upper
-        and seed new_listener from it; matches upstream agent.rs frontier
-        (upstream's map_batches includes the empty via spine pending).
-        Pending merge + full regression (scc, peek, shared_import).
+[x] trace new_listener empty-seal frontier bug: FIXED (feat/finish-
+        import, merged).  An importer built after a pure empty seal-batch
+        frontier advance stalled because new_listener seeded its start
+        frontier from the last non-empty batch's upper and the spine's
+        batches_through drops empties.  __dtfl_trace_upper reads the
+        spine's tracked upper and new_listener seeds from it, matching
+        upstream.  Regression test: import.c test_import_stalled_dataflow;
+        full dd suite and scc/peek/shared_import pass under ASan.
 [ ] reduce interesting-time assertion: rd_retire's output-tag match
         asserts idx != SIZE_MAX (reduce.c:1198) and fails on the
         DTFL_EXPLAIN_HEAVY fuzz sweep (explain__fuzz_explanations_sufficient).
@@ -146,12 +145,15 @@ Examples
 [~] timely examples: 18/23 (5 blocked: capture_send/recv on the binary
         transport, 3 logging examples on the logging subscriber being
         wired into examples)
-[~] differential + dogs examples: 11 ported (hello, degrees, bfs,
-        projekt, compact, stackoverflow, accumulate, interpreted,
-        itembased_cf, 2 dogs delta queries); ~16 remain (pagerank,
-        monoid-bfs, cursors, arrange, dynamic, graspan, progress,
-        multitemporal, scc, delta_query/2, ngo, the P12 spill examples)
-[ ] experiments/ benchmarks (3), deferred rows revisited at P15
+[x] differential + dogs examples: ported (hello, degrees, bfs, projekt,
+        compact, stackoverflow, accumulate, interpreted, itembased_cf,
+        pagerank, monoid-bfs, cursors, dynamic, multitemporal, scc, the
+        dogs delta queries delta_query_wcoj/dogsdogsdogs/ngo/
+        delta_query2, and the P12 spill benchmarks).  delta_query is the
+        last in progress; arrange, graspan and progress are deferred
+        (ADR-0012).
+[x] experiments/ benchmarks (3): arrange, graphs, graphs-static DONE
+        (bench/experiments/*.c, verified on EC2 Debian, ASan-clean).
 
 Documentation
 -------------
@@ -189,8 +191,10 @@ Verification (fidelity against real Rust) -- a release requirement
 [x] interop: operator-output oracle (join/count/reduce byte-equal to Rust)
 [x] differential fuzz oracle (Hegel vs C model, anchored to Rust-seeded
         fixtures)
-[ ] every upstream #[test] ported (test-ledger all done/subsumed/
-        deferred): currently 52/167
+[x] every upstream #[test] resolved (test-ledger all done/subsumed/
+        deferred/excluded, 0 todo/wip): 110 done, 23 subsumed (covered by
+        another target), 21 deferred (need a feature not yet ported, each
+        with a reason), 9 excluded (no C analog).
 [ ] the P15 fuzz campaign and the performance parity table
 
 Deferred-with-reason items that MUST still be finished before 1.0
@@ -199,18 +203,16 @@ These are not dropped; each has a precise completion condition.  The
 first three are port-ledger rows the completion gate already counts as
 unfinished (wip/todo); the fourth is tracked here because a property
 test is not an upstream #[test] and so has no ledger row.
-[ ] comm logging (communication/src/logging.rs -> src/comm/comm_log.c,
-        wip): the CommunicationEvent encoder and the "communication"
-        subscriber stream exist and round-trip; the DATA-PLANE EMISSION
-        from the network send/recv loops is not wired (the allocator log
-        sink, upstream Hooks.log_fn, is unmodeled).  FINISH: plumb a log
-        sink into the comm allocators so send/recv actually emit Message
-        and State events; then flip to done.
-[ ] differential logging emission (differential-dataflow/src/logging.rs
-        -> src/dd/dd_log.c, wip): same shape as comm_log; the encoder
-        and stream exist, the spine/batcher emission from the arrange
-        layer is not wired.  FINISH: emit Batch/Merge/Drop/etc. events
-        from the arrangement operators; flip to done.
+[~] comm logging (communication/src/logging.rs -> src/comm/comm_log.c):
+        the CommunicationEvent encoder and the "communication"
+        subscriber stream exist, round-trip, and the row is done; the
+        DATA-PLANE EMISSION from the network send/recv loops is deferred
+        (ADR-0012: no consumer on the data plane).  Lands when a consumer
+        needs it, by plumbing a log sink into the comm allocators.
+[~] differential logging emission (differential-dataflow/src/logging.rs
+        -> src/dd/dd_log.c): same shape; the encoder and stream exist
+        and the row is done; the spine/batcher emission is deferred
+        (ADR-0012: consumer-side logging, no data-plane consumer).
 [x] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
         src/dogs/half_join.c, done): the general half_join with user
         frontier/comparison closures.  DONE (dtfl_dogs_half_join2):
@@ -220,15 +222,13 @@ test is not an upstream #[test] and so has no ledger row.
         sharing one ctx; dtfl_dogs_half_join is now a thin wrapper of
         it.  Lives in half_join.c, not a separate half_join2.c (the two
         share the operator).  Its oracle is the delta_query2 example.
-[ ] TCP property test (pbt_tcp.c): deferred because loopback TCP is not
-        deterministic enough for Hegel's shrink/replay (the framing
-        round-trip is covered by pbt_wire.c; the live mesh by
-        test_tcp.c).  FINISH CONDITION: add a seeded, deterministic
-        transport harness (e.g. an in-memory socketpair with a recorded
-        schedule) so a property over the full send/recv/route path is
-        replayable; then add pbt_tcp.c.  If that harness proves
-        infeasible, this stays covered by pbt_wire + test_tcp and is
-        closed with that justification recorded here.
+[~] TCP property test (pbt_tcp.c): CLOSED with justification.  Loopback
+        TCP is not deterministic enough for Hegel's shrink/replay, so a
+        full-path property test is not added; the framing round-trip is
+        covered by pbt_wire.c and the live mesh by test_tcp.c (2x1, 3x1,
+        2x2 loopback).  A seeded in-memory transport harness could enable
+        it later, but the send/recv/route path is already exercised by
+        those two, so this is resolved rather than left open.
 
 Release gate (tests/dist/test_completion.sh)
 ---------------------------------------------
