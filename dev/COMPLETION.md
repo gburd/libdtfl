@@ -211,12 +211,15 @@ test is not an upstream #[test] and so has no ledger row.
         and stream exist, the spine/batcher emission from the arrange
         layer is not wired.  FINISH: emit Batch/Merge/Drop/etc. events
         from the arrangement operators; flip to done.
-[ ] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
-        src/dogs/half_join2.c, todo): the unified-blob half-join
-        variant.  Observable behavior equals half_join, so it has no
-        oracle until the ngo example exercises it.  FINISH: port the
-        ngo example first (it needs arrange_by_self/by_key leapfrog),
-        then port half_join2 with ngo as its test, flip both to done.
+[x] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
+        src/dogs/half_join.c, done): the general half_join with user
+        frontier/comparison closures.  DONE (dtfl_dogs_half_join2):
+        comparison replaces the strict bool (NULL = strict less-than),
+        frontier_func builds the compaction antichain from each held
+        initial time (delta_query2's time -> (outer-1, inner-1)), both
+        sharing one ctx; dtfl_dogs_half_join is now a thin wrapper of
+        it.  Lives in half_join.c, not a separate half_join2.c (the two
+        share the operator).  Its oracle is the delta_query2 example.
 [ ] TCP property test (pbt_tcp.c): deferred because loopback TCP is not
         deterministic enough for Hegel's shrink/replay (the framing
         round-trip is covered by pbt_wire.c; the live mesh by

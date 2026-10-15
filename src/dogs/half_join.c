@@ -3,10 +3,14 @@
  * Copyright (c) 2026 Greg Burd
  * Ported from differential-dataflow differential-dogs3-v0.25.1
  *   dogsdogsdogs/src/operators/half_join.rs
+ *   dogsdogsdogs/src/operators/half_join2.rs
  * Copyright (c) 2015 Frank McSherry and contributors.
  *
  * src/dogs/half_join.c: the half-join, a binary equijoin that responds only
- * to updates on its first input.
+ * to updates on its first input.  dtfl_dogs_half_join is the AltNeu
+ * strict/non-strict form (half_join.rs); dtfl_dogs_half_join2 is the
+ * general form with user comparison and frontier closures (half_join2.rs),
+ * which the first is a thin wrapper of.
  *
  * Each streamed update is a record key||val1||time1 carried at an initial
  * time less or equal to time1.  For every (key, val2) in the arrangement at

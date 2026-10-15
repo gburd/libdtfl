@@ -302,7 +302,7 @@ differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	don
 differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	done	
-differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join2.c	P9	todo	
+differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join.c	P9	wip	the general half_join (comparison + frontier_func closures) is ported as dtfl_dogs_half_join2 in src/dogs/half_join.c (the two share the operator; dtfl_dogs_half_join is a thin wrapper).  Builds and the existing half_join path is unregressed; the end-to-end oracle is the delta_query2 example, which lands next -- flip to done when delta_query2 exercises the frontier_func and comparison closures
 differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	done	
 differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	done	
