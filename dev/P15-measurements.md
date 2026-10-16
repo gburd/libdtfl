@@ -134,3 +134,67 @@ make -j"$(nproc)"
 bench/experiments/arrange 100000 100000 1000 arrange 5   # LOADING, THROUGHPUT
 bench/experiments/arrange 100000 100000 1000 count 5
 ```
+
+## Columnar key fast path (flag-gated experiment)
+
+The profile above pins count throughput at about 74% in the trace key
+seek (`__dtfl_slices_advance`).  To test how much of the gap a different
+key representation can close, a deliberate non-fidelity experiment adds a
+second container shape behind `--enable-columnar` (off by default,
+`DTFL_COLUMNAR`): the trace's key container stores memcmp-ordered,
+constant-width keys (u64, and the `(u64, unit)` benchmark key, recognised
+via a constant-width check rather than `fixed_size`) as a flat stride
+column and seeks it with a direct strided compare (a big-endian integer
+load for width 8 and 4, else a fixed-width memcmp), dropping the offset
+indirection and the per-record length bookkeeping.  It diverges from PLAN
+D2 (one container shape); the faithful arena+offsets path stays the
+default, and results are byte-identical.  Only the key container opts in;
+the value container stays on the arena path because a value's stored
+width is not guaranteed to equal its type's width.
+
+Measured on `meh` the same way (release `-O2`, same host, median of
+eleven pinned runs with the first discarded; the Rust baseline rebuilt
+from the pin on the same host):
+
+| metric            | C baseline | C columnar | Rust      | col/base | gap base | gap col |
+|-------------------|------------|------------|-----------|----------|----------|---------|
+| arrange LOADING   |    312,008 |    299,674 | 3,537,076 | 0.96x    | 11.3x    | 11.8x   |
+| arrange THROUGHPUT|    356,338 |    347,619 | 2,987,692 | 0.98x    | 8.4x     | 8.6x    |
+| count   THROUGHPUT|     31,134 |     39,878 |   689,832 | 1.28x    | 22.2x    | 17.3x   |
+
+The columnar key seek gives a measured **1.28x** on count throughput
+(31,134 -> 39,878 rec/s), cutting the count gap vs Rust from about 22x to
+about 17x.  Arrange is unchanged (0.96 to 0.98x, within run-to-run noise)
+because arrange's hot path is batch build (allocation and copy), not the
+key seek; the arrange LOADING figure is a single-shot measurement per
+process and is dominated by allocator and first-touch jitter.
+
+This is below the 1.5x target, as expected and as Amdahl bounds it.  The
+seek is about 74% of count, so even an infinitely fast seek caps count at
+about 3.85x (gap 22x -> about 5.8x); the measured 1.28x is well under
+that because the columnar seek is a representation change, not a free
+seek.  The non-seek residual that the columnar key cannot touch is the
+structural cost of D1/D2 that dominates once the key compare is cheaper:
+the cursor_list merge and trie navigation per key (val-range bounds, the
+singleton-encoded update walk, the per-key capability and frontier
+bookkeeping in `count_logic`), and the diff accumulation.  Columnarizing
+the key proves the micro-benchmark win is real inside the engine, but the
+key compare was never the whole seek, and the seek was never the whole
+count; closing the rest needs the inline typed records and columnar
+update layout that D1 and D2 rule out.
+
+Correctness: the full suite passes 105/0 with `--enable-debug
+--enable-columnar`, and 129/0 with `--enable-debug --enable-columnar
+--with-hegel`, identical to the faithful path, with the columnar seek
+exercised by the dd, trace, arrange, count and reduce tests over u64 keys
+and by the property suites.
+
+Reproduce (release, both configs):
+
+```
+configure CFLAGS="-O2 -g"                 # baseline
+configure --enable-columnar CFLAGS="-O2 -g"   # columnar, separate build dir
+# median of eleven pinned runs, discard the first:
+taskset -c 3 bench/experiments/arrange 100000 100000 1000 count 5
+taskset -c 3 bench/experiments/arrange 100000 100000 1000 arrange 5
+```
