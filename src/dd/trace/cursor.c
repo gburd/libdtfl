@@ -20,9 +20,11 @@
 /* ------------------------------------------------------------------ */
 
 static void
-storage_init(__dtfl_ord_storage *s, bool keyed, unsigned tw, unsigned dw)
+storage_init(__dtfl_ord_storage *s, bool keyed, const dtfl_type *kt,
+    unsigned tw, unsigned dw)
 {
 	__dtfl_slices_init(&s->keys);
+	__dtfl_slices_set_stride(&s->keys, __dtfl_slices_stride_for(kt));
 	__dtfl_vals_init(&s->vals);
 	__dtfl_upds_init(&s->upds, tw, dw);
 	s->keyed = keyed;
@@ -43,7 +45,7 @@ batch_ord_alloc(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 	__dtfl_batch_ord *b = __dtfl_alloc(sizeof *b);
 
 	__dtfl_arc_init(&b->ref);
-	storage_init(&b->storage, keyed, dtfl_time_depth(tc),
+	storage_init(&b->storage, keyed, kt, dtfl_time_depth(tc),
 	    (unsigned)dc->width);
 	b->updates = 0;
 	b->kt = kt;

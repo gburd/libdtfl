@@ -25,6 +25,7 @@ __dtfl_slices_init(__dtfl_slices *s)
 {
 	size_t zero = 0;
 
+	s->stride = 0;
 	__dtfl_vec_init(&s->arena, 1);
 	__dtfl_vec_init(&s->offs, sizeof(size_t));
 	__dtfl_vec_push(&s->offs, &zero);
@@ -43,8 +44,10 @@ __dtfl_slices_clear(__dtfl_slices *s)
 	size_t zero = 0;
 
 	__dtfl_vec_clear(&s->arena);
-	__dtfl_vec_clear(&s->offs);
-	__dtfl_vec_push(&s->offs, &zero);
+	if (s->stride == 0) {
+		__dtfl_vec_clear(&s->offs);
+		__dtfl_vec_push(&s->offs, &zero);
+	}
 }
 
 void
@@ -52,6 +55,15 @@ __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len)
 {
 	size_t end;
 
+	if (s->stride != 0) {
+		/*
+		 * Columnar path: fixed-width records concatenated, no offsets.
+		 * Every value is exactly stride bytes, as the type promised.
+		 */
+		DTFL_ASSERT(len == s->stride);
+		__dtfl_vec_push_n(&s->arena, p, len);
+		return;
+	}
 	if (len != 0)
 		__dtfl_vec_push_n(&s->arena, p, len);
 	end = s->arena.len;
@@ -76,6 +88,93 @@ slice_less_raw(const void *a, size_t alen, const void *b, size_t blen)
 		return c < 0;
 	return alen < blen;
 }
+
+#ifdef DTFL_COLUMNAR
+/*
+ * Big-endian loads for the columnar fast path.  Keys are stored big-endian
+ * (base/record.c be_put), so a big-endian load yields the logical unsigned
+ * value, and comparing those values reproduces the memcmp of the bytes.
+ * The byte assembly folds to a single load plus bswap on common targets.
+ */
+static inline uint64_t
+__dtfl_be64_load(const void *p)
+{
+	const unsigned char *b = (const unsigned char *)p;
+
+	return (uint64_t)b[0] << 56 | (uint64_t)b[1] << 48 |
+	    (uint64_t)b[2] << 40 | (uint64_t)b[3] << 32 |
+	    (uint64_t)b[4] << 24 | (uint64_t)b[5] << 16 |
+	    (uint64_t)b[6] << 8 | (uint64_t)b[7];
+}
+
+static inline uint32_t
+__dtfl_be32_load(const void *p)
+{
+	const unsigned char *b = (const unsigned char *)p;
+
+	return (uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 |
+	    (uint32_t)b[2] << 8 | (uint32_t)b[3];
+}
+
+/*
+ * Columnar fast path for __dtfl_slices_advance: the same exponential +
+ * binary search, but values are a flat stride column, so the predicate is
+ * a direct strided compare (an integer load for width 8/4, else a memcmp of
+ * `stride` bytes) with no offsets indirection and no length bookkeeping.
+ * The key is also exactly `stride` bytes (klen == stride), so comparing
+ * stride bytes reproduces cmp_raw exactly: the result is byte-identical to
+ * the faithful path.  Deliberate non-fidelity divergence (PLAN D2), gated.
+ */
+static size_t
+slices_advance_col(const __dtfl_slices *s, size_t start, size_t end,
+    const void *key)
+{
+	const size_t small_limit = 8;
+	const unsigned char *base = (const unsigned char *)s->arena.data;
+	unsigned stride = s->stride;
+	size_t index, step;
+
+#define COL_LESS(i)							\
+	(stride == 8							\
+	    ? __dtfl_be64_load(base + (size_t)stride * (i)) <		\
+		__dtfl_be64_load(key)					\
+	    : stride == 4						\
+		? __dtfl_be32_load(base + (size_t)stride * (i)) <	\
+		    __dtfl_be32_load(key)				\
+		: memcmp(base + (size_t)stride * (i), key, stride) < 0)
+
+	if (end > start + small_limit && COL_LESS(start + small_limit)) {
+		index = small_limit + 1;
+		if (start + index < end && COL_LESS(start + index)) {
+			step = 1;
+			while (start + index + step < end &&
+			    COL_LESS(start + index + step)) {
+				index += step;
+				step <<= 1;
+			}
+			step >>= 1;
+			while (step > 0) {
+				if (start + index + step < end &&
+				    COL_LESS(start + index + step))
+					index += step;
+				step >>= 1;
+			}
+			index += 1;
+		}
+		return index;
+	} else {
+		size_t limit = DTFL_MIN(end, start + small_limit), i, count = 0;
+
+		for (i = start; i < limit; i++) {
+			if (COL_LESS(i))
+				count++;
+		}
+		return count;
+	}
+#undef COL_LESS
+}
+#endif /* DTFL_COLUMNAR */
+
 size_t
 __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
     size_t end, const void *key, size_t klen)
@@ -89,6 +188,13 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 	 * loop skips the dtfl_type_cmp dispatch; the result is identical.
 	 */
 	const bool raw = t->cmp == NULL;
+
+#ifdef DTFL_COLUMNAR
+	if (s->stride != 0) {
+		DTFL_ASSERT(klen == s->stride);
+		return slices_advance_col(s, start, end, key);
+	}
+#endif
 
 #define LESS(i)								\
 	(v = __dtfl_slices_get(s, (i), &len),				\

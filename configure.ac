@@ -118,6 +118,20 @@ AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	 LDFLAGS="$LDFLAGS $DTFL_SAN_FLAGS"])
 
 # -------------------------------------------------------------------------
+# Columnar fixed-width-key fast path (experiment).  Off by default.  When
+# enabled, the trace's key container stores fixed-width, memcmp-ordered keys
+# as a flat stride column and seeks them with a strided compare, instead of
+# the faithful byte-arena-plus-offsets container.  This is a deliberate
+# non-fidelity divergence from PLAN D2 (one container shape) kept behind a
+# flag; it must produce byte-identical results.
+# -------------------------------------------------------------------------
+AC_ARG_ENABLE([columnar],
+	[AS_HELP_STRING([--enable-columnar], [enable the fixed-width-key columnar trace fast path (non-fidelity experiment, off by default)])],
+	[], [enable_columnar=no])
+AS_IF([test "x$enable_columnar" = xyes],
+	[AC_DEFINE([DTFL_COLUMNAR], [1], [Define to enable the columnar fixed-width-key trace fast path])])
+
+# -------------------------------------------------------------------------
 # Optional components.
 # -------------------------------------------------------------------------
 AC_ARG_ENABLE([diag],
@@ -172,4 +186,5 @@ libdtfl $PACKAGE_VERSION
   diagnostics:  $enable_diag
   ddir:         $enable_ddir
   server:       $enable_server
+  columnar:     $enable_columnar
 ])

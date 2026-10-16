@@ -30,6 +30,8 @@ __dtfl_builder_ord_init(__dtfl_builder_ord *bld, bool keyed,
 	(void)upds;
 	bld->result.keyed = keyed;
 	__dtfl_slices_init(&bld->result.keys);
+	__dtfl_slices_set_stride(&bld->result.keys,
+	    __dtfl_slices_stride_for(kt));
 	__dtfl_vals_init(&bld->result.vals);
 	__dtfl_upds_init(&bld->result.upds, dtfl_time_depth(tc),
 	    (unsigned)dc->width);
@@ -237,6 +239,8 @@ __dtfl_merger_ord_new(__dtfl_merger_ord *m, __dtfl_batch_ord *src1,
 	m->key_cursor2 = 0;
 	m->result.keyed = src1->storage.keyed;
 	__dtfl_slices_init(&m->result.keys);
+	__dtfl_slices_set_stride(&m->result.keys,
+	    __dtfl_slices_stride_for(src1->kt));
 	__dtfl_vals_init(&m->result.vals);
 	__dtfl_upds_init(&m->result.upds, dtfl_time_depth(src1->tc),
 	    (unsigned)src1->dc->width);

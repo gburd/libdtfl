@@ -20,6 +20,7 @@
  * deterministic total order.
  */
 #include "base_int.h"
+#include "batch_int.h"
 
 #include "dtfl/record.h"
 
@@ -341,6 +342,45 @@ type_mcmp(const dtfl_type *t)
 	if (t->internal != NULL)
 		return RT(t)->mcmp;
 	return false;
+}
+
+/*
+ * The constant encoded width of t if every value of t occupies the same
+ * number of bytes, else SIZE_MAX.  Differs from fixed_size in treating a
+ * zero-width type as width 0 rather than the fixed_size == 0 "variable"
+ * sentinel: unit is width 0, and a tuple whose fields are all constant
+ * width (e.g. (u64, unit)) is their sum, even though fixed_size reports 0
+ * for it.  Options, vecs, bytes and strings vary in length (SIZE_MAX).
+ * Used by the columnar trace fast path to size its stride column.
+ */
+size_t
+__dtfl_type_const_width(const dtfl_type *t)
+{
+	size_t i, w, total = 0;
+
+	if (t->fixed_size != 0)
+		return t->fixed_size;
+	if (t == &T_UNIT)
+		return 0;
+	if (t->internal == NULL)
+		return SIZE_MAX;	/* variable built-in (bytes/string) */
+	switch (RT(t)->kind) {
+	case K_TUPLE:
+		for (i = 0; i < RT(t)->n; i++) {
+			w = __dtfl_type_const_width(RT(t)->fields[i]);
+			if (w == SIZE_MAX)
+				return SIZE_MAX;
+			total += w;
+		}
+		return total;
+	case K_USER:
+		/* fixed_size == 0 here, so a user type varies in length. */
+		return SIZE_MAX;
+	case K_OPTION:
+	case K_VEC:
+	default:
+		return SIZE_MAX;
+	}
 }
 
 /* ------------------------------------------------------------------ */

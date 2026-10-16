@@ -75,10 +75,20 @@ __dtfl_level_of_len(size_t len)
  * A container of variable-length byte values, the shape of upstream's
  * SliceContainer: a concatenated arena and offsets[len+1], so value i is
  * arena[offs[i], offs[i+1]).  Values compare through a dtfl_type.
+ *
+ * DTFL_COLUMNAR (deliberate non-fidelity divergence from PLAN D2 "one
+ * container", gated behind --enable-columnar): when the stored type is
+ * fixed-width and memcmp-ordered (fixed_size != 0 and cmp == NULL), the
+ * values live in a flat stride column instead -- `arena` holds back-to-back
+ * fixed-size records with no offsets array -- and `stride` is that width.
+ * stride == 0 keeps the faithful arena+offsets path.  The comparison result
+ * is identical: memcmp over a fixed `stride` bytes reproduces cmp_raw when
+ * every value is that width.
  */
 typedef struct __dtfl_slices {
 	__dtfl_vec arena;	/* bytes */
 	__dtfl_vec offs;	/* size_t; len == count + 1, offs[0] == 0 */
+	unsigned stride;	/* 0: arena+offs; >0: flat fixed-width column */
 } __dtfl_slices;
 
 void __dtfl_slices_init(__dtfl_slices *s);
@@ -87,17 +97,66 @@ void __dtfl_slices_clear(__dtfl_slices *s);
 /* Appends a value. */
 void __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len);
 
+/*
+ * The fixed stride a type qualifies for in the columnar path, or 0 to keep
+ * the arena+offsets path.  A type qualifies when it is memcmp-ordered
+ * (cmp == NULL) and every value has the same non-zero encoded width; see
+ * __dtfl_type_const_width, which (unlike fixed_size) reports 8 for a
+ * (u64, unit) key.  Without DTFL_COLUMNAR nothing qualifies (faithful path).
+ *
+ * Applied to the trie's KEY container only.  A value batch's stored key is
+ * value_len(kt, rec) bytes, which is exactly the key's constant width (the
+ * builder asserts klen <= len), so every stored key is exactly stride.
+ * The VALUE container is deliberately left on the arena path: a value is
+ * "the record minus the key split by kt", whose width is not guaranteed to
+ * equal the value type's width (e.g. arrange_by_key(u64, u64) over a
+ * key-only 8-byte record stores a 0-byte value), so a value stride would
+ * not be faithful.
+ */
+static inline unsigned
+__dtfl_slices_stride_for(const dtfl_type *t)
+{
+#ifdef DTFL_COLUMNAR
+	if (t != NULL && t->cmp == NULL) {
+		size_t w = __dtfl_type_const_width(t);
+
+		if (w != SIZE_MAX && w != 0 && w <= 0xffffu)
+			return (unsigned)w;
+	}
+#else
+	(void)t;
+#endif
+	return 0;
+}
+
+/*
+ * Set the columnar stride on a freshly initialized, still-empty slice.
+ * A no-op when stride is 0 (the faithful path).
+ */
+static inline void
+__dtfl_slices_set_stride(__dtfl_slices *s, unsigned stride)
+{
+	s->stride = stride;
+}
+
 static inline size_t
 __dtfl_slices_len(const __dtfl_slices *s)
 {
+	if (s->stride != 0)
+		return s->arena.len / s->stride;
 	return s->offs.len - 1;
 }
 
 static inline const void *
 __dtfl_slices_get(const __dtfl_slices *s, size_t i, size_t *len)
 {
-	const size_t *o = (const size_t *)(void *)s->offs.data;
+	const size_t *o;
 
+	if (s->stride != 0) {
+		*len = s->stride;
+		return s->arena.data + (size_t)s->stride * i;
+	}
+	o = (const size_t *)(void *)s->offs.data;
 	*len = o[i + 1] - o[i];
 	return s->arena.data + o[i];
 }
