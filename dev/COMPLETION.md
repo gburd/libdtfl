@@ -164,13 +164,14 @@ Not started or partial -- MUST be finished before the project is done
         validates the alignment-cast laundering).  The dist tarball
         builds and checks from scratch on riscv64.  Fuzz campaign DONE
         (24 suites, ~230000 cases, ASan-clean; dev/P15-measurements.md).
-        Performance parity MEASURED (dev/P15-measurements.md): the port
-        is ~13 to 24x slower than Rust on arrange/count, not within the
-        1.5x target -- closing that is a dedicated optimisation project.
-        REMAINING: the parity optimisation to actually meet 1.5x, and
-        distcheck on musl and macOS (glibc distcheck green on floki; a
-        full FreeBSD distcheck is impractical on the available host, but
-        FreeBSD make check passes).
+        Performance parity MEASURED and then addressed
+        (dev/P15-measurements.md, dev/columnar-experiment.md): a first
+        optimisation pass cut the gap to ~8x arrange / ~29x count, and a
+        flag-gated columnar experiment showed 1.5x is not reachable for a
+        fidelity-first port (see the resolved parity item below).
+        REMAINING: distcheck on musl and macOS (now CI jobs; glibc
+        distcheck green on floki; a full FreeBSD distcheck is impractical
+        on the available host, but FreeBSD make check passes).
 
 Examples
 --------
@@ -250,10 +251,25 @@ Verification (fidelity against real Rust) -- a release requirement
         The residual is the STRUCTURAL cost of the D1/D2 fidelity
         decisions: byte-span records with separate time/diff columns and
         a byte-arena trie, versus Rust's inline typed tuples and a
-        columnar trie.  Closing it to 1.5x would require undoing D1/D2;
-        the achievable within-fidelity wins are taken.  The open part is
-        a decision: pursue a non-fidelity layout behind a flag, or relax
-        the 1.5x goal for a fidelity-first port.
+        columnar trie.  The non-fidelity columnar layout was then built
+        and measured (feat/columnar-experiment, merged; --enable-columnar,
+        off by default; dev/columnar-experiment.md): a flat stride column
+        for fixed-width memcmp-ordered keys gives 1.28x on count
+        throughput (gap 22x -> 17x) and nothing on arrange, with
+        byte-identical results.  1.5x is NOT reachable by it, and Amdahl
+        says it cannot be: the key seek is ~74% of count, so even a free
+        seek caps count at ~3.85x (gap -> ~5.8x), and the residual is
+        structural D1/D2 cost spread across the whole pipeline
+        (allocation, copying, cursor/trie walk, output construction), not
+        concentrated where one representation change removes it.  DECISION
+        RECORDED: the 1.5x goal is not achievable for a fidelity-first
+        port without becoming a different library (inline typed records
+        undoing D1, a family of columnar containers undoing D2, and
+        abandoning the literal trace port).  The columnar path stays a
+        flag-gated, default-off experiment that documents the cost with
+        numbers; the shipped library stays the faithful single-container
+        port.  This item is resolved as a recorded decision, not open
+        work.
 
 Deferred-with-reason items that MUST still be finished before 1.0
 ----------------------------------------------------------------
