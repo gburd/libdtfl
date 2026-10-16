@@ -22,6 +22,15 @@
 #include "base/base_int.h"
 #include "dtfl/record.h"
 
+/*
+ * The constant encoded width of a type if every value is the same number
+ * of bytes, else SIZE_MAX.  Unlike dtfl_type.fixed_size this counts a
+ * zero-width type (unit) as width 0 and sums constant-width tuple fields,
+ * so (u64, unit) reports 8.  Defined in base/record.c; used by the
+ * columnar trace fast path to size its fixed-stride key column.
+ */
+size_t __dtfl_type_const_width(const dtfl_type *t);
+
 /* ------------------------------------------------------------------ */
 /* Bytes                                                               */
 /* ------------------------------------------------------------------ */
