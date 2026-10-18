@@ -35,11 +35,14 @@
  * panicking inside the dataflow, and the test asserts the count is zero.
  * The differential and bfs runs also assert the cursor output is non-empty,
  * so an all-empty pair of outputs cannot pass vacuously.
+ * scc_oracle_single_tactic is not upstream: it checks each scc alone against
+ * a Kosaraju oracle (see its comment).
  */
 #include "dtfl_test.h"
 
 #include "dd/arrange_int.h"
 
+#include "dtfl/algo.h"
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
 #include "dtfl/iterate.h"
@@ -1317,24 +1320,6 @@ build_scc(dtfl_scope *scope, void *arg)
 	dtfl_collection_free(edges);
 }
 
-/*
- * scc_tiny_b and scc_sweep currently fail: in a dataflow holding both scc
- * instances the cursor and reference outputs disagree, and neither matches
- * a Kosaraju oracle over the edges.  A third dtfl_algo_scc added to the same
- * dataflow also diverges at the early rounds, so the fault is not yet
- * localized to a tactic.  Their ledger rows stay deferred until it is
- * fixed.  Set DTFL_TEST_KNOWN_FAILURES to run them anyway.
- */
-static bool
-known_failure(const char *name)
-{
-	if (getenv("DTFL_TEST_KNOWN_FAILURES") != NULL)
-		return false;
-	fprintf(stderr, "SKIP %s: known failure, see dev/test-ledger.tsv\n",
-	    name);
-	return true;
-}
-
 static void
 scc_differential(size_t nodes, size_t nedges, size_t rounds,
     uint64_t s0, uint64_t s1, uint64_t s2, uint64_t s3)
@@ -1372,8 +1357,6 @@ DTFL_TEST(reduce_reference__scc_tiny_a)
 DTFL_TEST(reduce_reference__scc_tiny_b)
 {
 	(void)params; (void)data;
-	if (known_failure("scc_tiny_b"))
-		return MUNIT_SKIP;
 	scc_differential(8, 16, 4, 5, 6, 7, 8);
 	return MUNIT_OK;
 }
@@ -1390,10 +1373,206 @@ DTFL_TEST(reduce_reference__scc_sweep)
 	uint64_t s;
 
 	(void)params; (void)data;
-	if (known_failure("scc_sweep"))
-		return MUNIT_SKIP;
 	for (s = 0; s < 6; s++)
 		scc_differential(15, 30, 5, s, s + 7, 13, 29);
+	return MUNIT_OK;
+}
+
+/* ================================================================== */
+/* scc oracle: one scc per dataflow, against Kosaraju (C-only).        */
+/* ================================================================== */
+
+/*
+ * Not an upstream test.  scc_differential only checks the two tactics
+ * against each other, so a fault both share (the trace layer, iterate)
+ * passes it whenever both go wrong the same way.  Here each scc runs alone
+ * in its own dataflow, the cursor tactic, the reference tactic and
+ * dtfl_algo_scc in turn, and the accumulated output at every round must
+ * be exactly the edges whose endpoints Kosaraju places in one component.
+ * scc_tiny_b's graph failed this for all three before the UpdsBuilder seal
+ * fix: a Merger's advance_by reordered a value's partially ordered times,
+ * and the in-place compaction sealed wrong times into the reduce output
+ * trace.
+ */
+
+#define SCC_MAX_NODES 16
+#define SCC_MAX_OUT 8192
+
+typedef struct scc_out {
+	uint64_t src[SCC_MAX_OUT], dst[SCC_MAX_OUT], t[SCC_MAX_OUT];
+	int64_t d[SCC_MAX_OUT];
+	size_t n;
+} scc_out;
+
+static void
+scc_capture(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	scc_out *o = ctx;
+
+	(void)len;
+	munit_assert_size(o->n, <, SCC_MAX_OUT);
+	o->src[o->n] = dtfl_get_u64(rec);
+	o->dst[o->n] = dtfl_get_u64((const unsigned char *)rec + 8);
+	o->t[o->n] = time[0];
+	memcpy(&o->d[o->n], diff, sizeof(int64_t));
+	o->n++;
+}
+
+typedef enum scc_mode { SCC_CURSOR, SCC_REFERENCE, SCC_ALGO } scc_mode;
+
+typedef struct scc_oracle_build {
+	dtfl_input_session *edges;
+	scc_mode mode;
+	scc_out *out;
+} scc_oracle_build;
+
+static void
+build_scc_oracle(dtfl_scope *scope, void *arg)
+{
+	scc_oracle_build *b = arg;
+	dtfl_collection *edges = dtfl_input_session_to_collection(b->edges,
+	    scope);
+	dtfl_collection *r = b->mode == SCC_ALGO ? dtfl_algo_scc(edges) :
+	    scc(edges, b->mode == SCC_REFERENCE);
+	dtfl_collection *ins = dtfl_collection_inspect(r, scc_capture,
+	    DTFL_CTX(b->out, NULL));
+
+	dtfl_collection_free(ins);
+	dtfl_collection_free(r);
+	dtfl_collection_free(edges);
+}
+
+/* comp[v]: the Kosaraju component of v over the edges with adj > 0. */
+static void
+kosaraju(size_t nodes, int64_t adj[SCC_MAX_NODES][SCC_MAX_NODES],
+    size_t comp[SCC_MAX_NODES])
+{
+	size_t order[SCC_MAX_NODES], it[SCC_MAX_NODES], stack[SCC_MAX_NODES];
+	bool seen[SCC_MAX_NODES];
+	size_t no = 0, sp, i, j, c = 0;
+
+	memset(seen, 0, sizeof seen);
+	for (i = 0; i < nodes; i++) {
+		if (seen[i])
+			continue;
+		seen[i] = true;
+		sp = 0;
+		stack[sp] = i;
+		it[sp++] = 0;
+		while (sp > 0) {
+			size_t u = stack[sp - 1];
+
+			for (j = it[sp - 1]; j < nodes; j++)
+				if (adj[u][j] > 0 && !seen[j])
+					break;
+			if (j < nodes) {
+				it[sp - 1] = j + 1;
+				seen[j] = true;
+				stack[sp] = j;
+				it[sp++] = 0;
+			} else {
+				order[no++] = u;
+				sp--;
+			}
+		}
+	}
+	for (i = 0; i < nodes; i++)
+		comp[i] = SIZE_MAX;
+	while (no > 0) {
+		size_t root = order[--no];
+
+		if (comp[root] != SIZE_MAX)
+			continue;
+		comp[root] = c;
+		sp = 0;
+		stack[sp++] = root;
+		while (sp > 0) {
+			size_t u = stack[--sp];
+
+			for (j = 0; j < nodes; j++)
+				if (adj[j][u] > 0 && comp[j] == SIZE_MAX) {
+					comp[j] = c;
+					stack[sp++] = j;
+				}
+		}
+		c++;
+	}
+}
+
+static void
+scc_oracle(size_t nodes, size_t nedges, size_t rounds, scc_mode mode,
+    uint64_t s0, uint64_t s1, uint64_t s2, uint64_t s3)
+{
+	const uint64_t seed[4] = { s0, s1, s2, s3 };
+	static timed_edge e[MAX_EDGES];
+	static scc_out out;
+	size_t ne = edge_list(nodes, nedges, rounds, seed, e);
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pr = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	scc_oracle_build b;
+	size_t round, i, bad = 0;
+
+	munit_assert_size(nodes, <=, SCC_MAX_NODES);
+	out.n = 0;
+	b.edges = dtfl_input_session_new(pr, r);
+	b.mode = mode;
+	b.out = &out;
+	munit_assert_int(dtfl_worker_dataflow(w, "scc", tc, build_scc_oracle,
+	    &b), ==, 0);
+	feed_rounds(b.edges, NULL, e, ne, rounds);
+	run_to_completion(w);
+	for (round = 0; round < rounds; round++) {
+		int64_t adj[SCC_MAX_NODES][SCC_MAX_NODES];
+		int64_t got[SCC_MAX_NODES][SCC_MAX_NODES];
+		size_t comp[SCC_MAX_NODES], a, c;
+
+		memset(adj, 0, sizeof adj);
+		memset(got, 0, sizeof got);
+		for (i = 0; i < ne; i++)
+			if (e[i].round <= round)
+				adj[e[i].src][e[i].dst] += e[i].diff;
+		for (i = 0; i < out.n; i++)
+			if (out.t[i] <= round)
+				got[out.src[i]][out.dst[i]] += out.d[i];
+		kosaraju(nodes, adj, comp);
+		for (a = 0; a < nodes; a++)
+			for (c = 0; c < nodes; c++) {
+				int64_t want = comp[a] == comp[c] &&
+				    adj[a][c] > 0 ? adj[a][c] : 0;
+
+				if (got[a][c] != want && bad++ < 4)
+					fprintf(stderr, "scc_oracle: mode %d "
+					    "round %zu edge (%zu, %zu): want "
+					    "%lld got %lld\n", (int)mode,
+					    round, a, c, (long long)want,
+					    (long long)got[a][c]);
+			}
+	}
+	munit_assert_size(bad, ==, 0);
+	dtfl_type_free(pr);
+	dtfl_diff_free(r);
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+}
+
+DTFL_TEST(reduce_reference__scc_oracle_single_tactic)
+{
+	uint64_t s;
+	int mode;
+
+	(void)params; (void)data;
+	for (mode = SCC_CURSOR; mode <= SCC_ALGO; mode++) {
+		scc_oracle(6, 12, 4, (scc_mode)mode, 1, 2, 3, 4);
+		scc_oracle(8, 16, 4, (scc_mode)mode, 5, 6, 7, 8);
+		scc_oracle(12, 24, 5, (scc_mode)mode, 2, 4, 6, 8);
+		for (s = 0; s < 6; s++)
+			scc_oracle(15, 30, 5, (scc_mode)mode, s, s + 7, 13,
+			    29);
+	}
 	return MUNIT_OK;
 }
 
@@ -1414,6 +1593,7 @@ static MunitTest tests[] = {
 	DTFL_T(reduce_reference__scc_tiny_b),
 	DTFL_T(reduce_reference__scc_12_24),
 	DTFL_T(reduce_reference__scc_sweep),
+	DTFL_T(reduce_reference__scc_oracle_single_tactic),
 	DTFL_T_END
 };
 
