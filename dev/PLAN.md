@@ -675,8 +675,7 @@ D7/D9; the worker is the public entry), logging-recv and logging_replay (logging
 not logging-as-data), the comm_log/dd_log/progcaster emit points (no
 consumer on the data plane), the ddir multi-worker Sequencer, the
 reduce_reference cross-tactic family (needs a second reduce tactic),
-progress (ported, but deferred on a reduce correctness bug), spill_compare
-(needs a dtfl_config spill hook) and columnar_spill (subsumed by
+spill_compare (needs a dtfl_config spill hook) and columnar_spill (subsumed by
 bench/trace_spill.c, since public arrange is not chunk-backed, D2).  These are not divergences in behavior; they are the scope
 boundary of the public API as this plan drew it.
 

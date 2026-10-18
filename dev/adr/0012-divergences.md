@@ -95,5 +95,17 @@ has no consumer yet:
 - timely/examples/spill_compare.rs stays deferred until dtfl_config
   grows a spill-policy hook (upstream Hooks::spill).
 
+### 2026-10-18: progress done
+
+- differential-dataflow/examples/progress.rs is done and smoke-tested.
+  The wrong answer was a trace-layer bug, not a reduce or iterate one:
+  UpdsBuilder::seal (src/dd/trace/layout.c) compacted its stash in place
+  while reading it through a sort permutation, so a merge whose
+  advance_by reorders a value's times (any partially ordered time, here
+  Product<u64, u64>) could read a slot it had already overwritten.  The
+  reduce output trace then held a wrong history.  Fixed to sort the
+  stash first, as consolidate_slice does.  The output now matches the
+  pinned binary with 1, 2 and 4 workers.
+
 An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.

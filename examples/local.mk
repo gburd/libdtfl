@@ -282,7 +282,8 @@ check_PROGRAMS += \
 	examples/dd/cursors \
 	examples/dd/multitemporal \
 	examples/dd/arrange \
-	examples/dd/graspan
+	examples/dd/graspan \
+	examples/dd/progress
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 
@@ -317,7 +318,9 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/cursors.expected \
 	examples/dd/multitemporal.expected \
 	examples/dd/arrange.expected \
-	examples/dd/graspan.expected
+	examples/dd/graspan.expected \
+	examples/dd/progress.expected \
+	examples/dd/progress-w2.expected
 
 # ----------------------------------------------------------------------
 # Diagnostics examples (P11).  smoke runs the full in-process path
