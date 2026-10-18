@@ -73,42 +73,48 @@ dtfl_probe_free(dtfl_probe *p)
 /* The operator logic                                                  */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Per-operator state.  `prev` is the input frontier this operator last
+ * mirrored into the handle (nprev times); several operators may share
+ * one handle, so each publishes only its own changes.
+ */
 typedef struct probe_ctx {
 	dtfl_probe *handle;	/* retained */
+	uint64_t *prev;
+	size_t nprev;
+	bool started;
 } probe_ctx;
 
 /*
- * Republish the input frontier into the handle's antichain: retract
- * every element currently held and assert every element of the input
- * frontier, leaving the handle's antichain equal to the input frontier
- * (and empty once the input is exhausted, so done() becomes true).  The
- * handle starts holding the minimum (set in dtfl_stream_probe_with), so
- * the first publish retracts that conservative hold as its "previous"
- * frontier.
+ * Mirror this operator's frontier changes into the shared handle:
+ * retract the frontier it published last time and assert the current
+ * one (upstream update_iter(progress.frontiers[0].drain())).  Only this
+ * operator's contribution moves, so a handle shared by several probe
+ * operators holds the meet of all their frontiers.  On the first
+ * schedule also retract the conservative minimum this operator's
+ * probe_with introduced.
  */
 static void
-probe_publish(dtfl_probe *h, const uint64_t *frontier, size_t n)
+probe_publish(probe_ctx *c, const uint64_t *frontier, size_t n)
 {
-	const uint64_t *held;
-	size_t nheld, i;
+	dtfl_probe *h = c->handle;
 	unsigned depth = h->tc->depth;
+	size_t words = DTFL_MAX(depth, 1u), i;
+	uint64_t minimum[DTFL_TIME_MAX];
 
-	/* Retract the previous frontier (snapshot it first; update mutates). */
-	nheld = __dtfl_mantichain_frontier_len(&h->frontier);
-	if (nheld > 0) {
-		uint64_t *snap = __dtfl_alloc((size_t)nheld * DTFL_MAX(depth, 1u) *
-		    sizeof(uint64_t));
-
-		held = __dtfl_mantichain_frontier(&h->frontier);
-		memcpy(snap, held, (size_t)nheld * depth * sizeof(uint64_t));
-		for (i = 0; i < nheld; i++)
-			__dtfl_mantichain_update(&h->frontier,
-			    snap + (size_t)i * depth, -1);
-		__dtfl_free(snap);
-	}
-	/* Assert the current input frontier. */
 	for (i = 0; i < n; i++)
-		__dtfl_mantichain_update(&h->frontier, frontier + (size_t)i * depth, 1);
+		__dtfl_mantichain_update(&h->frontier, frontier + i * depth, 1);
+	for (i = 0; i < c->nprev; i++)
+		__dtfl_mantichain_update(&h->frontier, c->prev + i * depth, -1);
+	if (!c->started) {
+		dtfl_time_minimum(h->tc, minimum);
+		__dtfl_mantichain_update(&h->frontier, minimum, -1);
+		c->started = true;
+	}
+	__dtfl_free(c->prev);
+	c->prev = n > 0 ? __dtfl_memdup(frontier, n * words * sizeof(uint64_t)) :
+	    NULL;
+	c->nprev = n;
 }
 
 static bool
@@ -122,7 +128,7 @@ probe_logic(dtfl_op *op, void *vctx)
 
 	/* Mirror the input frontier into the shared handle. */
 	frontier = dtfl_op_frontier(op, 0, &n);
-	probe_publish(c->handle, frontier, n);
+	probe_publish(c, frontier, n);
 
 	/* Discard the held output capability on the first schedule. */
 	cap = dtfl_op_initial_cap(op, 0);
@@ -147,6 +153,7 @@ probe_ctx_free(void *vctx)
 	probe_ctx *c = vctx;
 
 	probe_release(c->handle);
+	__dtfl_free(c->prev);
 	__dtfl_free(c);
 }
 
@@ -164,15 +171,18 @@ dtfl_stream_probe_with(dtfl_stream *st, dtfl_probe *p)
 	if (p->tc == NULL) {
 		p->tc = dtfl_time_class_retain(tc);
 		__dtfl_mantichain_init(&p->frontier, p->tc);
-		/* Conservative hold at the minimum until the operator runs. */
-		dtfl_time_minimum(p->tc, minimum);
-		__dtfl_mantichain_update(&p->frontier, minimum, 1);
 	}
+	/*
+	 * Conservative hold at the minimum until this operator first runs,
+	 * one per attachment (upstream probe_with).
+	 */
+	dtfl_time_minimum(p->tc, minimum);
+	__dtfl_mantichain_update(&p->frontier, minimum, 1);
 
 	dtfl_op_builder_input(b, st, dtfl_pact_pipeline());
 	out = dtfl_op_builder_output(b, dtfl_stream_type(st));
 
-	c = __dtfl_alloc(sizeof *c);
+	c = __dtfl_calloc(1, sizeof *c);
 	c->handle = probe_retain(p);
 	dtfl_op_builder_build(b, probe_logic, c, probe_ctx_free);
 	return out;
