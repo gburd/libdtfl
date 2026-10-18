@@ -11,6 +11,8 @@
  * joining.  Every wait is bounded by DEADLINE_NS, and a worker that
  * hits it reports a timeout instead of hanging the suite.
  */
+#define _POSIX_C_SOURCE 200809L	/* nanosleep */
+
 #include "dtfl_test.h"
 #include "test_comm_msg.h"
 

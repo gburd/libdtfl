@@ -4,6 +4,8 @@
  *
  * src/base/util.c: __dtfl_vec, FNV-1a, monotonic clock.
  */
+#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
+
 #include "base_int.h"
 
 #include <time.h>

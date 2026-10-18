@@ -29,6 +29,8 @@
  *
  * Run as: bench/experiments/arrange [keys [recs [rate [comp [seconds]]]]]
  */
+#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
+
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
