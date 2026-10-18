@@ -378,18 +378,8 @@ upsert_logic(dtfl_op *op, void *vctx)
 	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
 		size_t k = dtfl_message_len(m);
 		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
-		bool have = false;
 
-		for (i = 0; i < c->caps.len; i++)
-			if (__dtfl_words_cmp(dtfl_cap_time(*DTFL_VEC_AT(&c->caps,
-			    dtfl_cap *, i)), dtfl_cap_time(cap), c->depth) == 0) {
-				have = true;
-				break;
-			}
-		if (have)
-			dtfl_cap_drop(cap);
-		else
-			__dtfl_vec_push(&c->caps, &cap);
+		__dtfl_caps_insert(&c->caps, c->tc, cap);
 
 		for (i = 0; i < k; i++) {
 			size_t len;
