@@ -374,3 +374,23 @@ EXTRA_DIST += \
 	examples/server/reachability.c \
 	examples/server/neighborhood.c \
 	examples/server/random_graph.c
+
+# ----------------------------------------------------------------------
+# Incremental materialized views.  ivm_view maintains a join + GROUP BY
+# view one commit at a time and checks every point-in-time read against
+# a recomputation; txn_harness models PostgreSQL's transactions and
+# transition tables in plain C and applies each committed view delta to
+# a toy view table.  Background: dev/notes/pg-incremental-views.md.
+# ----------------------------------------------------------------------
+noinst_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+examples_ivm_ivm_view_SOURCES = examples/ivm/ivm_view.c
+examples_ivm_ivm_view_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_ivm_ivm_view_LDADD = libdtfl.la
+examples_ivm_txn_harness_SOURCES = examples/ivm/txn_harness.c
+examples_ivm_txn_harness_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_ivm_txn_harness_LDADD = libdtfl.la
+
+check_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+dist_check_SCRIPTS += tests/dist/test_examples_ivm.sh
+TESTS += tests/dist/test_examples_ivm.sh
+EXTRA_DIST += examples/ivm/ivm_view.expected examples/ivm/txn_harness.expected
