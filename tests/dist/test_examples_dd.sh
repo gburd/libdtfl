@@ -81,6 +81,8 @@ run dd pagerank pagerank.expected sort
 run dd dynamic dynamic.expected sort
 run dd cursors cursors.expected cat
 run dd multitemporal multitemporal.expected cat
+run dd arrange arrange.expected sort
+run dd graspan graspan.expected sort
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
 run dogs delta_query delta_query.expected sort
 run dogs delta_query2 delta_query2.expected sort

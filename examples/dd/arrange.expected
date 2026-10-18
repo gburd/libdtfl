@@ -1,0 +1,16 @@
+loading edges
+edges loaded; building query dataflows
+query dataflows built; querying
+(0, ((), 0), 1)
+(0, ((), 1), 1)
+query round 0 complete
+(0, ((), 2), -2)
+query round 1 complete
+(2, ((), 4), 4)
+(2, ((), 5), -1)
+query round 2 complete
+(3, ((), 7), -4)
+(2, ((), 6), -3)
+(3, ((), 6), 7)
+query round 3 complete
+(3, ((), 8), -3)
