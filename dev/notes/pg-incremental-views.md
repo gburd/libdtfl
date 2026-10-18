@@ -332,3 +332,10 @@ hooks, is single-threaded and fully transactional, and is correct though
 not yet cheap (it reseeds per statement).  Making it cheap is section 8,
 which is mostly PostgreSQL engineering with libdtfl as the computational
 core underneath.
+
+Two runnable references live in `examples/ivm/`: `ivm_view.c` keeps a
+join + GROUP BY view over persistent input sessions (the section 8
+shape) and checks each `dtfl_trace_to_vec_through` read against a
+recomputation, and `txn_harness.c` models BEGIN, statements, transition
+tables, COMMIT and ROLLBACK in plain C, applying each committed view
+delta to a toy view table.
