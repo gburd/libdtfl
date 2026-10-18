@@ -405,16 +405,13 @@ sub_free(void *ctx)
 /* Registration                                                        */
 /* ------------------------------------------------------------------ */
 
-static int
-install(__dtfl_worker *w, const char *stream, dtfl_log_subscriber_fn fn,
+static sub_ctx *
+sub_ctx_new(const char *stream, size_t worker, dtfl_log_subscriber_fn fn,
     void *ctx, void (*ctx_free)(void *))
 {
-	sub_ctx *sc;
+	sub_ctx *sc = __dtfl_calloc(1, sizeof *sc);
 
-	if (w->log == NULL)
-		return __dtfl_err(DTFL_ESTATE, "worker has no log registry");
-	sc = __dtfl_calloc(1, sizeof *sc);
-	sc->worker = w->allocator != NULL ? w->allocator->index : 0;
+	sc->worker = worker;
 	sc->stream = __dtfl_strdup(stream);
 	sc->fn = fn;
 	sc->user_ctx = ctx;
@@ -422,8 +419,32 @@ install(__dtfl_worker *w, const char *stream, dtfl_log_subscriber_fn fn,
 	__dtfl_vec_init(&sc->batch.addrs, sizeof(size_t));
 	__dtfl_vec_init(&sc->batch.strpool, 1);
 	__dtfl_vec_init(&sc->batch.evbuf, sizeof(decoded_event));
-	__dtfl_log_registry_insert(w->log, stream, sub_action, sc, sub_free);
+	return sc;
+}
+
+static int
+install(__dtfl_worker *w, const char *stream, dtfl_log_subscriber_fn fn,
+    void *ctx, void (*ctx_free)(void *))
+{
+	if (w->log == NULL)
+		return __dtfl_err(DTFL_ESTATE, "worker has no log registry");
+	__dtfl_log_registry_insert(w->log, stream, sub_action,
+	    sub_ctx_new(stream, w->allocator != NULL ? w->allocator->index : 0,
+	    fn, ctx, ctx_free), sub_free);
 	return DTFL_OK;
+}
+
+/*
+ * A standalone logger that decodes `stream` records for subscriber fn,
+ * reporting `worker` as the batch's worker index.  ctx is not freed
+ * (the configuration owns it).  The caller's thread owns the logger.
+ */
+__dtfl_logger *
+__dtfl_log_subscriber_logger(const char *stream, size_t worker,
+    dtfl_log_subscriber_fn fn, void *ctx)
+{
+	return __dtfl_logger_new(sub_action,
+	    sub_ctx_new(stream, worker, fn, ctx, NULL), sub_free);
 }
 
 int

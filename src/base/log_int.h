@@ -66,6 +66,14 @@ void __dtfl_log_registry_flush(__dtfl_log_registry *r);
 size_t __dtfl_log_registry_names(const __dtfl_log_registry *r,
     const char **names, size_t max);
 
+/*
+ * A logger outside any registry (Logger::new), on the monotonic clock,
+ * for a thread that has no worker: the network threads.  The caller
+ * holds the only reference; it belongs to the creating thread.
+ */
+__dtfl_logger *__dtfl_logger_new(__dtfl_log_action action, void *ctx,
+    void (*ctx_free)(void *));
+
 /* Loggers are reference counted within the worker. */
 __dtfl_logger *__dtfl_logger_retain(__dtfl_logger *l);
 void __dtfl_logger_release(__dtfl_logger *l);

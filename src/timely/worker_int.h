@@ -165,9 +165,9 @@ void __dtfl_worker_log_text(__dtfl_worker *w, const char *text);
 /*
  * Communication event logging (src/comm/comm_log.c).  Each is a no-op
  * when no "communication" logger is registered.  Events are encoded as
- * bincode CommunicationEvent values (PLAN D9).  The data-plane loops do
- * not call these yet (see comm_log.c); they are the encoder behind the
- * subscriber API's "communication" stream.
+ * bincode CommunicationEvent values (PLAN D9).  The network loops log
+ * through their own per-thread loggers instead (__dtfl_comm_log_*,
+ * comm/init_int.h); these forms log to a worker's registry.
  */
 struct __dtfl_message_header;
 void __dtfl_worker_log_comm_message(__dtfl_worker *w, bool is_send,

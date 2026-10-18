@@ -367,6 +367,13 @@ typedef struct net_thread_arg {
 	size_t worker_offset;
 	__dtfl_mpsc **queues;	/* owned by the loop: targets or sources */
 	size_t nqueues;
+	size_t process;		/* my_index */
+	size_t remote;		/* the peer process index */
+	/*
+	 * Hooks.log_fn, copied by value.  Written before the thread is
+	 * spawned and only read by it; pthread_create orders the two.
+	 */
+	__dtfl_comm_log_hook log_hook;
 } net_thread_arg;
 
 struct __dtfl_comms_guard {
@@ -376,18 +383,30 @@ struct __dtfl_comms_guard {
 	int *fds;		/* [processes]; closed at join */
 	size_t processes;
 	net_thread_arg *args;	/* 2 * n */
+	__dtfl_comm_log_hook log_hook;	/* ctx freed after the join */
 };
 
 static void *
 net_thread_main(void *v)
 {
 	net_thread_arg *a = v;
+	__dtfl_logger *logger = NULL;
 
+	/* The thread asks log_fn for its own logger, as upstream's spawn. */
+	if (a->log_hook.log_fn != NULL) {
+		__dtfl_comm_setup setup;
+
+		setup.sender = a->is_send;
+		setup.process = a->process;
+		setup.remote = a->remote;
+		logger = a->log_hook.log_fn(a->log_hook.ctx, &setup);
+	}
 	if (a->is_send)
-		__dtfl_tcp_send_loop(a->fd, a->queues, a->nqueues);
+		__dtfl_tcp_send_loop(a->fd, a->queues, a->nqueues, a->process,
+		    a->remote, logger);
 	else
 		__dtfl_tcp_recv_loop(a->fd, a->queues, a->nqueues,
-		    a->worker_offset);
+		    a->worker_offset, a->process, a->remote, logger);
 	return NULL;
 }
 
@@ -401,6 +420,7 @@ net_thread_main(void *v)
 int
 __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
     size_t my_index, size_t processes, int *fds,
+    const __dtfl_comm_log_hook *log_hook,
     __dtfl_allocator_builder ***builders_out, __dtfl_comms_guard **guard_out)
 {
 	size_t nremote = processes - 1;
@@ -429,6 +449,8 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 	g->sends = __dtfl_calloc(DTFL_MAX(nremote, 1), sizeof *g->sends);
 	g->recvs = __dtfl_calloc(DTFL_MAX(nremote, 1), sizeof *g->recvs);
 	g->args = __dtfl_calloc(DTFL_MAX(2 * nremote, 1), sizeof *g->args);
+	if (log_hook != NULL)
+		g->log_hook = *log_hook;
 
 	/*
 	 * One send and one recv thread per remote process, in process-index
@@ -454,6 +476,10 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 		ra->queues = net_promises[started];	/* recv fills these */
 		ra->nqueues = threads;
 		ra->worker_offset = threads * my_index;
+		sa->process = ra->process = my_index;
+		sa->remote = ra->remote = i;
+		if (log_hook != NULL)
+			sa->log_hook = ra->log_hook = *log_hook;
 
 		snprintf(name, sizeof name, "dtfl:send-%zu", i);
 		rc = __dtfl_thread_spawn(name, net_thread_main, sa,
@@ -494,6 +520,8 @@ __dtfl_comms_guard_join(__dtfl_comms_guard *g)
 	__dtfl_free(g->sends);
 	__dtfl_free(g->recvs);
 	__dtfl_free(g->args);
+	if (g->log_hook.ctx_free != NULL)
+		g->log_hook.ctx_free(g->log_hook.ctx);
 	__dtfl_free(g->fds);
 	__dtfl_free(g);
 }

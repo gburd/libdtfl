@@ -277,12 +277,17 @@ These are not dropped; each has a precise completion condition.  The
 first three are port-ledger rows the completion gate already counts as
 unfinished (wip/todo); the fourth is tracked here because a property
 test is not an upstream #[test] and so has no ledger row.
-[~] comm logging (communication/src/logging.rs -> src/comm/comm_log.c):
-        the CommunicationEvent encoder and the "communication"
-        subscriber stream exist, round-trip, and the row is done; the
-        DATA-PLANE EMISSION from the network send/recv loops is deferred
-        (ADR-0012: no consumer on the data plane).  Lands when a consumer
-        needs it, by plumbing a log sink into the comm allocators.
+[x] comm logging (communication/src/logging.rs -> src/comm/comm_log.c).
+        DONE (feat/logging): Hooks.log_fn is plumbed as at the pin.  A
+        "communication" dtfl_config_log_subscribe becomes a log hook
+        passed to the network threads, and each send/recv thread asks it
+        for its own logger, so no logger is shared across threads.
+        send_loop and recv_loop (zc_tcp.c) log StateEvent at start and
+        end, a MessageEvent per header sent or received, and the final
+        zero-length header.  With no subscription the logger is NULL.
+        Delivery is on the network threads and reports the process index
+        as the worker (documented in dtfl/log.h and the man page).
+        Test: tcp cluster_two_process_comm_logging.
 [x] differential logging emission (differential-dataflow/src/logging.rs
         -> src/dd/dd_log.c).  DONE (feat/logging): the trace layer now
         emits at the pin's points.  The spine logs BatchEvent in insert,
