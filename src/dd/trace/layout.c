@@ -459,28 +459,47 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 		order[j] = key;
 	}
 
+	/*
+	 * Apply the permutation, as consolidate_slice sorts the stash itself:
+	 * the in-place compaction below then reads slot i >= out, so it never
+	 * reads a slot it has already overwritten.
+	 */
+	{
+		__dtfl_vec st, sd;
+
+		__dtfl_vec_init(&st, b->stash_t.elem);
+		__dtfl_vec_init(&sd, b->stash_d.elem);
+		for (i = 0; i < n; i++) {
+			__dtfl_vec_push(&st, __dtfl_vec_at(&b->stash_t,
+			    order[i]));
+			__dtfl_vec_push(&sd, __dtfl_vec_at(&b->stash_d,
+			    order[i]));
+		}
+		__dtfl_vec_swap(&b->stash_t, &st);
+		__dtfl_vec_swap(&b->stash_d, &sd);
+		__dtfl_vec_free(&st);
+		__dtfl_vec_free(&sd);
+	}
+	__dtfl_free(order);
+
 	/* Consolidate equal-time runs in place, compacting to the front. */
 	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
 	for (i = 0; i < n; i = k) {
-		size_t src = order[i];
-
 		if (b->dw != 0)
-			memcpy(accum, stash_diff(b, src), b->dw);
-		for (k = i + 1; k < n && stash_cmp(b, src, order[k]) == 0; k++)
-			b->dc->plus_equals(b->dc, accum,
-			    stash_diff(b, order[k]));
+			memcpy(accum, stash_diff(b, i), b->dw);
+		for (k = i + 1; k < n && stash_cmp(b, i, k) == 0; k++)
+			b->dc->plus_equals(b->dc, accum, stash_diff(b, k));
 		if (b->dc->is_zero(b->dc, accum))
 			continue;
-		/* Move survivor to slot `out`. */
+		/* Move survivor to slot `out` (out <= i). */
 		if (b->tw != 0)
-			memmove(stash_time(b, out), stash_time(b, src),
+			memmove(stash_time(b, out), stash_time(b, i),
 			    (size_t)b->tw * sizeof(uint64_t));
 		if (b->dw != 0)
 			memcpy(stash_diff(b, out), accum, b->dw);
 		out++;
 	}
 	__dtfl_free(accum);
-	__dtfl_free(order);
 
 	if (out == 0) {
 		stash_clear(b);
