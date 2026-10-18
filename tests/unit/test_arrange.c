@@ -13,11 +13,14 @@
  */
 #include "dtfl_test.h"
 
+#include "dd/arrange_int.h"
+
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
 #include "dtfl/time.h"
 #include "dtfl/timely.h"
+#include "dtfl/timely_ops.h"
 
 #include <string.h>
 
@@ -429,11 +432,79 @@ DTFL_TEST(arrange__shared_import_two_readers)
 	return MUNIT_OK;
 }
 
+/*
+ * __dtfl_caps_insert keeps the held capabilities an antichain, as timely's
+ * Antichain<Capability<T>>::insert does: a capability above a held one is
+ * dropped, and a capability below held ones replaces them.  The arrange,
+ * reduce and upsert batch tilings depend on it; a set holding (0,4,2) and
+ * (2,4,2) together tiles a degenerate [lower, lower) batch.
+ */
+typedef struct caps_build {
+	dtfl_unordered_input *in;
+	dtfl_cap *cap;
+} caps_build;
+
+static void
+build_caps(dtfl_scope *scope, void *arg)
+{
+	caps_build *b = arg;
+
+	(void)dtfl_unordered_input_new(scope, dtfl_type_u64(), &b->in,
+	    &b->cap);
+}
+
+DTFL_TEST(arrange__caps_insert_antichain)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *u = dtfl_time_u64();
+	dtfl_time_class *p2 = dtfl_time_product(u, u);
+	dtfl_time_class *tc = dtfl_time_product(p2, u);
+	const uint64_t lo[3] = { 0, 4, 2 }, hi[3] = { 2, 4, 2 };
+	const uint64_t side[3] = { 3, 0, 0 };
+	caps_build b;
+	__dtfl_vec caps;
+	size_t i;
+
+	(void)params; (void)data;
+	munit_assert_int(dtfl_worker_dataflow(w, "caps", tc, build_caps, &b),
+	    ==, 0);
+	__dtfl_vec_init(&caps, sizeof(dtfl_cap *));
+
+	/* (2,4,2) then (0,4,2): the lower one replaces the higher. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, hi));
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, lo));
+	munit_assert_size(caps.len, ==, 1);
+	munit_assert_memory_equal(sizeof lo,
+	    dtfl_cap_time(*DTFL_VEC_AT(&caps, dtfl_cap *, 0)), lo);
+
+	/* (2,4,2) again: redundant, dropped. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, hi));
+	munit_assert_size(caps.len, ==, 1);
+
+	/* (3,0,0) is incomparable to (0,4,2): both held. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, side));
+	munit_assert_size(caps.len, ==, 2);
+
+	for (i = 0; i < caps.len; i++)
+		dtfl_cap_drop(*DTFL_VEC_AT(&caps, dtfl_cap *, i));
+	__dtfl_vec_free(&caps);
+	dtfl_cap_drop(b.cap);
+	dtfl_unordered_input_free(b.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_time_class_free(tc);
+	dtfl_time_class_free(p2);
+	dtfl_time_class_free(u);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
 	DTFL_T(arrange__enter_region),
 	DTFL_T(arrange__shared_import_two_readers),
+	DTFL_T(arrange__caps_insert_antichain),
 	DTFL_T_END
 };
 
