@@ -74,3 +74,12 @@ has no consumer yet:
 
 None yet before this entry.  An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.
+
+### 2026-10-18: differential logging emission implemented
+
+The differential-dataflow/src/logging.rs deferral above is closed.  The
+spine, the agent and the merge batcher emit Batch, Merge, Drop,
+TraceShare and Batcher events at the upstream points, through a logger
+the operator acquires at construction (NULL, so free, without a
+subscriber).  MergeShortfall stays unemitted because the pin never logs
+it.

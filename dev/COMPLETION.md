@@ -283,10 +283,20 @@ test is not an upstream #[test] and so has no ledger row.
         DATA-PLANE EMISSION from the network send/recv loops is deferred
         (ADR-0012: no consumer on the data plane).  Lands when a consumer
         needs it, by plumbing a log sink into the comm allocators.
-[~] differential logging emission (differential-dataflow/src/logging.rs
-        -> src/dd/dd_log.c): same shape; the encoder and stream exist
-        and the row is done; the spine/batcher emission is deferred
-        (ADR-0012: consumer-side logging, no data-plane consumer).
+[x] differential logging emission (differential-dataflow/src/logging.rs
+        -> src/dd/dd_log.c).  DONE (feat/logging): the trace layer now
+        emits at the pin's points.  The spine logs BatchEvent in insert,
+        MergeEvent (complete None) when insert_at begins a merge,
+        MergeEvent (complete Some) when complete_at extracts a two-part
+        merge, and DropEvent per held batch on free.  The agent logs
+        TraceShare +1 on new and clone and -1 on free.  The merge batcher
+        logs BatcherEvent records deltas on every chain push/pop and
+        retracts them on free.  The logger is acquired once per
+        arrange/arrange_by_key/reduce/upsert operator and is NULL with
+        no subscriber, so the disabled cost is one pointer test.
+        MergeShortfall is defined but never logged at the pin, and is not
+        emitted here either.  Test: log_subscribe
+        subscribe__arrange_emits.
 [x] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
         src/dogs/half_join.c, done): the general half_join with user
         frontier/comparison closures.  DONE (dtfl_dogs_half_join2):

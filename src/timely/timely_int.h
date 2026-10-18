@@ -302,4 +302,7 @@ struct dtfl_op {
 	size_t address_len;
 };
 
+/* OperatorInfo::global_id of the operator being built (builder.c). */
+size_t __dtfl_op_builder_global_id(const dtfl_op_builder *b);
+
 #endif /* DTFL_TIMELY_INT_H */

@@ -2026,6 +2026,9 @@ __dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
 
 	/* The output trace is a value trace: key -> out_val, odc diffs. */
 	out_trace = __dtfl_trace_new(false, ikt, ovt, tc, odc);
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Reduce");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, out_trace, NULL);
 
 	__dtfl_trace_agent_clone(src_agent, &c->source);
 	__dtfl_trace_agent_new(out_trace, false, ikt, ovt, tc, odc,
@@ -2052,7 +2055,6 @@ __dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
 	c->abelian_wrap = false;
 	__dtfl_vec_init(&c->batch_storage, sizeof(__dtfl_batch_ord *));
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Reduce");
 	dtfl_op_builder_input(b, in_stream, dtfl_pact_pipeline());
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_ALWAYS);
 	out_stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
@@ -2392,6 +2394,9 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	__dtfl_vec_init(&c->caps, sizeof(dtfl_cap *));
 	__dtfl_antichain_init_elem(&c->prev_frontier, tc, minimum);
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, trace, &c->batcher);
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &c->reader, &c->writer);
 	__dtfl_trace_agent_clone(&c->reader, &arr_reader);
@@ -2400,7 +2405,6 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	c->route.depth = depth;
 	c->route.dw = dw;
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
 	dtfl_op_builder_input(b, coll->stream,
 	    dtfl_pact_exchange(abk_route_fn, &c->route));
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_ALWAYS);

@@ -175,6 +175,13 @@ dtfl_op_builder_new(dtfl_scope *s, const char *name)
 	return b;
 }
 
+/* OperatorInfo::global_id: the worker-unique id the Operates event logs. */
+size_t
+__dtfl_op_builder_global_id(const dtfl_op_builder *b)
+{
+	return b->slot.identifier;
+}
+
 size_t
 dtfl_op_builder_index(const dtfl_op_builder *b)
 {

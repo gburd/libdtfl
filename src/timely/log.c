@@ -65,7 +65,12 @@ struct dtfl_log_batch {
 
 /* Context the internal action carries for one subscribed stream. */
 typedef struct sub_ctx {
-	__dtfl_worker *worker;	/* for the worker index; not owned */
+	/*
+	 * The worker index, captured at install: a trace's logger reference
+	 * can outlive the worker (a dtfl_trace handle freed after
+	 * dtfl_worker_free still logs its DropEvents), so no worker pointer.
+	 */
+	size_t worker;
 	char *stream;		/* owned */
 	dtfl_log_subscriber_fn fn;
 	void *user_ctx;
@@ -339,9 +344,7 @@ static void
 sub_action(void *ctx, uint64_t now_ns, const __dtfl_log_event *events, size_t n)
 {
 	sub_ctx *sc = ctx;
-	size_t worker = sc->worker != NULL ? sc->worker->allocator->index : 0;
-
-	decode_into(&sc->batch, sc->stream, worker, now_ns, events, n);
+	decode_into(&sc->batch, sc->stream, sc->worker, now_ns, events, n);
 	sc->fn(&sc->batch, sc->user_ctx);
 }
 
@@ -411,7 +414,7 @@ install(__dtfl_worker *w, const char *stream, dtfl_log_subscriber_fn fn,
 	if (w->log == NULL)
 		return __dtfl_err(DTFL_ESTATE, "worker has no log registry");
 	sc = __dtfl_calloc(1, sizeof *sc);
-	sc->worker = w;
+	sc->worker = w->allocator != NULL ? w->allocator->index : 0;
 	sc->stream = __dtfl_strdup(stream);
 	sc->fn = fn;
 	sc->user_ctx = ctx;

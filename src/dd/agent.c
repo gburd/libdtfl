@@ -299,6 +299,17 @@ __dtfl_queue_list_release(__dtfl_queue_list *l)
 /* TraceAgent (agent.rs).                                              */
 /* ------------------------------------------------------------------ */
 
+/* Logs TraceShare { operator, diff } if the shared trace has a logger. */
+static void
+agent_log_share(const __dtfl_trace_agent *a, int64_t diff)
+{
+	size_t op;
+	__dtfl_logger *l = __dtfl_trace_logger(a->box->trace, &op);
+
+	if (l != NULL)
+		__dtfl_dd_log_trace_share(l, op, diff);
+}
+
 void
 __dtfl_trace_agent_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
     const dtfl_type *vt, const dtfl_time_class *tc,
@@ -336,6 +347,7 @@ __dtfl_trace_agent_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 	reader->kt = kt;
 	reader->vt = vt;
 	reader->dc = dc;
+	agent_log_share(reader, 1);
 
 	/* The writer shares the box and the queue list (writer.rs new). */
 	__dtfl_trace_writer_init(writer, __dtfl_trace_box_retain(box), queues,
@@ -348,6 +360,7 @@ __dtfl_trace_agent_clone(const __dtfl_trace_agent *src, __dtfl_trace_agent *dst)
 	__dtfl_antichain empty;
 
 	dst->box = __dtfl_trace_box_retain(src->box);
+	agent_log_share(src, 1);
 	dst->queues = src->queues != NULL ?
 	    __dtfl_queue_list_retain(src->queues) : NULL;
 	dst->tc = src->tc;
@@ -380,6 +393,7 @@ __dtfl_trace_agent_free(__dtfl_trace_agent *a)
 
 	if (a->box == NULL)
 		return;
+	agent_log_share(a, -1);
 	/* Decrement holds to zero (agent.rs Drop), letting compaction run. */
 	__dtfl_antichain_init(&empty, a->tc);
 	__dtfl_trace_box_adjust_logical(a->box,

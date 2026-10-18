@@ -418,13 +418,16 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 		__dtfl_antichain_insert(&ac->prev_frontier, minimum);
 	}
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
+	/* Acquire a logger for arrange events (batcher, trace, agent). */
+	__dtfl_dd_logging_install(scope, b, trace, &ac->batcher);
+
 	/* TraceAgent::new gives the reader (shared) and the writer. */
 	__dtfl_trace_agent_new(trace, keyed, kt, vt, tc, dc, &ac->reader,
 	    &ac->writer);
 	/* The Arranged keeps a cloned reader; the operator keeps ac->reader. */
 	__dtfl_trace_agent_clone(&ac->reader, &a->agent);
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
 	if (keyed) {
 		pact = dtfl_pact_exchange(NULL, NULL);
 	} else {

@@ -180,9 +180,9 @@ void __dtfl_worker_log_comm_setup(__dtfl_worker *w, bool sender, size_t process,
 /*
  * Differential event logging (src/dd/dd_log.c).  Each is a no-op when no
  * "differential/arrange" logger is registered.  Events are encoded as
- * bincode DifferentialEvent values (PLAN D9).  The spine and batcher do
- * not call these yet (see dd_log.c); they are the encoder behind the
- * subscriber API's "differential/arrange" stream.
+ * bincode DifferentialEvent values (PLAN D9).  The trace layer emits
+ * through the logger it holds (__dtfl_dd_log_*, dd/trace/trace_int.h);
+ * these worker forms look the logger up per call.
  */
 void __dtfl_worker_log_dd_batch(__dtfl_worker *w, size_t op, size_t length);
 void __dtfl_worker_log_dd_merge(__dtfl_worker *w, size_t op, size_t scale,
