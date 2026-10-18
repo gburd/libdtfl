@@ -80,7 +80,11 @@ typedef struct arrange_ctx {
 	void *route;			/* arrange_route_ctx * (by-key); owned */
 } arrange_ctx;
 
-/* Finds the capability for time `t` among the held caps, or SIZE_MAX. */
+/*
+ * CapabilitySet::insert: adds `cap` (consumed) to the held set, kept an
+ * antichain.  A cap at or after a held one is dropped; held caps at or
+ * after `cap` are dropped and replaced by it.
+ */
 void
 __dtfl_caps_insert(__dtfl_vec *caps, const dtfl_time_class *tc, dtfl_cap *cap)
 {
