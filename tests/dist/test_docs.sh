@@ -34,10 +34,12 @@ documented=$(cat "$top"/man/man3/*.3 2>/dev/null | awk '$1 == ".Nm" {print $2}' 
 # an installed header) carry no implementation yet, so they need no page
 # until the phase that defines them lands.  When the library is not built
 # yet, fall back to requiring every declaration.
-lib=$(ls "$build"/.libs/libdtfl.so* "$build"/.libs/libdtfl.a 2>/dev/null | head -1)
+lib=$(ls "$build"/.libs/libdtfl.so* "$build"/.libs/libdtfl.*.dylib "$build"/.libs/libdtfl.a 2>/dev/null | head -1)
 if [ -n "$lib" ] && command -v nm >/dev/null 2>&1; then
-	defined=$(nm -g --defined-only "$lib" 2>/dev/null \
-		| awk '{print $NF}' | grep -oE 'dtfl_[a-z0-9_]+' | sort -u)
+	# nm -g with an awk filter for defined symbols works on GNU and Apple nm
+	# (Apple nm has no --defined-only); Mach-O names carry a leading _.
+	defined=$(nm -g "$lib" 2>/dev/null | awk '$2 != "U" {print $NF}' \
+		| sed 's/^_//' | grep -oE '^dtfl_[a-z0-9_]+' | sort -u)
 	decls=$(comm -12 "$(printf '%s\n' "$decls" > docs.d1.tmp; echo docs.d1.tmp)" \
 		"$(printf '%s\n' "$defined" > docs.d2.tmp; echo docs.d2.tmp)")
 	rm -f docs.d1.tmp docs.d2.tmp

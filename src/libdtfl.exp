@@ -1,0 +1,5 @@
+# Apple ld64 exported-symbols list, the Darwin counterpart of
+# src/libdtfl.map (selected by configure when the linker has no
+# --version-script).  Mach-O prefixes C symbols with an underscore.
+# Until 1.0 every dtfl_ symbol is exported by pattern, matching the map.
+_dtfl_*

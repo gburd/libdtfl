@@ -28,7 +28,7 @@
  * stall the thread, and the loop polls the shared running flag so
  * dtfl_diag_server_stop joins promptly.
  */
-#define _GNU_SOURCE	/* getaddrinfo, AI_PASSIVE, MSG_NOSIGNAL */
+#define _GNU_SOURCE	/* getaddrinfo, AI_PASSIVE */
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "diag/diag_int.h"
+#include "base/sock_int.h"
 
 /* The flush cadence of the serve loop, matching server.rs (100 ms). */
 #define FLUSH_INTERVAL_NS 100000000ULL
@@ -155,6 +156,7 @@ set_io_timeout(int fd)
 	(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
 	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 	(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+	__dtfl_sock_nosigpipe(fd);
 }
 
 void *
