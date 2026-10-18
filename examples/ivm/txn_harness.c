@@ -13,19 +13,42 @@
  * The toy pieces and what they stand for:
  *  - table: the base heap, a row store keyed by id (the row identity a
  *    TID gives a real heap).  Only committed rows are in it.
- *  - txn: BEGIN takes a snapshot of the table; each statement runs against
- *    the snapshot and appends its transition tables (OLD TABLE / NEW
- *    TABLE, what an AFTER STATEMENT trigger declared REFERENCING OLD TABLE
- *    AS o NEW TABLE AS n receives) to the transaction's log.  COMMIT
- *    applies the log to the table, takes the next commit-order number,
- *    feeds the log to the dataflow at that time (OLD rows removed, NEW
- *    rows inserted), steps until the view is complete, and applies the
- *    view delta to the view's own row store.  ROLLBACK drops the log: the
- *    engine never sees an uncommitted change.
+ *  - txn: the toy takes one snapshot at BEGIN and runs every statement
+ *    against it, as REPEATABLE READ does (READ COMMITTED takes a new
+ *    snapshot per statement).  Each statement appends its transition
+ *    tables (OLD TABLE / NEW TABLE, what an AFTER STATEMENT trigger
+ *    declared REFERENCING OLD TABLE AS o NEW TABLE AS n receives) to the
+ *    transaction's log.  COMMIT applies the log to the table, takes the
+ *    next commit-order number, feeds the log to the dataflow at that time
+ *    (OLD rows removed, NEW rows inserted), steps until the view is
+ *    complete, and applies the view delta to the view's own row store.
+ *    ROLLBACK drops the log: the engine never sees an uncommitted change.
+ *  - write conflicts: the toy has no row locks, so two transactions that
+ *    write the same row conflict only at COMMIT, where the first
+ *    committer wins and the second rolls back before anything is fed.
+ *    PostgreSQL blocks the second writer at its UPDATE instead; what
+ *    happens after that wait (READ COMMITTED re-check, REPEATABLE READ
+ *    serialization failure) is out of scope here.
  *  - mv: the materialized view's heap, keyed by region.
  *
+ * Transition tables live for one statement (AfterTriggerFreeQuery frees
+ * them), and a trigger that uses them may fire on only one event type.
+ * An extension therefore needs one trigger per INSERT, UPDATE and DELETE
+ * per base table, each copying its rows into a transaction-local buffer
+ * the extension owns; the log here is that buffer.
+ *
+ * The toy's COMMIT is atomic: feed, step and apply run together and
+ * nothing can fail after the feed.  PostgreSQL's is not: the transaction
+ * can still abort after maintenance fed time n (a later deferred trigger,
+ * a serialization failure detected at commit).  A fed time cannot be
+ * un-fed from a persistent arrangement, so such an abort is cancelled
+ * forward by feeding the negated delta at the next time and discarding
+ * the view output there (dev/notes/pg-incremental-views.md, section 9).
+ *
  * After every COMMIT and ROLLBACK the mv store is compared with the view
- * recomputed from scratch over the table; a mismatch exits nonzero.
+ * recomputed from scratch over the table; a mismatch exits nonzero.  The
+ * oracle recomputes from the same applied log the engine was fed, so it
+ * checks delta-to-view (the dataflow and the apply step), not capture.
  */
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
@@ -349,6 +372,11 @@ cmp_vrow(const void *a, const void *b)
  * Apply the view delta to the mv store: each - row deletes the stored row
  * it names, then each + row inserts.  Deletes go first because the store
  * is keyed by region and a changed group arrives as - old, + new.
+ *
+ * A GROUP BY view keyed by its group holds at most one row per group, so
+ * every view diff is -1 or +1 and anything else is an error.  A view
+ * without aggregation is a multiset of rows: there a diff of d deletes or
+ * inserts |d| copies of the row.
  */
 static void
 mv_apply(db *d)
@@ -435,35 +463,50 @@ check(db *d)
 /* ------------------------------------------------------------------ */
 
 /*
- * Replay the log onto the committed table, statement by statement.  Each
- * OLD image must still be the committed row: in PostgreSQL a concurrent
- * writer of the same row waits on its row lock (or fails to serialize),
- * so the OLD image a committing statement replaced is always the current
- * committed version.  The toy has no locks, so a violation is fatal.
+ * Replay the log onto a copy of the committed table, statement by
+ * statement.  Each OLD image must still be the committed row (or the row
+ * an earlier statement of the same transaction wrote).  If one is not, a
+ * concurrent transaction committed a write to that row first: return
+ * false and leave the table as it was.  This is the toy's stand-in for
+ * the row lock a PostgreSQL writer waits on.
  */
-static void
+static bool
 apply_log(db *d, const txn *t)
 {
+	table next = d->base;
 	size_t s, i;
 
 	for (s = 0; s < t->nstmts; s++) {
 		const transition *tr = &t->log[s];
 
 		for (i = 0; i < tr->old.n; i++) {
-			row *r = table_find(&d->base, tr->old.rows[i].id);
+			row *r = table_find(&next, tr->old.rows[i].id);
 
 			if (r == NULL || memcmp(r, &tr->old.rows[i],
 			    sizeof *r) != 0) {
-				fprintf(stderr, "%s: write-write conflict on "
-				    "row %llu\n", t->name, (unsigned long long)
+				printf("%s COMMIT -> ERROR: row %llu was "
+				    "changed by a committed transaction\n",
+				    t->name, (unsigned long long)
 				    tr->old.rows[i].id);
-				exit(2);
+				return false;
 			}
-			table_del(&d->base, r);
+			table_del(&next, r);
 		}
 		for (i = 0; i < tr->new_.n; i++)
-			table_add(&d->base, tr->new_.rows[i]);
+			table_add(&next, tr->new_.rows[i]);
 	}
+	d->base = next;
+	return true;
+}
+
+/* The engine is not told: the log is dropped and the snapshot with it. */
+static void
+txn_rollback(db *d, txn *t)
+{
+	printf("%s ROLLBACK (%zu statement%s discarded, nothing fed)\n",
+	    t->name, t->nstmts, t->nstmts == 1 ? "" : "s");
+	t->nstmts = 0;
+	check(d);
 }
 
 static void
@@ -473,16 +516,24 @@ txn_commit(db *d, txn *t)
 	unsigned char b[24];
 	size_t s, i;
 
-	apply_log(d, t);
+	/* A failed commit feeds nothing and does not take a number. */
+	if (!apply_log(d, t)) {
+		txn_rollback(d, t);
+		return;
+	}
 	printf("%s COMMIT -> commit %llu (%zu statement%s)\n", t->name,
 	    (unsigned long long)d->now, t->nstmts, t->nstmts == 1 ? "" : "s");
 	/*
 	 * The delta enters at this transaction's commit-order time, so the
-	 * engine's history is the serial order of commits.  In PostgreSQL the
-	 * number is taken in a pre-commit callback under the lock that
-	 * orders commit records, and each transaction's transition tables
-	 * hold only its own changes, which is what makes feeding them one
-	 * commit at a time equal to the serial history.
+	 * engine's history is the serial order of commits.  PostgreSQL has
+	 * no hook that runs in commit order, so the extension makes one: a
+	 * deferred constraint trigger takes the view's maintenance lock at
+	 * end of transaction, takes the next number, feeds and applies, and
+	 * the lock is held through the commit record.  That lock is what
+	 * makes the numbering the commit order of the view's writers
+	 * (dev/notes/pg-incremental-views.md, section 4.3).  Each
+	 * transaction's transition tables hold only its own changes, so
+	 * feeding them one commit at a time equals the serial history.
 	 */
 	for (s = 0; s < t->nstmts; s++) {
 		const transition *tr = &t->log[s];
@@ -503,16 +554,6 @@ txn_commit(db *d, txn *t)
 		dtfl_worker_step(d->w);
 	mv_apply(d);
 	d->now = next;
-	check(d);
-}
-
-/* The engine is not told: the log is dropped and the snapshot with it. */
-static void
-txn_rollback(db *d, txn *t)
-{
-	printf("%s ROLLBACK (%zu statement%s discarded, nothing fed)\n",
-	    t->name, t->nstmts, t->nstmts == 1 ? "" : "s");
-	t->nstmts = 0;
 	check(d);
 }
 
@@ -577,6 +618,18 @@ main(void)
 	sql_move_region(&t0, WEST, NORTH);
 	sql_insert(&t0, 8, EAST, 15);
 	txn_commit(&d, &t0);
+
+	/*
+	 * Two transactions write row 8.  The first committer wins; the
+	 * second fails at COMMIT, rolls back and feeds nothing, so it takes
+	 * no commit number.
+	 */
+	txn_begin(&d, &t1, "T3");
+	txn_begin(&d, &t2, "T4");
+	sql_set_amount(&t1, 8, 25);
+	sql_delete(&t2, 8);
+	txn_commit(&d, &t1);
+	txn_commit(&d, &t2);
 
 	printf(d.failed ? "FAILED: mv diverged from recomputation\n" :
 	    "ok: mv matched recomputation after every commit and rollback\n");

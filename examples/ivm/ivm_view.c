@@ -28,6 +28,18 @@
  *  - apply: the - rows of the view delta are deleted from, and the + rows
  *    inserted into, the view's heap inside the committing transaction
  *    (examples/ivm/txn_harness.c applies them to a toy table).
+ *  - abort: each commit here is atomic (feed, step, read, and nothing can
+ *    fail after the feed).  A PostgreSQL transaction can still abort after
+ *    maintenance fed time n, and a fed time cannot be un-fed from the
+ *    persistent arrangements, so the abort is cancelled forward: feed the
+ *    negated delta at n + 1 and discard the view output there (section 9
+ *    of the note).
+ *  - compaction: after commit n is read, the example's trace handle
+ *    advances its holds to n, since only the latest commit is read point
+ *    in time.  A handle that never advances pins all history; advancing
+ *    it is what lets the arrangement stay bounded in a long-running view.
+ *    In PostgreSQL the hold tracks the oldest commit any reader of the
+ *    engine state still needs.
  */
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
@@ -205,6 +217,10 @@ cust_update_region(ivm *v, uint64_t id, uint64_t region)
 	cust_row *c = find_cust(v, id);
 	unsigned char b[16];
 
+	if (c == NULL) {
+		fprintf(stderr, "no customer %llu\n", (unsigned long long)id);
+		exit(2);
+	}
 	put_cust(b, c);
 	dtfl_input_session_remove(v->customers, b, sizeof b);
 	c->region = region;
@@ -448,6 +464,30 @@ print_row(const char *prefix, const view_row *r)
 }
 
 /*
+ * Commit n has been read and nothing reads at a time before n again, so
+ * let the trace forget history before n (logical) and merge batches up to
+ * n (physical).  The next read cuts at n + 1, beyond both holds.
+ */
+static void
+advance_holds(ivm *v)
+{
+	const uint64_t *lo, *ph;
+	size_t nlo, nph;
+
+	dtfl_trace_set_logical_compaction(v->view, &v->now, 1);
+	dtfl_trace_set_physical_compaction(v->view, &v->now, 1);
+	lo = dtfl_trace_logical_compaction(v->view, &nlo);
+	ph = dtfl_trace_physical_compaction(v->view, &nph);
+	if (nlo != 1 || nph != 1 || lo[0] != v->now || ph[0] != v->now) {
+		fprintf(stderr, "compaction holds did not move to %llu\n",
+		    (unsigned long long)v->now);
+		v->failed = 1;
+		return;
+	}
+	printf("  holds -> %llu\n", (unsigned long long)lo[0]);
+}
+
+/*
  * COMMIT: seal time n on both inputs, run the dataflow until the view is
  * complete through n, report the delta at n and the view as of n.
  */
@@ -455,8 +495,9 @@ static void
 commit(ivm *v, const char *what)
 {
 	uint64_t next = v->now + 1;
+	const uint64_t *hold;
 	view_set snap, want;
-	size_t i;
+	size_t i, nhold;
 
 	printf("commit %llu: %s\n", (unsigned long long)v->now, what);
 	v->delta.n = 0;
@@ -475,6 +516,14 @@ commit(ivm *v, const char *what)
 		print_row(v->delta.rows[i].diff > 0 ? "+ " : "- ",
 		    &v->delta.rows[i]);
 
+	/* A cut behind the physical hold may land inside merged batches. */
+	hold = dtfl_trace_physical_compaction(v->view, &nhold);
+	if (nhold != 1 || hold[0] > next) {
+		fprintf(stderr, "physical hold %llu is beyond the cut %llu\n",
+		    nhold ? (unsigned long long)hold[0] : 0ULL,
+		    (unsigned long long)next);
+		v->failed = 1;
+	}
 	snap.n = 0;
 	if (!dtfl_trace_to_vec_through(v->view, &next, 1, snap_each,
 	    DTFL_CTX(&snap, NULL))) {
@@ -503,6 +552,7 @@ commit(ivm *v, const char *what)
 		v->failed = 1;
 	}
 	v->prev = snap;
+	advance_holds(v);
 	v->now = next;
 }
 
@@ -557,6 +607,17 @@ main(void)
 	order_insert(&v, 107, 5, 5);
 	commit(&v, "UPDATE order 103 amount 70 -> 75; INSERT customer 5 "
 	    "(north), order 107");
+
+	/*
+	 * Order 108 repeats order 104's (customer, amount).  The join input
+	 * drops order_id, so (3, 20) now has multiplicity 2 there and in the
+	 * group's multiset, and deleting one of the pair takes it to 1.
+	 */
+	order_insert(&v, 108, 3, 20);
+	commit(&v, "INSERT order 108 (customer 3, 20), same as order 104");
+
+	order_delete(&v, 104);
+	commit(&v, "DELETE order 104, one of the (customer 3, 20) pair");
 
 	cust_insert(&v, 6, 1);
 	commit(&v, "INSERT customer 6 with no orders");
