@@ -158,8 +158,50 @@ DTFL_TEST(ord_neu__key_batch_single_value)
 	return MUNIT_OK;
 }
 
+/*
+ * UpdsBuilder::seal must sort the stash before compacting it.  A stash
+ * staged out of time order (a merge of partially ordered batches, or an
+ * advance_by that reorders times) once compacted in place through a
+ * sort permutation, so a later survivor read a slot an earlier one had
+ * overwritten: 5, 3, 4 sealed as 3, 4, 3.
+ */
+DTFL_TEST(ord_neu__upds_seal_unsorted_stash)
+{
+	static const uint64_t t[] = { 5, 3, 4, 3 };
+	static const int64_t r[] = { 1, 2, 3, 4 };
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_upds_builder b;
+	__dtfl_upds u;
+	size_t i;
+	int64_t d;
+
+	(void)params; (void)data;
+	__dtfl_upds_init(&u, 1, 8);
+	__dtfl_upds_builder_init(&b, tc, I64);
+	for (i = 0; i < 4; i++)
+		__dtfl_upds_builder_push(&b, &t[i], &r[i]);
+	assert_true(__dtfl_upds_builder_seal(&b, &u));
+	/* 3:+6, 4:+3, 5:+1, in time order. */
+	assert_size(u.nupds, ==, 3);
+	assert_uint64(__dtfl_upds_time(&u, 0)[0], ==, 3);
+	assert_uint64(__dtfl_upds_time(&u, 1)[0], ==, 4);
+	assert_uint64(__dtfl_upds_time(&u, 2)[0], ==, 5);
+	memcpy(&d, __dtfl_upds_diff(&u, 0), 8);
+	assert_int64(d, ==, 6);
+	memcpy(&d, __dtfl_upds_diff(&u, 1), 8);
+	assert_int64(d, ==, 3);
+	memcpy(&d, __dtfl_upds_diff(&u, 2), 8);
+	assert_int64(d, ==, 1);
+
+	__dtfl_upds_builder_free(&b);
+	__dtfl_upds_free(&u);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
+	DTFL_T(ord_neu__upds_seal_unsorted_stash),
 	DTFL_T(ord_neu__key_batch_single_value),
 	DTFL_T_END
 };
