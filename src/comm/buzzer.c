@@ -42,7 +42,10 @@
 #endif
 
 #ifdef DTFL_PARKER_FUTEX
-enum { EMPTY = 0, NOTIFIED = 1, PARKED = UINT32_MAX };
+/* uint32_t, not an enum: C11 enumerators are int and PARKED is out of range. */
+#define EMPTY		((uint32_t)0)
+#define NOTIFIED	((uint32_t)1)
+#define PARKED		UINT32_MAX
 #endif
 
 struct __dtfl_parker {

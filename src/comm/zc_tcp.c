@@ -37,10 +37,11 @@
  * is woken by the worker's Pusher buzzing the queue (the queue's buzz
  * callback unparks this thread's parker).
  */
-#define _GNU_SOURCE	/* MSG_NOSIGNAL */
+#define _GNU_SOURCE	/* MSG_NOSIGNAL, via base/sock_int.h */
 
 #include "comm/zc_int.h"
 #include "base/os_thread.h"
+#include "base/sock_int.h"
 
 #include <errno.h>
 #include <sched.h>
@@ -105,7 +106,7 @@ sock_write_all(int fd, const unsigned char *buf, size_t len,
 
 	while (off < len) {
 		do {
-			w = send(fd, buf + off, len - off, MSG_NOSIGNAL);
+			w = send(fd, buf + off, len - off, DTFL_SEND_NOSIGNAL);
 		} while (w < 0 && errno == EINTR);
 		if (w < 0)
 			tcp_panic(context, errno);

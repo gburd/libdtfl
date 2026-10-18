@@ -32,6 +32,8 @@
  * changes no result, and keeps peek's closed-past snapshot exact.  A
  * compaction knob is a follow-up, as noted in src/ddir/server.c.
  */
+#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
+
 #include "dd/dd_int.h"
 
 #include "base/base_int.h"

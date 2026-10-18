@@ -86,6 +86,26 @@ done
 AC_SUBST([TEST_WNO_CFLAGS])
 
 # -------------------------------------------------------------------------
+# Symbol visibility.  GNU ld, gold, lld and the BSD linkers take a version
+# script; Apple ld64 does not, and takes an exported-symbols list instead.
+# Probe rather than switch on host_os, so any linker that accepts the
+# version script uses it.
+# -------------------------------------------------------------------------
+AC_CACHE_CHECK([whether the linker accepts --version-script],
+	[dtfl_cv_ld_version_script],
+	[save_LDFLAGS="$LDFLAGS"
+	 printf 'V { global: main; local: *; };\n' > conftest.map
+	 LDFLAGS="$LDFLAGS -Wl,--version-script=conftest.map"
+	 AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+		[dtfl_cv_ld_version_script=yes], [dtfl_cv_ld_version_script=no])
+	 LDFLAGS="$save_LDFLAGS"
+	 rm -f conftest.map])
+AS_IF([test "x$dtfl_cv_ld_version_script" = xyes],
+	[DTFL_SYMBOL_LDFLAGS='-Wl,--version-script=$(top_srcdir)/src/libdtfl.map'],
+	[DTFL_SYMBOL_LDFLAGS='-Wl,-exported_symbols_list,$(top_srcdir)/src/libdtfl.exp'])
+AC_SUBST([DTFL_SYMBOL_LDFLAGS])
+
+# -------------------------------------------------------------------------
 # Debug: owner-thread checks, leak checks at worker shutdown, debug asserts.
 # -------------------------------------------------------------------------
 AC_ARG_ENABLE([debug],

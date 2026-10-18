@@ -918,6 +918,44 @@ dtfl_trace_to_vec_through(dtfl_trace *t, const uint64_t *upper, size_t nupper,
 	return ok;
 }
 
+/* TraceReader::set_logical_compaction and friends, on a public handle. */
+void
+dtfl_trace_set_logical_compaction(dtfl_trace *t, const uint64_t *frontier,
+    size_t n)
+{
+	DTFL_ASSERT(t != NULL && (n == 0 || frontier != NULL));
+	__dtfl_trace_agent_set_logical(&t->agent, frontier, n);
+}
+
+void
+dtfl_trace_set_physical_compaction(dtfl_trace *t, const uint64_t *frontier,
+    size_t n)
+{
+	DTFL_ASSERT(t != NULL && (n == 0 || frontier != NULL));
+	__dtfl_trace_agent_set_physical(&t->agent, frontier, n);
+}
+
+static const uint64_t *
+hold_words(const __dtfl_antichain *a, size_t *n)
+{
+	*n = __dtfl_antichain_len(a);
+	return *n == 0 ? NULL : __dtfl_antichain_at(a, 0);
+}
+
+const uint64_t *
+dtfl_trace_logical_compaction(const dtfl_trace *t, size_t *n)
+{
+	DTFL_ASSERT(t != NULL && n != NULL);
+	return hold_words(__dtfl_trace_agent_logical(&t->agent), n);
+}
+
+const uint64_t *
+dtfl_trace_physical_compaction(const dtfl_trace *t, size_t *n)
+{
+	DTFL_ASSERT(t != NULL && n != NULL);
+	return hold_words(__dtfl_trace_agent_physical(&t->agent), n);
+}
+
 /* The import source operator: drains its replay queue, emitting batches. */
 typedef struct import_ctx {
 	__dtfl_replay_queue *queue;	/* retained (strong reference) */

@@ -12,8 +12,9 @@ lib_LTLIBRARIES = libdtfl.la
 libdtfl_la_SOURCES =
 libdtfl_la_CFLAGS = $(AM_CFLAGS) -fvisibility=hidden
 libdtfl_la_LDFLAGS = -version-info $(DTFL_LT_VERSION) -no-undefined \
-	-Wl,--version-script=$(top_srcdir)/src/libdtfl.map
-EXTRA_libdtfl_la_DEPENDENCIES = $(top_srcdir)/src/libdtfl.map
+	$(DTFL_SYMBOL_LDFLAGS)
+EXTRA_libdtfl_la_DEPENDENCIES = $(top_srcdir)/src/libdtfl.map \
+	$(top_srcdir)/src/libdtfl.exp
 
 dtflincludedir = $(includedir)/dtfl
 dtflinclude_HEADERS =
@@ -63,7 +64,7 @@ AM_TESTS_ENVIRONMENT = \
 
 dist_man_MANS =
 EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \
-	AGENTS.md debian flake.nix flake.lock dev src/libdtfl.map \
+	AGENTS.md debian flake.nix flake.lock dev src/libdtfl.map src/libdtfl.exp \
 	doc/snippets tests/corpus data
 
 include src/base/local.mk

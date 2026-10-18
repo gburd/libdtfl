@@ -16,7 +16,7 @@
  * the small SHA-1 and base64 the RFC 6455 Sec-WebSocket-Accept needs
  * (PLAN, in-process diagnostics "built-in SHA-1 and base64").
  */
-#define _GNU_SOURCE	/* MSG_NOSIGNAL */
+#define _GNU_SOURCE	/* MSG_NOSIGNAL, via base/sock_int.h */
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "diag/diag_int.h"
+#include "base/sock_int.h"
 
 /* ------------------------------------------------------------------ */
 /* SHA-1 (RFC 3174)                                                    */
@@ -166,7 +167,7 @@ send_all(int fd, const void *buf, size_t len)
 	size_t off = 0;
 
 	while (off < len) {
-		ssize_t n = send(fd, p + off, len - off, MSG_NOSIGNAL);
+		ssize_t n = send(fd, p + off, len - off, DTFL_SEND_NOSIGNAL);
 
 		if (n < 0) {
 			if (errno == EINTR)
