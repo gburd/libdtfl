@@ -670,13 +670,14 @@ the same commit.
 Separately, a few upstream examples and optional emit points are
 excluded or deferred rather than ported literally, each with a reason
 recorded in the ADR-0012 amendment and the ledger note: comm_hello and
-lgalloc (the raw allocator is internal, D7/D9; the worker is the public
-entry), logging-recv and logging_replay (logging is a subscriber API,
+lgalloc and spill_stress (the raw allocator and MergeQueue are internal,
+D7/D9; the worker is the public entry), logging-recv and logging_replay (logging is a subscriber API,
 not logging-as-data), the comm_log/dd_log/progcaster emit points (no
 consumer on the data plane), the ddir multi-worker Sequencer, the
-reduce_reference cross-tactic family (needs a second reduce tactic), and
-arrange/graspan/progress (each needs a public surface that is not a
-small add).  These are not divergences in behavior; they are the scope
+reduce_reference cross-tactic family (needs a second reduce tactic),
+progress (ported, but deferred on a reduce correctness bug), spill_compare
+(needs a dtfl_config spill hook) and columnar_spill (subsumed by
+bench/trace_spill.c, since public arrange is not chunk-backed, D2).  These are not divergences in behavior; they are the scope
 boundary of the public API as this plan drew it.
 
 ## 5. Thread-safety contract

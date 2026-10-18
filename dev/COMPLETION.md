@@ -70,9 +70,9 @@ Not started or partial -- MUST be finished before the project is done
         library, half_join2 (dtfl_dogs_half_join2), and the examples
         pagerank, monoid-bfs (on the public dtfl_diff_new user diff),
         dynamic, multitemporal, cursors, scc, ngo, delta_query2.
-        delta_query is the last in progress; arrange, graspan and
-        progress are deferred (each needs a public surface that is not a
-        small add, ADR-0012).
+        delta_query is the last in progress; arrange and graspan are
+        done on the existing public API; progress is ported but deferred
+        on a reduce correctness bug (ADR-0012, 2026-10-16).
 [x] P10 differential capture (1 row).  Exit: capture round trip under
         message duplication and reordering.  DONE (feat/finish-code):
         src/dd/capture.c ports CDC V2 (the Updates/Progress Message
@@ -183,8 +183,8 @@ Examples
         pagerank, monoid-bfs, cursors, dynamic, multitemporal, scc, the
         dogs delta queries delta_query_wcoj/dogsdogsdogs/ngo/
         delta_query2, and the P12 spill benchmarks).  delta_query is the
-        last in progress; arrange, graspan and progress are deferred
-        (ADR-0012).
+        last in progress; arrange and graspan are done; progress is
+        deferred on a reduce bug (ADR-0012).
 [x] experiments/ benchmarks (3): arrange, graphs, graphs-static DONE
         (bench/experiments/*.c, verified on EC2 Debian, ASan-clean).
 
