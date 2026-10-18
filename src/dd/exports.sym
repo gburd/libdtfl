@@ -55,6 +55,10 @@ dtfl_trace_import
 dtfl_trace_free
 dtfl_trace_to_vec
 dtfl_trace_to_vec_through
+dtfl_trace_set_logical_compaction
+dtfl_trace_set_physical_compaction
+dtfl_trace_logical_compaction
+dtfl_trace_physical_compaction
 dtfl_arranged_enter
 dtfl_arranged_leave
 dtfl_arranged_enter_region

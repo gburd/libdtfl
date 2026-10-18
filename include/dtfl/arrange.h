@@ -146,6 +146,29 @@ DTFL_API bool dtfl_trace_to_vec_through(dtfl_trace *t, const uint64_t *upper,
     size_t nupper, dtfl_trace_each_fn fn, dtfl_ctx ctx);
 
 /*
+ * Compaction holds of a trace handle (TraceReader::set_logical_compaction,
+ * set_physical_compaction and their getters).  Each handle holds the shared
+ * trace back at its own frontiers; a handle that never advances them pins
+ * all history.  Advancing the logical frontier lets the trace coalesce the
+ * times of updates not beyond it (history before it can no longer be read
+ * at its original times); advancing the physical frontier lets batches
+ * merge (dtfl_trace_to_vec_through can then cut only at frontiers beyond
+ * it).  As upstream, the new hold is the join of the current hold and
+ * `frontier`, so a frontier behind the current hold is harmless.  The
+ * frontier is an antichain of `n` times, time words wide.  The getters
+ * return the current hold, valid until the next set or free; *n receives
+ * its length.
+ */
+DTFL_API void dtfl_trace_set_logical_compaction(dtfl_trace *t,
+    const uint64_t *frontier, size_t n);
+DTFL_API void dtfl_trace_set_physical_compaction(dtfl_trace *t,
+    const uint64_t *frontier, size_t n);
+DTFL_API const uint64_t *dtfl_trace_logical_compaction(const dtfl_trace *t,
+    size_t *n);
+DTFL_API const uint64_t *dtfl_trace_physical_compaction(const dtfl_trace *t,
+    size_t *n);
+
+/*
  * enter / leave: carry an arrangement across a scope boundary.  enter brings
  * it into `child`, a scope that directly refines the arrangement's scope,
  * lifting every time with to_inner; leave returns to the parent.

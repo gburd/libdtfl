@@ -429,11 +429,193 @@ DTFL_TEST(arrange__shared_import_two_readers)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Compaction holds on a public trace handle.                          */
+/* ------------------------------------------------------------------ */
+
+static dtfl_trace *compact_trace;
+
+static void
+build_compact(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange(base, "Arrange");
+	dtfl_collection *coll = dtfl_arranged_as_collection(arr,
+	    dtfl_type_u64(), NULL, DTFL_NOCTX);
+	dtfl_collection *probed = dtfl_collection_probe_with(coll, c->probe);
+
+	compact_trace = dtfl_arranged_trace(arr);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(coll);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+typedef struct trace_rows {
+	uint64_t key[64], time[64];
+	int64_t diff[64];
+	size_t n;
+} trace_rows;
+
+static void
+trace_row(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, const uint64_t *time, const void *diff)
+{
+	trace_rows *r = ctx;
+
+	(void)klen; (void)val; (void)vlen;
+	if (r->n >= 64)
+		return;
+	r->key[r->n] = dtfl_get_u64(key);
+	r->time[r->n] = time[0];
+	memcpy(&r->diff[r->n], diff, sizeof(int64_t));
+	r->n++;
+}
+
+/* Net diff of `key` at times <= `t` in a trace walk. */
+static int64_t
+rows_accum(const trace_rows *r, uint64_t key, uint64_t t)
+{
+	int64_t sum = 0;
+	size_t i;
+
+	for (i = 0; i < r->n; i++)
+		if (r->key[i] == key && r->time[i] <= t)
+			sum += r->diff[i];
+	return sum;
+}
+
+/*
+ * Updates `key` by `diff` at the session's current time, then seals that
+ * time by advancing to `next` and stepping until the probe passes it.
+ */
+static void
+feed(dtfl_worker *w, build_ctx *c, uint64_t key, int64_t diff, uint64_t next)
+{
+	unsigned char k[8];
+	probe_cond pc = { c->probe, next };
+
+	dtfl_put_u64(k, key);
+	if (diff > 0)
+		dtfl_input_session_insert(c->in, k, sizeof k);
+	else
+		dtfl_input_session_remove(c->in, k, sizeof k);
+	dtfl_input_session_advance_to(c->in, &next);
+	dtfl_input_session_flush(c->in);
+	dtfl_worker_step_while(w, probe_behind, &pc);
+}
+
+DTFL_TEST(arrange__trace_compaction_holds)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	trace_rows before, after;
+	const uint64_t *hold;
+	uint64_t f, early = 1;
+	size_t n, i;
+	unsigned round;
+
+	(void)params; (void)data;
+	memset(&before, 0, sizeof before);
+	memset(&after, 0, sizeof after);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = NULL;
+	c.out2 = NULL;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_compact, &c), ==, 0);
+	assert_not_null(compact_trace);
+
+	/* A new handle holds both frontiers at the minimum time. */
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 0);
+	hold = dtfl_trace_physical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 0);
+
+	/* 7: +1 at t0, -1 at t1.  9: +1 at t2, +1 at t3. */
+	feed(w, &c, 7, 1, 1);
+	feed(w, &c, 7, -1, 2);
+	feed(w, &c, 9, 1, 3);
+	feed(w, &c, 9, 1, 4);
+
+	/* Held at 0, the walk reports every update at its original time. */
+	dtfl_trace_to_vec(compact_trace, trace_row, DTFL_CTX(&before, NULL));
+	assert_size(before.n, ==, 4);
+	assert_int64(rows_accum(&before, 7, 0), ==, 1);
+	assert_int64(rows_accum(&before, 7, 1), ==, 0);
+	assert_int64(rows_accum(&before, 9, 2), ==, 1);
+	assert_int64(rows_accum(&before, 9, 3), ==, 2);
+
+	/* Advance both holds to 4; the getters report the new hold. */
+	f = 4;
+	dtfl_trace_set_logical_compaction(compact_trace, &f, 1);
+	dtfl_trace_set_physical_compaction(compact_trace, &f, 1);
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 4);
+
+	/* A frontier behind the hold is joined in, so the hold stays at 4. */
+	dtfl_trace_set_logical_compaction(compact_trace, &early, 1);
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_uint64(hold[0], ==, 4);
+
+	/*
+	 * Give the spine work to do so it merges: more epochs, each a no-op
+	 * pair on an unrelated key, then close.  Every reader is past 4.
+	 */
+	for (round = 0; round < 8; round++) {
+		feed(w, &c, 100 + round, 1, 5 + 2 * round);
+		feed(w, &c, 100 + round, -1, 6 + 2 * round);
+	}
+	f = 20;
+	dtfl_trace_set_logical_compaction(compact_trace, &f, 1);
+	dtfl_trace_set_physical_compaction(compact_trace, &f, 1);
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	dtfl_trace_to_vec(compact_trace, trace_row, DTFL_CTX(&after, NULL));
+	/* Accumulations at times beyond the frontier are unchanged. */
+	assert_int64(rows_accum(&after, 7, UINT64_MAX), ==, 0);
+	assert_int64(rows_accum(&after, 9, UINT64_MAX), ==, 2);
+	for (round = 0; round < 8; round++)
+		assert_int64(rows_accum(&after, 100 + round, UINT64_MAX), ==, 0);
+	/*
+	 * Compaction happened in the merged history: key 9's two updates
+	 * (t2, t3) are one update advanced to the frontier, and key 7 and
+	 * the early no-op keys cancelled out and are gone.  The spine merges
+	 * with amortized effort, so the newest batches (key 107) need not
+	 * have merged yet; nothing older than them may survive unadvanced.
+	 */
+	for (i = 0; i < after.n; i++) {
+		if (after.key[i] == 9) {
+			assert_uint64(after.time[i], ==, 20);
+			assert_int64(after.diff[i], ==, 2);
+		} else {
+			assert_uint64(after.key[i], ==, 107);
+		}
+	}
+	assert_size(after.n, <, before.n + 2 * 8);
+
+	dtfl_trace_free(compact_trace);
+	compact_trace = NULL;
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
 	DTFL_T(arrange__enter_region),
 	DTFL_T(arrange__shared_import_two_readers),
+	DTFL_T(arrange__trace_compaction_holds),
 	DTFL_T_END
 };
 
