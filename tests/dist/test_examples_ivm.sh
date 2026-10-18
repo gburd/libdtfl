@@ -15,17 +15,34 @@ bindir="examples/ivm"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# A timeout wrapper so a hang fails rather than wedges the suite.
+run() {
+	if command -v timeout >/dev/null 2>&1; then
+		timeout 30 "$@"
+	else
+		"$@"
+	fi
+}
+
 pass=0
 fail=0
 for name in ivm_view txn_harness; do
 	bin="$bindir/$name"
+	# Both are check_PROGRAMS, so make check always builds them.
 	if [ ! -x "$bin" ]; then
-		echo "[ivm] SKIP: $name not built"
+		echo "[ivm] FAIL: $name not built"
+		fail=$((fail + 1))
 		continue
 	fi
-	if ! LC_ALL=C timeout 30 "$bin" >"$tmp/$name.out" 2>"$tmp/$name.err"
-	then
-		echo "[ivm] FAIL: $name crashed, hung or failed its self-check"
+	LC_ALL=C run "$bin" >"$tmp/$name.out" 2>"$tmp/$name.err"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		if [ "$rc" -eq 124 ]; then
+			echo "[ivm] FAIL: $name timed out (hang is a bug)"
+		else
+			echo "[ivm] FAIL: $name exited $rc (crash or failed" \
+			    "self-check)"
+		fi
 		sed 's/^/    /' "$tmp/$name.err" | head -10
 		grep 'MISMATCH\|FAILED' "$tmp/$name.out" | head -10 |
 		    sed 's/^/    /'
@@ -43,5 +60,4 @@ for name in ivm_view txn_harness; do
 	pass=$((pass + 1))
 done
 [ "$fail" -eq 0 ] || exit 1
-[ "$pass" -gt 0 ] || exit 77
 exit 0
