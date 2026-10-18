@@ -570,12 +570,14 @@ dtfl_arrange_from_upsert(dtfl_collection *upserts, const dtfl_type *key_type,
 		__dtfl_antichain_insert(&c->prev_frontier, minimum);
 	}
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Upsert");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, trace, NULL);
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &c->reader, &c->writer);
 	/* The Arranged keeps a cloned reader; the operator keeps c->reader. */
 	__dtfl_trace_agent_clone(&c->reader, &a->agent);
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Upsert");
 	/* Exchange upserts by key hash (upsert.rs Exchange on key). */
 	dtfl_op_builder_input(b, upserts->stream,
 	    dtfl_pact_exchange(upsert_route, (void *)key_type));

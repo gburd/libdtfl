@@ -67,6 +67,22 @@ __dtfl_trace_free(__dtfl_trace *t)
 
 /* Trace::insert / close. */
 void
+__dtfl_trace_set_logger(__dtfl_trace *t, __dtfl_logger *logger,
+    size_t operator_id)
+{
+	DTFL_ASSERT(t->spine.logger == NULL);
+	t->spine.logger = logger != NULL ? __dtfl_logger_retain(logger) : NULL;
+	t->spine.operator_id = operator_id;
+}
+
+__dtfl_logger *
+__dtfl_trace_logger(const __dtfl_trace *t, size_t *operator_id)
+{
+	*operator_id = t->spine.operator_id;
+	return t->spine.logger;
+}
+
+void
 __dtfl_trace_insert(__dtfl_trace *t, __dtfl_batch_ord *batch)
 {
 	__dtfl_spine_insert(&t->spine, batch);

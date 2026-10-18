@@ -28,6 +28,7 @@
 #define DTFL_TRACE_INT_H
 
 #include "dd/dd_int.h"
+#include "base/log_int.h"
 
 /*
  * The base pointer of an antichain's flat run, safe when it is empty (so
@@ -510,11 +511,19 @@ typedef struct __dtfl_merge_batcher {
 	__dtfl_antichain lower;
 	__dtfl_antichain frontier;	/* after the last seal */
 	size_t cap;		/* target chunk capacity, a power of two */
+	__dtfl_logger *logger;	/* retained; NULL: no size accounting */
+	size_t operator_id;	/* timely operator global id */
 } __dtfl_merge_batcher;
 
 void __dtfl_merge_batcher_init(__dtfl_merge_batcher *mb, const dtfl_type *rt,
     const dtfl_time_class *tc, const __dtfl_diff_class *dc);
 void __dtfl_merge_batcher_free(__dtfl_merge_batcher *mb);
+/*
+ * MergeBatcher::new(logger, operator_id): installs the size-accounting
+ * logger (retained; NULL disables accounting).  Call right after init.
+ */
+void __dtfl_merge_batcher_set_logger(__dtfl_merge_batcher *mb,
+    __dtfl_logger *logger, size_t operator_id);
 /* PushInto: insert one chunk as a one-element chain (takes ownership). */
 void __dtfl_merge_batcher_push(__dtfl_merge_batcher *mb, __dtfl_batch *chunk);
 /*
@@ -581,6 +590,13 @@ typedef struct __dtfl_merge_state {
 	__dtfl_batch_ord *in1;		/* INPROGRESS inputs */
 	__dtfl_batch_ord *in2;
 	__dtfl_merger_ord merger;	/* INPROGRESS */
+	/*
+	 * COMPLETE: true when the batch was merged from two inputs, whose
+	 * lengths are len1/len2 (upstream keeps Some((b1, b2)) for the
+	 * completion MergeEvent; the inputs themselves are released early).
+	 */
+	bool from_parts;
+	size_t len1, len2;
 } __dtfl_merge_state;
 
 typedef struct __dtfl_spine {
@@ -595,6 +611,8 @@ typedef struct __dtfl_spine {
 	const dtfl_type *vt;
 	const dtfl_time_class *tc;
 	const __dtfl_diff_class *dc;
+	__dtfl_logger *logger;	/* retained; NULL: no differential logging */
+	size_t operator_id;	/* timely operator global id */
 } __dtfl_spine;
 
 void __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
@@ -631,6 +649,15 @@ __dtfl_trace *__dtfl_trace_new(bool keyed, const dtfl_type *kt,
     const dtfl_type *vt, const dtfl_time_class *tc,
     const __dtfl_diff_class *dc);
 void __dtfl_trace_free(__dtfl_trace *t);
+/*
+ * Trace::new(info, logging, ..): installs the "differential/arrange"
+ * logger (retained; may be NULL) and the operator's global id the spine
+ * logs under.  Call before the first insert.
+ */
+void __dtfl_trace_set_logger(__dtfl_trace *t, __dtfl_logger *logger,
+    size_t operator_id);
+/* The trace's logger (borrowed, may be NULL) and its operator id. */
+__dtfl_logger *__dtfl_trace_logger(const __dtfl_trace *t, size_t *operator_id);
 void __dtfl_trace_insert(__dtfl_trace *t, __dtfl_batch_ord *batch);
 void __dtfl_trace_close(__dtfl_trace *t);
 void __dtfl_trace_set_logical_compaction(__dtfl_trace *t,
@@ -654,5 +681,19 @@ void __dtfl_trace_cursor(__dtfl_trace *t, __dtfl_cursor_list *out);
  * frees the array).  Used by the agent's new_listener to seed a queue.
  */
 __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
+
+/* ------------------------------------------------------------------ */
+/* DifferentialEvent encoders (src/dd/dd_log.c), logging to `l`.        */
+/* ------------------------------------------------------------------ */
+
+void __dtfl_dd_log_batch(__dtfl_logger *l, size_t op, size_t length);
+void __dtfl_dd_log_merge(__dtfl_logger *l, size_t op, size_t scale,
+    size_t length1, size_t length2, bool has_complete, size_t complete);
+void __dtfl_dd_log_drop(__dtfl_logger *l, size_t op, size_t length);
+void __dtfl_dd_log_merge_shortfall(__dtfl_logger *l, size_t op, size_t scale,
+    size_t shortfall);
+void __dtfl_dd_log_trace_share(__dtfl_logger *l, size_t op, int64_t diff);
+void __dtfl_dd_log_batcher(__dtfl_logger *l, size_t op, int64_t records_diff,
+    int64_t size_diff, int64_t capacity_diff, int64_t allocations_diff);
 
 #endif /* DTFL_TRACE_INT_H */

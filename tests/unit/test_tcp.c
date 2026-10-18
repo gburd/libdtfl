@@ -32,6 +32,9 @@
 
 #include "base/os_thread.h"
 #include "comm/init_int.h"
+#include "dtfl/log.h"
+
+#include <stdatomic.h>
 
 #define DEADLINE_NS (UINT64_C(40) * 1000000000)	/* 40 s backstop */
 #define MS (UINT64_C(1000000))
@@ -68,7 +71,73 @@ pick_port(void)
 	return port;
 }
 
+/*
+ * Per-process "communication" event totals.  The subscriber runs on the
+ * process's send and receive threads concurrently, so every field is a
+ * relaxed atomic counter; the test reads them after joining those
+ * threads, and the join orders the reads after every increment.
+ */
+typedef struct comm_seen {
+	size_t process;
+	size_t peers;
+	atomic_size_t send_msgs, recv_msgs;	/* data headers */
+	atomic_size_t send_bytes, recv_bytes;	/* summed header lengths */
+	atomic_size_t send_eos, recv_eos;	/* zero-length headers */
+	atomic_size_t starts, stops;
+	atomic_size_t bad;	/* a field that cannot be right */
+} comm_seen;
+
+static void
+comm_subscriber(const dtfl_log_batch *b, void *ctx)
+{
+	comm_seen *s = ctx;
+	size_t i, n = dtfl_log_batch_len(b);
+
+	if (strcmp(dtfl_log_batch_stream(b), "communication") != 0 ||
+	    dtfl_log_batch_worker(b) != s->process)
+		atomic_fetch_add_explicit(&s->bad, 1, memory_order_relaxed);
+	for (i = 0; i < n; i++) {
+		switch (dtfl_log_event_kind_at(b, i)) {
+		case DTFL_LOG_COMM_MESSAGE: {
+			bool snd = dtfl_log_comm_message_is_send(b, i);
+			size_t ch, src, lo, hi, len, seq;
+
+			dtfl_log_comm_message_header(b, i, &ch, &src, &lo, &hi,
+			    &len, &seq);
+
+			if (len == 0) {
+				atomic_fetch_add_explicit(snd ? &s->send_eos :
+				    &s->recv_eos, 1, memory_order_relaxed);
+				break;
+			}
+			if (lo >= hi || hi > s->peers || src >= s->peers)
+				atomic_fetch_add_explicit(&s->bad, 1,
+				    memory_order_relaxed);
+			atomic_fetch_add_explicit(snd ? &s->send_msgs :
+			    &s->recv_msgs, 1, memory_order_relaxed);
+			atomic_fetch_add_explicit(snd ? &s->send_bytes :
+			    &s->recv_bytes, len, memory_order_relaxed);
+			break;
+		}
+		case DTFL_LOG_COMM_STATE:
+			if (dtfl_log_comm_state_process(b, i) != s->process ||
+			    dtfl_log_comm_state_remote(b, i) == s->process)
+				atomic_fetch_add_explicit(&s->bad, 1,
+				    memory_order_relaxed);
+			atomic_fetch_add_explicit(
+			    dtfl_log_comm_state_start(b, i) ? &s->starts :
+			    &s->stops, 1, memory_order_relaxed);
+			break;
+		default:
+			atomic_fetch_add_explicit(&s->bad, 1,
+			    memory_order_relaxed);
+			break;
+		}
+	}
+}
+
 typedef struct proc_arg {
+	comm_seen *log;		/* non-NULL: subscribe "communication" */
 	size_t my_index;	/* process index */
 	size_t processes;
 	size_t threads;		/* local workers */
@@ -205,7 +274,9 @@ proc_main(void *v)
 	if (dtfl_config_set_threads(cfg, x->threads) != 0 ||
 	    dtfl_config_set_mode(cfg, DTFL_COMM_CLUSTER) != 0 ||
 	    dtfl_config_set_cluster(cfg, x->my_index, x->addrs,
-	    x->processes) != 0) {
+	    x->processes) != 0 || (x->log != NULL &&
+	    dtfl_config_log_subscribe(cfg, "communication", comm_subscriber,
+	    x->log, NULL) != 0)) {
 		snprintf(x->err, sizeof x->err, "config");
 		goto out_cfg;
 	}
@@ -261,9 +332,13 @@ out_cfg:
 	return NULL;
 }
 
-/* Runs a `processes` x `threads` cluster over loopback and checks it. */
+/*
+ * Runs a `processes` x `threads` cluster over loopback and checks it.
+ * With `logs` (an array of `processes`), each process subscribes its
+ * "communication" stream into logs[i].
+ */
 static MunitResult
-run_cluster(size_t processes, size_t threads)
+run_cluster_logged(size_t processes, size_t threads, comm_seen *logs)
 {
 	int ports[8];
 	char addrbuf[8][32];
@@ -304,6 +379,7 @@ run_cluster(size_t processes, size_t threads)
 		x[i].threads = threads;
 		x[i].peers = peers;
 		x[i].addrs = addrs;
+		x[i].log = logs != NULL ? &logs[i] : NULL;
 	}
 	for (i = 0; i < processes; i++)
 		assert_int(__dtfl_thread_spawn("proc", proc_main, &x[i],
@@ -333,6 +409,12 @@ run_cluster(size_t processes, size_t threads)
 	return res;
 }
 
+static MunitResult
+run_cluster(size_t processes, size_t threads)
+{
+	return run_cluster_logged(processes, threads, NULL);
+}
+
 DTFL_TEST(cluster_two_process_loopback_exchange)
 {
 	(void)params; (void)data;
@@ -351,10 +433,50 @@ DTFL_TEST(cluster_two_process_two_workers)
 	return run_cluster(2, 2);
 }
 
+/*
+ * The network threads emit CommunicationEvents (tcp.rs send_loop and
+ * recv_loop): a start and stop StateEvent per thread, a MessageEvent per
+ * header sent and received, and the final zero-length header both ways.
+ */
+DTFL_TEST(cluster_two_process_comm_logging)
+{
+	static comm_seen logs[2];
+	MunitResult r;
+	size_t i;
+
+	(void)params; (void)data;
+	memset(logs, 0, sizeof logs);
+	for (i = 0; i < 2; i++) {
+		logs[i].process = i;
+		logs[i].peers = 2;
+	}
+	r = run_cluster_logged(2, 1, logs);
+	if (r != MUNIT_OK)
+		return r;
+	for (i = 0; i < 2; i++) {
+		comm_seen *s = &logs[i], *o = &logs[1 - i];
+
+		assert_size(atomic_load(&s->bad), ==, 0);
+		/* One send and one recv thread, each started and stopped. */
+		assert_size(atomic_load(&s->starts), ==, 2);
+		assert_size(atomic_load(&s->stops), ==, 2);
+		assert_size(atomic_load(&s->send_eos), ==, 1);
+		assert_size(atomic_load(&s->recv_eos), ==, 1);
+		assert_size(atomic_load(&s->send_msgs), >, 0);
+		/* Every header one process sent, the other received. */
+		assert_size(atomic_load(&s->send_msgs), ==,
+		    atomic_load(&o->recv_msgs));
+		assert_size(atomic_load(&s->send_bytes), ==,
+		    atomic_load(&o->recv_bytes));
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(cluster_two_process_loopback_exchange),
 	DTFL_T(cluster_three_process_mesh_exchange),
 	DTFL_T(cluster_two_process_two_workers),
+	DTFL_T(cluster_two_process_comm_logging),
 	DTFL_T_END
 };
 

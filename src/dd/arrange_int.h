@@ -400,4 +400,12 @@ dtfl_arranged *__dtfl_collection_arrange_by_key(dtfl_collection *c,
  */
 dtfl_trace *__dtfl_trace_clone(const dtfl_trace *src);
 
+/*
+ * Installs the worker's "differential/arrange" logger (if a subscriber
+ * is registered) on a new trace and batcher (may be NULL), under the
+ * operator global id of `b` (src/dd/dd_log.c).
+ */
+void __dtfl_dd_logging_install(dtfl_scope *scope, const dtfl_op_builder *b,
+    __dtfl_trace *trace, __dtfl_merge_batcher *batcher);
+
 #endif /* DTFL_ARRANGE_INT_H */

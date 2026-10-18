@@ -29,6 +29,11 @@
  * ctx of dtfl_execute() is; a subscriber that writes shared state must
  * synchronize it itself.
  *
+ * The "communication" stream comes from a cluster's network send and
+ * receive threads (as upstream's Hooks.log_fn), so it is delivered only
+ * to a dtfl_config_log_subscribe() subscription, is called on those
+ * threads concurrently, and reports the process index as the worker.
+ *
  * The manual page is dtfl_worker_log_subscribe(3).
  */
 #ifndef DTFL_LOG_H

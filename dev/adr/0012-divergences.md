@@ -97,3 +97,25 @@ has no consumer yet:
 
 An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.
+
+### 2026-10-18: differential and communication logging emission implemented
+
+The differential-dataflow/src/logging.rs and communication/src/logging.rs
+deferrals above are closed.  The
+spine, the agent and the merge batcher emit Batch, Merge, Drop,
+TraceShare and Batcher events at the upstream points, through a logger
+the operator acquires at construction (NULL, so free, without a
+subscriber).  MergeShortfall stays unemitted because the pin never logs
+it.
+
+The communication stream follows the pin's Hooks.log_fn: each network
+send and receive thread asks the hook built from a "communication"
+dtfl_config_log_subscribe for its own logger and logs StateEvent and a
+MessageEvent per header.  The subscriber therefore runs on the network
+threads and reports the process index as the worker.  A per-worker
+dtfl_worker_log_subscribe sees no communication events, because no
+worker owns the network threads.
+
+The logging-recv and logging_replay exclusions stand.  The emission adds
+events to the subscriber streams but no public TimelyEvent record type
+that a dataflow could carry.

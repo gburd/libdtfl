@@ -40,6 +40,7 @@
 #define _GNU_SOURCE	/* MSG_NOSIGNAL, via base/sock_int.h */
 
 #include "comm/zc_int.h"
+#include "comm/init_int.h"
 #include "base/os_thread.h"
 #include "base/sock_int.h"
 
@@ -120,7 +121,8 @@ sock_write_all(int fd, const unsigned char *buf, size_t len,
 
 void
 __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
-    size_t worker_offset)
+    size_t worker_offset, size_t process, size_t remote,
+    __dtfl_logger *logger)
 {
 	__dtfl_merge_queue **queues = __dtfl_calloc(DTFL_MAX(ntargets, 1),
 	    sizeof *queues);
@@ -130,6 +132,10 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 	__dtfl_message_header header;
 	bool active = true;
 	size_t i, t;
+
+	/* Log the receive thread's start. */
+	if (logger != NULL)
+		__dtfl_comm_log_state(logger, false, process, remote, true);
 
 	/* Receive each local worker's queue writer (it posted it in build). */
 	for (i = 0; i < ntargets; i++) {
@@ -171,6 +177,10 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 				break;
 			peeled = __dtfl_header_required_bytes(&header);
 			__dtfl_slab_extract(&buffer, peeled, &bytes);
+
+			/* Record message receipt. */
+			if (logger != NULL)
+				__dtfl_comm_log_message(logger, false, &header);
 
 			if (header.length > 0) {
 				for (t = header.target_lower;
@@ -223,6 +233,12 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 	__dtfl_free(queues);
 	__dtfl_free(stageds);
 	__dtfl_free(targets);
+
+	/* Log the receive thread's end. */
+	if (logger != NULL) {
+		__dtfl_comm_log_state(logger, false, process, remote, false);
+		__dtfl_logger_release(logger);
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,7 +260,8 @@ drop_parker(void *ctx)
 }
 
 void
-__dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources)
+__dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
+    size_t process, size_t remote, __dtfl_logger *logger)
 {
 	__dtfl_parker *parker = __dtfl_parker_new();
 	__dtfl_merge_queue **readers = __dtfl_calloc(DTFL_MAX(nsources, 1),
@@ -256,6 +273,10 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources)
 	size_t i;
 
 	__dtfl_vec_init(&stash, sizeof(__dtfl_bytes));
+
+	/* Log the send thread's start. */
+	if (logger != NULL)
+		__dtfl_comm_log_state(logger, true, process, remote, true);
 
 	/*
 	 * Create a MergeQueue pair per worker, post the writer to the
@@ -310,6 +331,19 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources)
 				__dtfl_bytes *b = DTFL_VEC_AT(&stash,
 				    __dtfl_bytes, i);
 
+				/* Record message sends. */
+				if (logger != NULL) {
+					__dtfl_message_header h;
+					size_t off = 0;
+
+					while (__dtfl_header_try_read(&h,
+					    b->ptr + off, b->len - off)) {
+						__dtfl_comm_log_message(logger,
+						    true, &h);
+						off += __dtfl_header_required_bytes(
+						    &h);
+					}
+				}
 				sock_write_all(fd, b->ptr, b->len,
 				    "writing data");
 				any = true;
@@ -334,6 +368,8 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources)
 	sock_write_all(fd, eos_bytes, sizeof eos_bytes, "writing data");
 	if (shutdown(fd, SHUT_WR) != 0)
 		tcp_panic("shutting down writer", errno);
+	if (logger != NULL)
+		__dtfl_comm_log_message(logger, true, &eos);
 
 	__dtfl_vec_free(&stash);
 	for (i = 0; i < nsources; i++)
@@ -341,4 +377,10 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources)
 	__dtfl_free(readers);
 	__dtfl_free(sources);
 	__dtfl_parker_release(parker);
+
+	/* Log the send thread's end. */
+	if (logger != NULL) {
+		__dtfl_comm_log_state(logger, true, process, remote, false);
+		__dtfl_logger_release(logger);
+	}
 }

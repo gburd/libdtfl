@@ -17,12 +17,19 @@
  *                            every differential variant round-trip.
  *   subscribe__communication a "communication" subscriber decodes every
  *                            communication variant round-trip.
+ *   subscribe__arrange_emits an arrangement fed several epochs emits
+ *                            real Batch, Merge, Drop, TraceShare and
+ *                            Batcher events under its operator id.
  */
 #include "dtfl_test.h"
 
 #include "dtfl/timely.h"
 #include "dtfl/timely_ops.h"
 #include "dtfl/log.h"
+#include "dtfl/arrange.h"
+#include "dtfl/reduce.h"
+#include "dtfl/collection.h"
+#include "dtfl/record.h"
 
 #include "timely/scope_int.h"	/* struct dtfl_worker { __dtfl_worker *w; } */
 #include "timely/worker_int.h"	/* __dtfl_worker_log_*, headers */
@@ -409,11 +416,244 @@ DTFL_TEST(subscribe__communication)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Real differential emission from an arrangement                      */
+/* ------------------------------------------------------------------ */
+
+#define DD_EPOCHS 12
+#define DD_PER_EPOCH 5
+#define DD_MAX_OPS 8
+
+/* Per-operator differential totals, keyed by the operator global id. */
+typedef struct dd_op {
+	size_t id;
+	char name[MAX_NAME];
+	size_t batches, batch_len;
+	size_t merge_begin, merge_done;
+	size_t drops, drop_len;
+	int64_t shares;		/* running sum of TraceShare diffs */
+	size_t share_events;
+	int64_t batcher_records;	/* running sum of records_diff */
+	size_t batcher_events;
+} dd_op;
+
+typedef struct dd_seen {
+	dd_op ops[DD_MAX_OPS];	/* from the timely Operates events */
+	size_t nops;
+	size_t foreign;		/* dd events from an unknown operator */
+	bool merge_bad;		/* complete != length1 + length2 */
+	bool batcher_nonzero_bytes;
+} dd_seen;
+
+static dd_op *
+dd_find(dd_seen *s, size_t id)
+{
+	size_t i;
+
+	for (i = 0; i < s->nops; i++)
+		if (s->ops[i].id == id)
+			return &s->ops[i];
+	return NULL;
+}
+
+static void
+dd_timely(const dtfl_log_batch *b, void *ctx)
+{
+	dd_seen *s = ctx;
+	size_t i;
+
+	for (i = 0; i < dtfl_log_batch_len(b); i++)
+		if (dtfl_log_event_kind_at(b, i) == DTFL_LOG_OPERATES &&
+		    s->nops < DD_MAX_OPS) {
+			dd_op *o = &s->ops[s->nops++];
+
+			o->id = dtfl_log_operates_id(b, i);
+			snprintf(o->name, sizeof o->name, "%s",
+			    dtfl_log_operates_name(b, i));
+		}
+}
+
+static void
+dd_arrange(const dtfl_log_batch *b, void *ctx)
+{
+	dd_seen *s = ctx;
+	size_t i, c;
+	int64_t r, sz, cap, al;
+
+	assert_string_equal(dtfl_log_batch_stream(b), "differential/arrange");
+	for (i = 0; i < dtfl_log_batch_len(b); i++) {
+		dd_op *o = dd_find(s, dtfl_log_dd_operator(b, i));
+
+		if (o == NULL) {
+			s->foreign++;
+			continue;
+		}
+		switch (dtfl_log_event_kind_at(b, i)) {
+		case DTFL_LOG_DD_BATCH:
+			o->batches++;
+			o->batch_len += dtfl_log_dd_length(b, i);
+			break;
+		case DTFL_LOG_DD_MERGE:
+			if (dtfl_log_dd_merge_complete(b, i, &c)) {
+				o->merge_done++;
+				/* distinct keys: a merge consolidates nothing */
+				if (c != dtfl_log_dd_merge_length1(b, i) +
+				    dtfl_log_dd_merge_length2(b, i))
+					s->merge_bad = true;
+			} else {
+				o->merge_begin++;
+			}
+			break;
+		case DTFL_LOG_DD_DROP:
+			o->drops++;
+			o->drop_len += dtfl_log_dd_length(b, i);
+			break;
+		case DTFL_LOG_DD_TRACE_SHARE:
+			o->share_events++;
+			o->shares += dtfl_log_dd_trace_share_diff(b, i);
+			break;
+		case DTFL_LOG_DD_BATCHER:
+			dtfl_log_dd_batcher(b, i, &r, &sz, &cap, &al);
+			o->batcher_events++;
+			o->batcher_records += r;
+			if (sz != 0 || cap != 0 || al != 0)
+				s->batcher_nonzero_bytes = true;
+			break;
+		default:
+			s->foreign++;
+			break;
+		}
+	}
+}
+
+typedef struct dd_build {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	dtfl_diff *diff;
+} dd_build;
+
+/* distinct = ArrangeBySelf (batcher + spine) -> Reduce (output spine). */
+static void
+dd_build_distinct(dtfl_scope *scope, void *arg)
+{
+	dd_build *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_collection *d = dtfl_collection_distinct(base, c->diff);
+	dtfl_collection *probed = dtfl_collection_probe_with(d, c->probe);
+
+	dtfl_collection_free(probed);
+	dtfl_collection_free(d);
+	dtfl_collection_free(base);
+}
+
+static bool
+dd_probe_behind(void *ctx)
+{
+	void **pc = ctx;
+
+	return dtfl_probe_less_than(pc[0], pc[1]);
+}
+
+DTFL_TEST(subscribe__arrange_emits)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	static dd_seen s;
+	dd_build c;
+	dd_op *arr, *red;
+	uint64_t e, next;
+	size_t i, total = DD_EPOCHS * DD_PER_EPOCH;
+
+	(void)params; (void)data;
+	memset(&s, 0, sizeof s);
+	assert_int(dtfl_worker_log_subscribe(w, "timely", dd_timely, &s,
+	    NULL), ==, DTFL_OK);
+	assert_int(dtfl_worker_log_subscribe(w, "differential/arrange",
+	    dd_arrange, &s, NULL), ==, DTFL_OK);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.diff = r;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, dd_build_distinct, &c),
+	    ==, 0);
+
+	/* Distinct keys every epoch: no update cancels, even compacted. */
+	for (e = 0; e < DD_EPOCHS; e++) {
+		void *pc[2];
+
+		for (i = 0; i < DD_PER_EPOCH; i++) {
+			unsigned char key[8];
+
+			dtfl_put_u64(key, e * DD_PER_EPOCH + i);
+			dtfl_input_session_insert(c.in, key, sizeof key);
+		}
+		next = e + 1;
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		pc[0] = c.probe;
+		pc[1] = &next;
+		dtfl_worker_step_while(w, dd_probe_behind, pc);
+	}
+	/* distinct names both operators "Distinct": the arrange is the one
+	 * with a batcher, the reduce the other spine that saw batches. */
+	arr = red = NULL;
+	for (i = 0; i < s.nops; i++) {
+		if (s.ops[i].batcher_events > 0)
+			arr = &s.ops[i];
+		else if (s.ops[i].batches > 0)
+			red = &s.ops[i];
+	}
+	assert_not_null(arr);
+	assert_not_null(red);
+	assert_string_equal(arr->name, "Distinct");
+	assert_string_equal(red->name, "Distinct");
+
+	/* Mid-run.  The arrange operator: a batch per epoch, every update
+	 * accounted in the batcher, the trace shared by its readers. */
+	assert_size(arr->batches, >=, DD_EPOCHS);
+	assert_size(arr->batch_len, ==, total);
+	assert_size(arr->batcher_events, >, 0);
+	assert_int64(arr->batcher_records, ==, 0);	/* all sealed out */
+	assert_int64(arr->shares, >=, 1);
+	/* The reduce output spine compacts behind its reader, so it merges:
+	 * a begin for every completion, and lengths that add up. */
+	assert_size(red->batch_len, ==, total);
+	assert_size(red->merge_begin, >, 0);
+	assert_size(red->merge_done, >, 0);
+	assert_size(red->merge_begin, >=, red->merge_done);
+	assert_false(s.merge_bad);
+
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_probe_free(c.probe);
+	dtfl_worker_free(w);
+
+	/* Every event came from an operator the timely stream announced. */
+	assert_size(s.foreign, ==, 0);
+	/* Every reader that shared each trace let go of it. */
+	assert_size(arr->share_events, >=, 2);
+	assert_int64(arr->shares, ==, 0);
+	assert_size(red->share_events, >=, 2);
+	assert_int64(red->shares, ==, 0);
+	/* Dropping each spine retired every update it still held. */
+	assert_size(arr->drop_len, ==, total);
+	assert_size(red->drops, >, 0);
+	assert_size(red->drop_len, ==, total);
+	/* The pin's vector merger reports no allocation figures. */
+	assert_false(s.batcher_nonzero_bytes);
+
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(subscribe__dataflow),
 	DTFL_T(subscribe__roundtrip),
 	DTFL_T(subscribe__differential),
 	DTFL_T(subscribe__communication),
+	DTFL_T(subscribe__arrange_emits),
 	DTFL_T_END
 };
 
