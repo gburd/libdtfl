@@ -142,7 +142,8 @@ noinst_PROGRAMS += \
 	examples/dd/cursors \
 	examples/dd/multitemporal \
 	examples/dd/arrange \
-	examples/dd/graspan
+	examples/dd/graspan \
+	examples/dd/progress
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -211,6 +212,10 @@ examples_dd_arrange_LDADD = $(EXAMPLE_LDADD)
 examples_dd_graspan_SOURCES = examples/dd/graspan.c
 examples_dd_graspan_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_graspan_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_progress_SOURCES = examples/dd/progress.c
+examples_dd_progress_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_progress_LDADD = $(EXAMPLE_LDADD)
 
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
