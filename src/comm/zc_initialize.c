@@ -26,11 +26,12 @@
  * helper threads (as upstream) and joins them.  The send and recv
  * threads live until teardown; the guard joins them.
  */
-#define _GNU_SOURCE	/* getaddrinfo, AI_PASSIVE, MSG_NOSIGNAL */
+#define _GNU_SOURCE	/* getaddrinfo, AI_PASSIVE */
 
 #include "comm/zc_int.h"
 #include "comm/init_int.h"
 #include "base/os_thread.h"
+#include "base/sock_int.h"
 
 #include <errno.h>
 #include <netdb.h>
@@ -71,7 +72,7 @@ write_all(int fd, const unsigned char *buf, size_t len)
 	ssize_t w;
 
 	while (off < len) {
-		w = send(fd, buf + off, len - off, MSG_NOSIGNAL);
+		w = send(fd, buf + off, len - off, DTFL_SEND_NOSIGNAL);
 		if (w < 0 && errno == EINTR)
 			continue;
 		if (w <= 0)
@@ -205,6 +206,7 @@ start_connections(void *v)
 		}
 		(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one,
 		    sizeof one);
+		__dtfl_sock_nosigpipe(fd);
 		put_be64(hs, (uint64_t)a->my_index);
 		if (!write_all(fd, hs, sizeof hs)) {
 			(void)close(fd);
@@ -282,6 +284,7 @@ await_connections(void *v)
 		}
 		(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one,
 		    sizeof one);
+		__dtfl_sock_nosigpipe(fd);
 		if (!read_all(fd, hs, sizeof hs)) {
 			(void)close(fd);
 			continue;

@@ -9,6 +9,7 @@ base_sources = \
 	src/base/hash.c \
 	src/base/os_alloc.c \
 	src/base/record.c \
+	src/base/sock_int.h \
 	src/base/util.c
 
 libdtfl_la_SOURCES += $(base_sources)

@@ -54,6 +54,8 @@
  *
  * Run as: bench/experiments/graphs-static [nodes [edges [root]]]
  */
+#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
+
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
 #include "dtfl/iterate.h"

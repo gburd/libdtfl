@@ -59,6 +59,7 @@ __dtfl_thread_spawn(const char *name, void *(*fn)(void *), void *arg,
 		return __dtfl_err(DTFL_EIO, "pthread_create(%s): %s",
 		    name != NULL ? name : "?", strerror(rc));
 #if defined(__linux__)
+	/* Darwin's pthread_setname_np names only the calling thread; skipped. */
 	if (name != NULL) {
 		char buf[16];	/* Linux limit, including the NUL */
 

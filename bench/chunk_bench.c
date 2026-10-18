@@ -17,6 +17,8 @@
  *
  * Run as: bench/chunk_bench [updates]
  */
+#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
+
 #include "dd/trace/chunk_int.h"
 
 #include <stdio.h>

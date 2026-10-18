@@ -19,6 +19,8 @@
  * residues of a small integer collection) so the example stays about
  * the embedding, not the dataflow.
  */
+#define _POSIX_C_SOURCE 200809L	/* sigsetjmp, siglongjmp, sigjmp_buf */
+
 #include "dtfl/base.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
