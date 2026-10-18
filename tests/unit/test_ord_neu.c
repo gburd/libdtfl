@@ -158,7 +158,49 @@ DTFL_TEST(ord_neu__key_batch_single_value)
 	return MUNIT_OK;
 }
 
+/*
+ * UpdsBuilder::seal consolidates a stash that arrives out of time order (a
+ * merge of partially ordered times stashes batch 1's then batch 2's updates
+ * for a value, and those need not be sorted).  Every staged (time, diff) must
+ * survive with its own diff: staged [(3,+1), (1,+2), (2,+3)] seals to
+ * [(1,+2), (2,+3), (3,+1)].  The seal once compacted survivors into the stash
+ * in place while walking a sorted index permutation, overwriting the unread
+ * (3,+1) and emitting (1,+2) twice.
+ */
+DTFL_TEST(ord_neu__upds_seal_unsorted_stash)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_upds_builder b;
+	__dtfl_upds u;
+	const uint64_t t[3] = { 3, 1, 2 };
+	const int64_t r[3] = { 1, 2, 3 };
+	const uint64_t want_t[3] = { 1, 2, 3 };
+	const int64_t want_r[3] = { 2, 3, 1 };
+	size_t i, lo, hi;
+
+	(void)params; (void)data;
+	__dtfl_upds_builder_init(&b, tc, I64);
+	__dtfl_upds_init(&u, 1, 8);
+	for (i = 0; i < 3; i++)
+		__dtfl_upds_builder_push(&b, &t[i], &r[i]);
+	assert_true(__dtfl_upds_builder_seal(&b, &u));
+	__dtfl_upds_bounds(&u, 0, &lo, &hi);
+	assert_size(hi - lo, ==, 3);
+	for (i = 0; i < 3; i++) {
+		int64_t d;
+
+		memcpy(&d, __dtfl_upds_diff(&u, lo + i), 8);
+		assert_uint64(__dtfl_upds_time(&u, lo + i)[0], ==, want_t[i]);
+		assert_int64(d, ==, want_r[i]);
+	}
+	__dtfl_upds_free(&u);
+	__dtfl_upds_builder_free(&b);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(ord_neu__upds_seal_unsorted_stash),
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
 	DTFL_T(ord_neu__key_batch_single_value),
 	DTFL_T_END
