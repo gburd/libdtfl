@@ -49,6 +49,11 @@ handle through
 the caller must then call
 .Fn dtfl_guards_join
 to wait for completion and release the handle.
+Until it returns, the running workers and network threads still use
+.Fa cfg ,
+.Fa ctx
+and every log subscriber's context, so the caller must keep them valid
+until then.
 .Pp
 .Fn dtfl_execute_directly
 runs

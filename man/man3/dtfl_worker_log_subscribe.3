@@ -236,11 +236,30 @@ subscriber runs on the cluster's network threads, one call at a time
 per thread but concurrently across them.
 With more than one worker or network thread the same
 .Fa ctx
-is shared across worker threads, as the
+is shared across worker and network threads, as the
 .Fa ctx
 of
 .Xr dtfl_execute 3
 is; a subscriber that writes shared state must synchronize it itself.
+A slow
+.Dq communication
+subscriber delays the network thread that calls it, and so the sends
+or receives that thread serves.
+.Pp
+The configuration and every subscriber
+.Fa ctx
+must stay valid until
+.Xr dtfl_guards_join 3
+returns: when
+.Xr dtfl_execute 3
+returns early with guards, the worker and network threads keep using
+them.
+.Pp
+Each network thread's logger measures event times from when that thread
+started, so
+.Dq communication
+times are comparable within one thread's events but not across threads
+or with the worker streams.
 .Sh SEE ALSO
 .Xr dtfl_execute 3 ,
 .Xr dtfl_set_log_hook 3 ,
