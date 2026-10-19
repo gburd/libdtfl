@@ -377,6 +377,78 @@ DTFL_TEST(description_basics)
 	return MUNIT_OK;
 }
 
+/* memcmp then length, as the NULL cmp does, but through a user cmp. */
+static int
+user_memcmp(const dtfl_type *t, const void *a, size_t alen, const void *b,
+    size_t blen)
+{
+	size_t m = alen < blen ? alen : blen;
+	int c = m != 0 ? memcmp(a, b, m) : 0;
+
+	(void)t;
+	if (c != 0)
+		return c;
+	return (alen > blen) - (alen < blen);
+}
+
+/*
+ * The packed fast sort (memcmp-ordered records of one width up to 8
+ * bytes, at most one time word) must produce the same batch, byte for
+ * byte, as the index sort, which a user cmp of the same order forces.
+ * Widths 0, 3 and 8 and tw 0, 1 and 2 (2 takes the index sort in both).
+ */
+DTFL_TEST(consolidate_packed_matches_index_sort)
+{
+	static const size_t widths[] = { 0, 3, 8 };
+	dtfl_type slow = *dtfl_type_u64();
+	uint64_t x = 0x9e3779b97f4a7c15u;
+	size_t wi, i, n = 3000;
+	unsigned tw, rep;
+
+	(void)params; (void)data;
+	slow.cmp = user_memcmp;
+	for (rep = 0; rep < 4; rep++)
+	for (wi = 0; wi < 3; wi++)
+	for (tw = 0; tw <= 2; tw++) {
+		size_t w = widths[wi];
+		__dtfl_batch *a = __dtfl_batch_new(tw, 8);
+		__dtfl_batch *b;
+		unsigned char rec[8];
+		uint64_t t[2];
+		int64_t r;
+
+		slow.fixed_size = w;
+		for (i = 0; i < n; i++) {
+			size_t j;
+
+			for (j = 0; j < w; j++) {
+				x ^= x << 13, x ^= x >> 7, x ^= x << 17;
+				/* Few distinct bytes so runs collide. */
+				rec[j] = (unsigned char)(x % (rep + 2));
+			}
+			x ^= x << 13, x ^= x >> 7, x ^= x << 17;
+			t[0] = x % 3;
+			t[1] = (x >> 8) % 2;
+			r = (int64_t)((x >> 16) % 5) - 2;
+			__dtfl_batch_push(a, rec, w, t, &r);
+		}
+		b = __dtfl_batch_copy(a);
+		__dtfl_consolidate_batch(a, dtfl_type_u64(), I64);
+		__dtfl_consolidate_batch(b, &slow, I64);
+		assert_size(__dtfl_batch_len(a), ==, __dtfl_batch_len(b));
+		assert_size(a->arena.len, ==, b->arena.len);
+		assert_memory_equal(a->arena.len, a->arena.data, b->arena.data);
+		assert_memory_equal(a->offs.len * sizeof(size_t), a->offs.data,
+		    b->offs.data);
+		assert_memory_equal(a->times.len * a->times.elem,
+		    a->times.data, b->times.data);
+		assert_memory_equal(a->diffs.len, a->diffs.data, b->diffs.data);
+		__dtfl_batch_release(a);
+		__dtfl_batch_release(b);
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(consolidation__test_consolidate),
 	DTFL_T(consolidation__test_consolidate_updates),
@@ -385,6 +457,7 @@ static MunitTest tests[] = {
 	DTFL_T(consolidation__test_consolidator_duration),
 	DTFL_T(consolidation__test_consolidator_duration_vec),
 	DTFL_T(consolidate_then_push),
+	DTFL_T(consolidate_packed_matches_index_sort),
 	DTFL_T(description_basics),
 	DTFL_T_END
 };

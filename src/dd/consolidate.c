@@ -14,7 +14,9 @@
  * with tw == 0 for the former.  Records order by their dtfl_type (D1)
  * and times by Ord, which is word order (D3).  The sort is a stable
  * merge sort of row indices, then the runs are rebuilt into fresh
- * storage that replaces the batch's.
+ * storage that replaces the batch's.  Rows with a memcmp-ordered record
+ * of one width up to 8 bytes and at most one time word sort as packed
+ * (word, time, index) triples instead, in the same order.
  */
 #include "dd/dd_int.h"
 
@@ -71,6 +73,97 @@ replace_storage(__dtfl_batch *b, __dtfl_batch *out)
 }
 
 /*
+ * A row packed for the fixed-width sort: the record as a big-endian word
+ * (so word order is memcmp order), its time word, and its row index.
+ */
+typedef struct packed_row {
+	uint64_t k;
+	uint64_t t;
+	size_t i;
+} packed_row;
+
+static inline int
+packed_cmp(const packed_row *a, const packed_row *b)
+{
+	if (a->k != b->k)
+		return a->k < b->k ? -1 : 1;
+	return (a->t > b->t) - (a->t < b->t);
+}
+
+/* msort over packed rows: the same stable merge, compared inline. */
+static void
+msort_packed(packed_row *v, packed_row *tmp, size_t n)
+{
+	size_t h = n / 2, i = 0, j = h, k = 0;
+
+	if (n < 2)
+		return;
+	msort_packed(v, tmp, h);
+	msort_packed(v + h, tmp, n - h);
+	if (packed_cmp(&v[h - 1], &v[h]) <= 0)
+		return;		/* already in order */
+	while (i < h && j < n)
+		tmp[k++] = packed_cmp(&v[j], &v[i]) < 0 ? v[j++] : v[i++];
+	while (i < h)
+		tmp[k++] = v[i++];
+	memcpy(v, tmp, k * sizeof *v);	/* v[j..n) is already in place */
+}
+
+/*
+ * The packed rows of b, sorted, when b admits the packed sort: a
+ * memcmp-ordered record type, every record the same length of at most 8
+ * bytes, and at most one time word.  A record left-aligned in a
+ * big-endian word then orders as memcmp does, the lengths tie, and
+ * msort_packed is the same stable merge as msort, so the row order comes
+ * out identical.  Returns NULL otherwise.  The caller frees the array,
+ * which has room for 2n rows (the second half is scratch).
+ */
+static packed_row *
+sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
+{
+	size_t n = __dtfl_batch_len(b), i, len, len0;
+	packed_row *v;
+
+	if (rt->cmp != NULL || b->tw > 1)
+		return NULL;
+	(void)__dtfl_batch_rec(b, 0, &len0);
+	if (len0 > sizeof(uint64_t))
+		return NULL;
+	v = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *v));
+	for (i = 0; i < n; i++) {
+		const unsigned char *rec = __dtfl_batch_rec(b, i, &len);
+		uint64_t k = 0;
+		size_t j;
+
+		if (len != len0) {
+			__dtfl_free(v);
+			return NULL;
+		}
+		for (j = 0; j < len; j++)
+			k |= (uint64_t)rec[j] << (56 - 8 * j);
+		v[i].k = k;
+		v[i].t = b->tw != 0 ? __dtfl_batch_time(b, i)[0] : 0;
+		v[i].i = i;
+	}
+	msort_packed(v, v + n, n);
+	return v;
+}
+
+/* Pushes row r of b with diff accum, unless accum is zero. */
+static inline void
+push_folded(__dtfl_batch *out, const __dtfl_batch *b, size_t r,
+    const __dtfl_diff_class *dc, const void *accum)
+{
+	const void *rec;
+	size_t len;
+
+	if (dc->is_zero(dc, accum))
+		return;
+	rec = __dtfl_batch_rec(b, r, &len);
+	__dtfl_batch_push(out, rec, len, __dtfl_batch_time(b, r), accum);
+}
+
+/*
  * consolidate_updates_slice_slow: sort, then accumulate each run of
  * equal (record, time) into its first diff and keep the run only if the
  * sum is non-zero.  b must be uniquely held (it is rewritten).
@@ -79,41 +172,54 @@ void
 __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
     const __dtfl_diff_class *dc)
 {
-	size_t n = __dtfl_batch_len(b), i, k, len;
+	size_t n = __dtfl_batch_len(b), i, k;
 	size_t *idx, *tmp;
 	row_cmp c = { b, rt };
 	unsigned char *accum;
 	__dtfl_batch *out;
-	const void *rec;
+	packed_row *v;
 
 	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
 	DTFL_ASSERT(dc->width == b->dw);
 	if (n == 0)
 		return;
-	idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
-	tmp = idx + n;
-	for (i = 0; i < n; i++)
-		idx[i] = i;
-	msort(&c, idx, tmp, n);
-
 	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
 	out = __dtfl_batch_new(b->tw, b->dw);
 	__dtfl_batch_reserve(out, n, b->arena.len);
-	for (i = 0; i < n; i = k) {
-		/* accum = sum of the diffs of rows idx[i..k), all equal. */
-		if (b->dw != 0)
-			memcpy(accum, __dtfl_batch_diff(b, idx[i]), b->dw);
-		for (k = i + 1; k < n && cmp_rows(&c, idx[i], idx[k]) == 0; k++)
-			dc->plus_equals(dc, accum, __dtfl_batch_diff(b, idx[k]));
-		if (dc->is_zero(dc, accum))
-			continue;
-		rec = __dtfl_batch_rec(b, idx[i], &len);
-		__dtfl_batch_push(out, rec, len, __dtfl_batch_time(b, idx[i]),
-		    accum);
+	if ((v = sort_packed(b, rt)) != NULL) {
+		for (i = 0; i < n; i = k) {
+			/* accum = sum of the diffs of rows v[i..k), all equal. */
+			if (b->dw != 0)
+				memcpy(accum, __dtfl_batch_diff(b, v[i].i),
+				    b->dw);
+			for (k = i + 1; k < n && packed_cmp(&v[i], &v[k]) == 0;
+			    k++)
+				dc->plus_equals(dc, accum,
+				    __dtfl_batch_diff(b, v[k].i));
+			push_folded(out, b, v[i].i, dc, accum);
+		}
+		__dtfl_free(v);
+	} else {
+		idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
+		tmp = idx + n;
+		for (i = 0; i < n; i++)
+			idx[i] = i;
+		msort(&c, idx, tmp, n);
+		for (i = 0; i < n; i = k) {
+			/* accum = sum of the diffs of rows idx[i..k), all equal. */
+			if (b->dw != 0)
+				memcpy(accum, __dtfl_batch_diff(b, idx[i]),
+				    b->dw);
+			for (k = i + 1;
+			    k < n && cmp_rows(&c, idx[i], idx[k]) == 0; k++)
+				dc->plus_equals(dc, accum,
+				    __dtfl_batch_diff(b, idx[k]));
+			push_folded(out, b, idx[i], dc, accum);
+		}
+		__dtfl_free(idx);
 	}
 	replace_storage(b, out);
 	__dtfl_free(accum);
-	__dtfl_free(idx);
 }
 
 /* ------------------------------------------------------------------ */
