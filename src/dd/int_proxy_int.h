@@ -33,6 +33,7 @@
 
 #include "dd/arrange_int.h"
 #include "dd/common_int.h"
+#include "dtfl/arrange.h"
 
 struct dtfl_arranged;
 
@@ -43,6 +44,17 @@ struct dtfl_arranged;
  */
 void __dtfl_bridge_assert_sorted(const __dtfl_vec *rows, unsigned tw,
     const char *who);
+
+/*
+ * For the u64 backends (not upstream): append every update of the batches,
+ * or only those whose key is in the ascending keys[0..nkeys) when keys is
+ * not NULL, as rows (hash, id) = (key, value) read as u64, each time joined
+ * with advance_by if given.  Keys and values must be 8-byte order-preserving
+ * encodings.  The rows are unsorted across batches.
+ */
+void __dtfl_proxy_present_u64(__dtfl_batch_ord *const *batches, size_t n,
+    const __dtfl_diff_class *dc, unsigned tw, const uint64_t *keys,
+    size_t nkeys, const uint64_t *advance_by, __dtfl_vec *rows);
 
 /* ------------------------------------------------------------------ */
 /* The proxy reduce framework (reduce.rs).                              */
@@ -182,5 +194,102 @@ void __dtfl_reduce_change_free(__dtfl_reduce_change *ch);
 struct dtfl_arranged *__dtfl_arranged_reduce_with_proxy(
     struct dtfl_arranged *a, const char *name, const dtfl_type *ovt,
     const __dtfl_diff_class *odc, __dtfl_proxy_reduce_backend backend);
+
+/* ------------------------------------------------------------------ */
+/* The proxy join framework (join.rs).                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * JoinInstance: a unit of proxied join work, presented to the backend: the
+ * two inputs' batches (borrowed) and lower, the compaction frontier for
+ * loading (the unit's capability time, one element).
+ */
+typedef struct __dtfl_join_instance {
+	__dtfl_batch_ord *const *batches0;
+	size_t n0;
+	__dtfl_batch_ord *const *batches1;
+	size_t n1;
+	const uint64_t *lower;
+} __dtfl_join_instance;
+
+/* A (key_hash, value_id) pair. */
+typedef struct __dtfl_proxy_id {
+	uint64_t hash;
+	uint64_t id;
+} __dtfl_proxy_id;
+
+/*
+ * ProxyJoinBackend: a type that can interpret and retire pairs of batches,
+ * joined by key hashes.  The protocol invokes present0/present1 with the
+ * instance to produce the proxy collection, and then any number (including
+ * zero) of calls to cross to produce outputs.
+ *
+ * present0 / present1: append to `out` the bridge of the first / second
+ *   input, restricted to the ascending key hashes filter[0..nfilter) when
+ *   filter is not NULL.  The bridge MUST be sorted and consolidated by
+ *   ((key_hash, value_id), time).
+ * cross: from n left and right identifiers and the corresponding joined
+ *   times and multiplied diffs (rout width each), produce the output.  The
+ *   C Output is what the backend pushes into `out`, the unit's output
+ *   builder, whose batches ship under the unit's capability.
+ * r0 / r1 / rout: the input diff classes and their product's class.
+ */
+typedef struct __dtfl_proxy_join_backend_ops {
+	void (*present0)(void *self, const __dtfl_join_instance *inst,
+	    const uint64_t *filter, size_t nfilter, __dtfl_vec *out);
+	void (*present1)(void *self, const __dtfl_join_instance *inst,
+	    const uint64_t *filter, size_t nfilter, __dtfl_vec *out);
+	void (*cross)(void *self, const __dtfl_join_instance *inst,
+	    const __dtfl_proxy_id *left, const __dtfl_proxy_id *right,
+	    const __dtfl_time_val *times, const void *diffs, size_t n,
+	    __dtfl_consolidator *out);
+	void (*free)(void *self);
+} __dtfl_proxy_join_backend_ops;
+
+typedef struct __dtfl_proxy_join_backend {
+	const __dtfl_proxy_join_backend_ops *ops;
+	void *self;			/* owned; freed by ops->free */
+	const __dtfl_diff_class *r0;
+	const __dtfl_diff_class *r1;
+	const __dtfl_diff_class *rout;
+} __dtfl_proxy_join_backend;
+
+/*
+ * ProxyJoinTactic::prep (join_prep): present both sides of one unit,
+ * merge-match key runs over the sorted hashes, and cross-product matched
+ * records into `out`.  fresh_is_input0 selects Fresh::Input0; meet is the
+ * unit's capability time.
+ */
+void __dtfl_proxy_join_prep(__dtfl_proxy_join_backend *backend,
+    __dtfl_batch_ord *const *input0, size_t n0,
+    __dtfl_batch_ord *const *input1, size_t n1, bool fresh_is_input0,
+    const uint64_t *meet, unsigned tw, __dtfl_consolidator *out);
+
+/*
+ * The u64 join backend (not upstream): both arrangements have 8-byte keys
+ * and values; cross runs `result` per matched (key, val0, val1).  Takes
+ * ownership of ctx (freed by ctx_free).
+ */
+__dtfl_proxy_join_backend __dtfl_proxy_join_u64_backend(
+    const struct dtfl_arranged *a0, const struct dtfl_arranged *a1,
+    dtfl_join_result_fn result, void *ctx, void (*ctx_free)(void *));
+
+/*
+ * Runs a join result closure for one product into `con` at (time, diff)
+ * (defined in src/dd/join.c, which owns dtfl_join_emit).
+ */
+void __dtfl_join_result_emit(dtfl_join_result_fn result, void *user,
+    const void *key, size_t klen, const void *v1, size_t v1len,
+    const void *v2, size_t v2len, const uint64_t *time, const void *diff,
+    __dtfl_consolidator *con);
+
+/*
+ * join_with_tactic(a0, a1, ProxyJoinTactic::new(backend)): defined in
+ * src/dd/join.c.  Takes ownership of the backend.  out_type is the record
+ * type the backend's cross pushes.
+ */
+struct dtfl_collection *__dtfl_arranged_join_with_proxy(
+    struct dtfl_arranged *a0, struct dtfl_arranged *a1,
+    const dtfl_type *out_type, __dtfl_proxy_join_backend backend);
 
 #endif /* DTFL_DD_INT_PROXY_INT_H */

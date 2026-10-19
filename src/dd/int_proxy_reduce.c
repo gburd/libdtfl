@@ -638,84 +638,14 @@ typedef struct u64_backend {
 	size_t ntiles;
 } u64_backend;
 
-typedef struct push_ctx {
-	__dtfl_vec *rows;
-	uint64_t hash, id;
-	unsigned tw;
-	size_t dw;
-} push_ctx;
-
-static void
-push_time(const uint64_t *time, const void *diff, void *vctx)
-{
-	push_ctx *c = vctx;
-	__dtfl_bridge_upd r;
-
-	memset(&r, 0, sizeof r);
-	r.hash = c->hash;
-	r.id = c->id;
-	if (c->tw != 0)
-		memcpy(r.time, time, (size_t)c->tw * sizeof(uint64_t));
-	if (c->dw != 0)
-		memcpy(r.diff, diff, c->dw);
-	__dtfl_vec_push(c->rows, &r);
-}
-
-/* Every update of the batches, or only those of keys[0..nkeys). */
-static void
-present(const u64_backend *b, __dtfl_batch_ord *const *batches, size_t n,
-    const __dtfl_diff_class *dc, const uint64_t *keys, size_t nkeys,
-    __dtfl_vec *rows)
-{
-	size_t i;
-
-	for (i = 0; i < n; i++) {
-		const __dtfl_batch_ord *bt = batches[i];
-		__dtfl_cursor cu;
-		size_t ki = 0;
-
-		__dtfl_cursor_init(&cu, bt);
-		while (__dtfl_cursor_key_valid(&cu, bt)) {
-			size_t kl, vl;
-			const void *k = __dtfl_cursor_key(&cu, bt, &kl);
-			push_ctx pc;
-
-			pc.rows = rows;
-			pc.hash = dtfl_get_u64(k);
-			pc.tw = b->tw;
-			pc.dw = dc->width;
-			if (keys != NULL) {
-				while (ki < nkeys && keys[ki] < pc.hash)
-					ki++;
-				if (ki == nkeys)
-					break;
-				if (keys[ki] != pc.hash) {
-					unsigned char kb[8];
-
-					dtfl_put_u64(kb, keys[ki]);
-					__dtfl_cursor_seek_key(&cu, bt, kb,
-					    sizeof kb);
-					continue;
-				}
-			}
-			while (__dtfl_cursor_val_valid(&cu, bt)) {
-				pc.id = dtfl_get_u64(__dtfl_cursor_val(&cu, bt,
-				    &vl));
-				__dtfl_cursor_map_times(&cu, bt, push_time, &pc);
-				__dtfl_cursor_step_val(&cu, bt);
-			}
-			__dtfl_cursor_step_key(&cu, bt);
-		}
-	}
-}
-
 static void
 u64_seed_times(void *self, const __dtfl_reduce_instance *inst,
     __dtfl_vec *seeds)
 {
 	u64_backend *b = self;
 
-	present(b, inst->input_batches, inst->ninput, b->rin, NULL, 0, seeds);
+	__dtfl_proxy_present_u64(inst->input_batches, inst->ninput, b->rin,
+	    b->tw, NULL, 0, NULL, seeds);
 	__dtfl_bridge_sort(seeds, b->tw);
 }
 
@@ -758,13 +688,13 @@ u64_next_window(void *self, const __dtfl_reduce_instance *inst,
 	__dtfl_vec_clear(&w->input);
 	__dtfl_vec_clear(&w->output);
 	__dtfl_vec_push_n(&w->keys, changed + *cursor, n);
-	present(b, inst->source_batches, inst->nsource, b->rin,
-	    changed + *cursor, n, &w->input);
-	present(b, inst->input_batches, inst->ninput, b->rin,
-	    changed + *cursor, n, &w->input);
+	__dtfl_proxy_present_u64(inst->source_batches, inst->nsource, b->rin,
+	    b->tw, changed + *cursor, n, NULL, &w->input);
+	__dtfl_proxy_present_u64(inst->input_batches, inst->ninput, b->rin,
+	    b->tw, changed + *cursor, n, NULL, &w->input);
 	__dtfl_bridge_consolidate(&w->input, b->tw, b->rin);
-	present(b, inst->output_batches, inst->noutput, b->rout,
-	    changed + *cursor, n, &w->output);
+	__dtfl_proxy_present_u64(inst->output_batches, inst->noutput, b->rout,
+	    b->tw, changed + *cursor, n, NULL, &w->output);
 	__dtfl_bridge_consolidate(&w->output, b->tw, b->rout);
 	*cursor += n;
 	return true;

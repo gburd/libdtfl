@@ -24,6 +24,7 @@ dd_sources = \
 	src/dd/int_proxy_int.h \
 	src/dd/int_proxy.c \
 	src/dd/int_proxy_reduce.c \
+	src/dd/int_proxy_join.c \
 	src/dd/capture.c \
 	src/dd/join.c \
 	src/dd/iterate.c \

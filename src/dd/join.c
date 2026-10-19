@@ -18,7 +18,11 @@
  * the time-ordered thinker).  The per-activation work is fuel-bounded to
  * 2,000,000 output records, split 1,000,000 per input so a burst on one
  * cannot starve the other, with the operator rescheduling itself while any
- * deferred work remains (join.rs join_with_tactic).
+ * deferred work remains (join.rs join_with_tactic).  The per-unit work goes
+ * through a JoinTactic seam (join_tactic_ops): the cursor tactic
+ * (deferred_step) is the default, and int_proxy's ProxyJoinTactic
+ * (src/dd/int_proxy_join.c) is reached only through
+ * __dtfl_arranged_join_with_proxy.
  *
  * The collection methods arrange both inputs by key and call join_core:
  * join yields (key, (val1, val2)); join_map applies a result closure;
@@ -37,6 +41,7 @@
  */
 #include "dd/arrange_int.h"
 #include "dd/common_int.h"
+#include "dd/int_proxy_int.h"
 #include "dd/wrap_int.h"
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
@@ -121,7 +126,21 @@ typedef struct join_ctx {
 	__dtfl_antichain acknowledged2;
 	dtfl_activator *activator;	/* owned; obtained lazily */
 	bool activator_set;
+	const struct join_tactic_ops *tactic;	/* JoinTactic vtable */
+	void *tactic_state;		/* owned; freed by tactic->free */
 } join_ctx;
+
+/*
+ * The JoinTactic seam (join.rs JoinTactic::prep): `step` plays one deferred
+ * unit forward, pushing its products into d->con, and sets d->done once the
+ * unit is exhausted; it may return early once a container has filled.  The
+ * cursor tactic is deferred_step below; int_proxy's ProxyJoinTactic is the
+ * second.  The driver (drive_queue) ships d->con's containers either way.
+ */
+typedef struct join_tactic_ops {
+	void (*step)(join_ctx *jc, deferred *d);
+	void (*free)(void *state);
+} join_tactic_ops;
 
 /* The per-product emit callback the thinker fires (common.c join driver). */
 typedef struct think_ctx {
@@ -204,6 +223,51 @@ deferred_step(join_ctx *jc, deferred *d)
 	}
 }
 
+/* The cursor tactic (join.rs cursors::CursorTactic): the default. */
+static const join_tactic_ops cursor_join_tactic_ops = { deferred_step, NULL };
+
+/*
+ * ProxyJoinTactic (int_proxy/join.rs) on the seam: prep the whole unit at
+ * once, as upstream's join_prep returns every container up front, from the
+ * batches the unit's two cursor lists hold.
+ */
+static void
+proxy_join_step(join_ctx *jc, deferred *d)
+{
+	__dtfl_proxy_join_prep(jc->tactic_state, d->cursor1.batches,
+	    d->cursor1.n, d->cursor2.batches, d->cursor2.n, d->advance2,
+	    d->meet, jc->depth, &d->con);
+	d->done = true;
+}
+
+static void
+proxy_join_free(void *state)
+{
+	__dtfl_proxy_join_backend *be = state;
+
+	if (be->ops->free != NULL)
+		be->ops->free(be->self);
+	__dtfl_free(be);
+}
+
+static const join_tactic_ops proxy_join_tactic_ops = {
+	proxy_join_step, proxy_join_free
+};
+
+void
+__dtfl_join_result_emit(dtfl_join_result_fn result, void *user,
+    const void *key, size_t klen, const void *v1, size_t v1len,
+    const void *v2, size_t v2len, const uint64_t *time, const void *diff,
+    __dtfl_consolidator *con)
+{
+	dtfl_join_emit e;
+
+	e.con = con;
+	e.time = time;
+	e.diff = diff;
+	result(user, key, klen, v1, v1len, v2, v2len, &e);
+}
+
 /* ------------------------------------------------------------------ */
 /* The fuel-bounded driver (join.rs join_with_tactic drain).           */
 /* ------------------------------------------------------------------ */
@@ -261,7 +325,7 @@ drive_queue(dtfl_op *op, join_ctx *jc, __dtfl_vec *queue, int64_t fuel)
 		out = __dtfl_consolidator_extract(&d->con);
 		if (out == NULL) {
 			if (!d->done)
-				deferred_step(jc, d);
+				jc->tactic->step(jc, d);
 			if (d->done)
 				out = __dtfl_consolidator_finish(&d->con);
 			else
@@ -483,6 +547,8 @@ join_free(void *vctx)
 		dtfl_activator_free(jc->activator);
 	if (jc->user_free != NULL)
 		jc->user_free(jc->user);
+	if (jc->tactic->free != NULL)
+		jc->tactic->free(jc->tactic_state);
 	dtfl_type_free(jc->out_type);
 	__dtfl_free(jc);
 }
@@ -491,9 +557,14 @@ join_free(void *vctx)
 /* dtfl_arranged_join_core (arrangement.rs Arranged::join_core).        */
 /* ------------------------------------------------------------------ */
 
-dtfl_collection *
-dtfl_arranged_join_core(dtfl_arranged *a1, dtfl_arranged *a2,
-    const dtfl_type *out_type, dtfl_join_result_fn result, dtfl_ctx ctx)
+/*
+ * join_with_tactic (join.rs): the join operator over two arrangements, its
+ * per-unit work routed through `tactic` (which takes tactic_state).
+ */
+static dtfl_collection *
+join_with_tactic(dtfl_arranged *a1, dtfl_arranged *a2,
+    const dtfl_type *out_type, dtfl_join_result_fn result, dtfl_ctx ctx,
+    const join_tactic_ops *tactic, void *tactic_state)
 {
 	const __dtfl_trace_agent *g1 = __dtfl_arranged_agent(a1);
 	const __dtfl_trace_agent *g2 = __dtfl_arranged_agent(a2);
@@ -512,6 +583,8 @@ dtfl_arranged_join_core(dtfl_arranged *a1, dtfl_arranged *a2,
 	if (odc == NULL) {
 		(void)__dtfl_err(DTFL_EALGEBRA, "join: no multiply for %s * %s",
 		    dc1->name, dc2->name);
+		if (tactic->free != NULL)
+			tactic->free(tactic_state);
 		return NULL;
 	}
 
@@ -522,6 +595,8 @@ dtfl_arranged_join_core(dtfl_arranged *a1, dtfl_arranged *a2,
 	jc->result = result;
 	jc->user = ctx.ptr;
 	jc->user_free = ctx.free;
+	jc->tactic = tactic;
+	jc->tactic_state = tactic_state;
 	jc->out_type = dtfl_type_retain(out_type);
 	jc->odc = odc;
 	jc->odw = odc->width;
@@ -552,6 +627,26 @@ dtfl_arranged_join_core(dtfl_arranged *a1, dtfl_arranged *a2,
 	dtfl_op_builder_build(b, join_logic, jc, join_free);
 	dtfl_type_free(ut);
 	return __dtfl_as_collection(st, out_type, out_diff, depth);
+}
+
+dtfl_collection *
+dtfl_arranged_join_core(dtfl_arranged *a1, dtfl_arranged *a2,
+    const dtfl_type *out_type, dtfl_join_result_fn result, dtfl_ctx ctx)
+{
+	return join_with_tactic(a1, a2, out_type, result, ctx,
+	    &cursor_join_tactic_ops, NULL);
+}
+
+/* join_with_tactic(a1, a2, ProxyJoinTactic::new(backend)). */
+dtfl_collection *
+__dtfl_arranged_join_with_proxy(dtfl_arranged *a1, dtfl_arranged *a2,
+    const dtfl_type *out_type, __dtfl_proxy_join_backend backend)
+{
+	__dtfl_proxy_join_backend *be = __dtfl_alloc(sizeof *be);
+
+	*be = backend;
+	return join_with_tactic(a1, a2, out_type, NULL, DTFL_NOCTX,
+	    &proxy_join_tactic_ops, be);
 }
 
 /* ------------------------------------------------------------------ */

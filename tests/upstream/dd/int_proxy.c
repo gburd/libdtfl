@@ -724,11 +724,162 @@ DTFL_TEST(int_proxy__reduce_bfs)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Equi-join, default vs proxy.                                        */
+/* ------------------------------------------------------------------ */
+
+/* |k, v0, v1| (k, v0 * 8 + v1): the matched triple as one record. */
+static void
+join_result(void *ctx, const void *key, size_t klen, const void *v1,
+    size_t v1l, const void *v2, size_t v2l, dtfl_join_emit *out)
+{
+	unsigned char buf[16];
+
+	(void)ctx; (void)klen; (void)v1l; (void)v2l;
+	memcpy(buf, key, 8);
+	dtfl_put_u64(buf + 8, dtfl_get_u64(v1) * 8 + dtfl_get_u64(v2));
+	dtfl_join_emit_record(out, buf, sizeof buf);
+}
+
+static dtfl_collection *
+join_kind(dtfl_collection *l, dtfl_collection *r, bool proxy)
+{
+	const dtfl_type *u64 = dtfl_type_u64();
+	const dtfl_type *pr = dtfl_type_pair(u64, u64);
+	dtfl_collection *out;
+
+	if (proxy) {
+		dtfl_arranged *a0 = dtfl_collection_arrange_by_key(l, u64, u64,
+		    "Arrange: JoinProxy0");
+		dtfl_arranged *a1 = dtfl_collection_arrange_by_key(r, u64, u64,
+		    "Arrange: JoinProxy1");
+		__dtfl_proxy_join_backend be = __dtfl_proxy_join_u64_backend(a0,
+		    a1, join_result, NULL, NULL);
+
+		out = __dtfl_arranged_join_with_proxy(a0, a1, pr, be);
+		dtfl_arranged_free(a1);
+		dtfl_arranged_free(a0);
+	} else
+		out = dtfl_collection_join_map(l, r, u64, u64, u64, pr,
+		    join_result, DTFL_NOCTX);
+	dtfl_type_free(pr);
+	return out;
+}
+
+typedef struct join_build {
+	dtfl_unordered_input *in[2];
+	dtfl_cap *cap[2];
+	eq_state eq;
+} join_build;
+
+static void
+build_join(dtfl_scope *scope, void *arg)
+{
+	join_build *b = arg;
+	const dtfl_type *u64 = dtfl_type_u64();
+	const dtfl_type *fields[5] = { u64, u64, u64, u64, dtfl_type_i64() };
+	const dtfl_type *upd = dtfl_type_tuple(fields, 5);
+	const dtfl_type *rec = dtfl_type_pair(u64, u64);
+	dtfl_collection *side[2];
+	dtfl_collection *via_cursor, *via_proxy;
+	int k;
+
+	for (k = 0; k < 2; k++) {
+		dtfl_stream *st = dtfl_unordered_input_new(scope, upd,
+		    &b->in[k], &b->cap[k]);
+
+		side[k] = dtfl_stream_as_collection(st, rec, dtfl_diff_i64());
+	}
+	via_cursor = join_kind(side[0], side[1], false);
+	via_proxy = join_kind(side[0], side[1], true);
+	assert_eq(via_cursor, via_proxy, &b->eq);
+	dtfl_collection_free(via_proxy);
+	dtfl_collection_free(via_cursor);
+	dtfl_collection_free(side[1]);
+	dtfl_collection_free(side[0]);
+	dtfl_type_free(rec);
+	dtfl_type_free(upd);
+}
+
+/*
+ * Two random Pair-timed sides fed in diagonal waves, so units join fresh
+ * batches against accumulated, meet-advanced histories.  With few keys and
+ * many values each key has 16+ updates per side, so join_key takes the
+ * bilinear wave as well as the cross product.
+ */
+static void
+join_differential(unsigned seed, uint64_t keys, uint64_t vals, size_t n)
+{
+	static in_upd u[2][DIFF_N];
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = pair_time();
+	join_build b;
+	uint64_t wave, t[2];
+	size_t i, k, side;
+
+	memset(&b, 0, sizeof b);
+	munit_assert_size(n, <=, DIFF_N);
+	random_input(seed, n, keys, vals, u[0]);
+	random_input(seed + 1000, n, keys, vals, u[1]);
+	munit_assert_int(dtfl_worker_dataflow(w, "int_proxy_join", tc,
+	    build_join, &b), ==, 0);
+	for (wave = 0; wave < SPAN; wave++) {
+		t[0] = t[1] = wave;
+		for (side = 0; side < 2; side++) {
+			dtfl_cap_downgrade(b.cap[side], t);
+			for (i = 0; i < n; i++) {
+				const in_upd *x = &u[side][i];
+				unsigned char buf[40];
+
+				if (DTFL_MIN(x->t1, x->t2) != wave)
+					continue;
+				dtfl_put_u64(buf, x->key);
+				dtfl_put_u64(buf + 8, x->val);
+				memcpy(buf + 16, &x->t1, 8);
+				memcpy(buf + 24, &x->t2, 8);
+				memcpy(buf + 32, &x->diff, 8);
+				dtfl_unordered_input_send(b.in[side],
+				    b.cap[side], buf, sizeof buf);
+			}
+			dtfl_unordered_input_flush(b.in[side]);
+		}
+		for (k = 0; k < 64; k++)
+			dtfl_worker_step(w);
+	}
+	for (side = 0; side < 2; side++) {
+		dtfl_cap_drop(b.cap[side]);
+		dtfl_unordered_input_free(b.in[side]);
+	}
+	while (dtfl_worker_step(w))
+		;
+	if (b.eq.violations != 0)
+		fprintf(stderr, "int_proxy join: seed %u keys %llu: %zu "
+		    "violations\n", seed, (unsigned long long)keys,
+		    b.eq.violations);
+	munit_assert_size(b.eq.violations, ==, 0);
+	munit_assert_size(b.eq.seen, >, 0);
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+}
+
+DTFL_TEST(int_proxy__join)
+{
+	unsigned s;
+
+	(void)params; (void)data;
+	for (s = 0; s < 20; s++) {
+		join_differential(s, 12, 8, 200);
+		join_differential(s, 2, 64, 400);
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(int_proxy__reduce_count),
 	DTFL_T(int_proxy__reduce_sum),
 	DTFL_T(int_proxy__reduce_min),
 	DTFL_T(int_proxy__reduce_bfs),
+	DTFL_T(int_proxy__join),
 	DTFL_T_END
 };
 
