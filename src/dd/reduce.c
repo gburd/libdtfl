@@ -26,6 +26,9 @@
  * cursor tactic is the default, and the model-derived reference tactic
  * (reduce.rs mod reference, ReferenceThinker) is the second engine, reached
  * only through __dtfl_arranged_reduce_trace_reference for differential tests.
+ * The third tactic is int_proxy's ProxyReduceTactic (src/dd/int_proxy_reduce.c),
+ * reached through __dtfl_arranged_reduce_with_proxy; it keeps its own state
+ * and ignores the engine logic.
  *
  * The batch/capability driver that arranges the input by key is private to
  * this file (arrange_by_key): it exchanges updates by key, batches each
@@ -33,6 +36,7 @@
  * agent, mirroring arrangement.c's arrange_core but splitting key || val.
  */
 #include "dd/arrange_int.h"
+#include "dd/int_proxy_int.h"
 #include "dd/collection_int.h"
 #include "dtfl/arrange.h"
 #include "dtfl/reduce.h"
@@ -2672,6 +2676,131 @@ __dtfl_arranged_reduce_trace_reference(dtfl_arranged *a, const char *name,
 {
 	return reduce_with_tactic(a, name, ovt, odc, logic, ctx, ctx_free,
 	    &reference_tactic_ops, NULL);
+}
+
+/*
+ * ProxyReduceTactic (int_proxy/reduce.rs) on the ReduceTactic seam: the
+ * tactic state is a __dtfl_proxy_reduce_tactic; it ignores c->pend and the
+ * engine logic (its backend holds the value semantics).  The instance hands
+ * it the batches the cursor tactics would read.
+ */
+static void
+proxy_tactic_retire(reduce_op_ctx *c, const uint64_t *upper, size_t nupper,
+    produced_batch *produced, size_t *nproduced,
+    __dtfl_antichain *new_frontier)
+{
+	__dtfl_reduce_instance inst;
+	__dtfl_antichain held, up;
+	__dtfl_cursor_list src_cl, out_cl;
+	__dtfl_batch_ord **batches;
+	size_t *held_index, nheld, n, i;
+	bool have_src, have_out;
+
+	__dtfl_antichain_init(&held, c->tc);
+	for (i = 0; i < c->caps.len; i++)
+		__dtfl_antichain_insert(&held,
+		    dtfl_cap_time(*DTFL_VEC_AT(&c->caps, dtfl_cap *, i)));
+	__dtfl_antichain_init(&up, c->tc);
+	for (i = 0; i < nupper; i++)
+		__dtfl_antichain_insert(&up, upper + (size_t)c->tw * i);
+	have_src = __dtfl_trace_agent_cursor_through(&c->source,
+	    &c->lower_limit, &src_cl);
+	have_out = __dtfl_trace_agent_cursor_through(&c->out_reader,
+	    &c->lower_limit, &out_cl);
+	DTFL_ASSERT(have_src && have_out);
+
+	inst.source_batches = src_cl.batches;
+	inst.nsource = src_cl.n;
+	inst.input_batches = (__dtfl_batch_ord *const *)(void *)
+	    c->batch_storage.data;
+	inst.ninput = c->batch_storage.len;
+	inst.output_batches = out_cl.batches;
+	inst.noutput = out_cl.n;
+	inst.lower = &c->lower_limit;
+
+	nheld = __dtfl_antichain_len(&held);
+	batches = __dtfl_alloc(DTFL_MAX(nheld, 1u) * sizeof *batches);
+	held_index = __dtfl_alloc(DTFL_MAX(nheld, 1u) * sizeof *held_index);
+	n = __dtfl_proxy_reduce_retire(c->tactic_state, &inst, &up, &held,
+	    batches, held_index, new_frontier);
+	for (i = 0; i < n; i++) {
+		produced[*nproduced].batch = batches[i];
+		if (c->tw != 0)
+			memcpy(produced[*nproduced].tag,
+			    __dtfl_antichain_at(&held, held_index[i]),
+			    (size_t)c->tw * 8);
+		(*nproduced)++;
+	}
+	__dtfl_free(held_index);
+	__dtfl_free(batches);
+	__dtfl_cursor_list_free(&src_cl);
+	__dtfl_cursor_list_free(&out_cl);
+	__dtfl_antichain_free(&up);
+	__dtfl_antichain_free(&held);
+}
+
+static const rd_tactic_ops proxy_tactic_ops = {
+	proxy_tactic_retire, __dtfl_proxy_reduce_tactic_free
+};
+
+dtfl_arranged *
+__dtfl_arranged_reduce_with_proxy(dtfl_arranged *a, const char *name,
+    const dtfl_type *ovt, const __dtfl_diff_class *odc,
+    __dtfl_proxy_reduce_backend backend)
+{
+	const dtfl_time_class *tc = dtfl_scope_time_class(
+	    dtfl_stream_scope(__dtfl_arranged_stream(a)));
+
+	return reduce_with_tactic(a, name, ovt, odc, NULL, NULL, NULL,
+	    &proxy_tactic_ops, __dtfl_proxy_reduce_tactic_new(backend, tc));
+}
+
+/*
+ * A standalone change collector (int_proxy_int.h), for a proxy backend that
+ * runs a reduce_core logic outside the engine.  Owns its valtab.
+ */
+typedef struct standalone_change {
+	__dtfl_reduce_change ch;	/* first: the handle the logic sees */
+	valtab tab;
+} standalone_change;
+
+__dtfl_reduce_change *
+__dtfl_reduce_change_new(const dtfl_type *ovt, const __dtfl_diff_class *odc)
+{
+	standalone_change *s = __dtfl_alloc(sizeof *s);
+
+	valtab_init(&s->tab, ovt);
+	__dtfl_vec_init(&s->ch.vals, sizeof(size_t));
+	__dtfl_vec_init(&s->ch.diffs, DTFL_MAX(odc->width, 1u));
+	s->ch.out_tab = &s->tab;
+	s->ch.out_dw = (unsigned)odc->width;
+	return &s->ch;
+}
+
+size_t
+__dtfl_reduce_change_len(const __dtfl_reduce_change *ch)
+{
+	return ch->vals.len;
+}
+
+const void *
+__dtfl_reduce_change_at(const __dtfl_reduce_change *ch, size_t i,
+    size_t *vlen, const void **diff)
+{
+	*diff = ch->out_dw != 0 ? __dtfl_vec_at(&ch->diffs, i) : NULL;
+	return valtab_get(ch->out_tab, *DTFL_VEC_AT(&ch->vals, size_t, i),
+	    vlen);
+}
+
+void
+__dtfl_reduce_change_free(__dtfl_reduce_change *ch)
+{
+	standalone_change *s = (standalone_change *)(void *)ch;
+
+	__dtfl_vec_free(&s->ch.vals);
+	__dtfl_vec_free(&s->ch.diffs);
+	valtab_free(&s->tab);
+	__dtfl_free(s);
 }
 
 /* The abelian wrapper's context; frees the inner ctx then the wrapper. */
