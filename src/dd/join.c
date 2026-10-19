@@ -642,8 +642,14 @@ dtfl_collection *
 __dtfl_arranged_join_with_proxy(dtfl_arranged *a1, dtfl_arranged *a2,
     const dtfl_type *out_type, __dtfl_proxy_join_backend backend)
 {
-	__dtfl_proxy_join_backend *be = __dtfl_alloc(sizeof *be);
+	__dtfl_proxy_join_backend *be;
 
+	/* shortcut: bridge rows hold diffs inline, DTFL_COMMON_DIFF_MAX bytes. */
+	DTFL_ASSERT(backend.r0->width <= DTFL_COMMON_DIFF_MAX &&
+	    backend.r1->width <= DTFL_COMMON_DIFF_MAX &&
+	    backend.rout != NULL &&
+	    backend.rout->width <= DTFL_COMMON_DIFF_MAX);
+	be = __dtfl_alloc(sizeof *be);
 	*be = backend;
 	return join_with_tactic(a1, a2, out_type, NULL, DTFL_NOCTX,
 	    &proxy_join_tactic_ops, be);

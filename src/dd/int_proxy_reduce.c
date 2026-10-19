@@ -101,8 +101,12 @@ __dtfl_proxy_reduce_tactic *
 __dtfl_proxy_reduce_tactic_new(__dtfl_proxy_reduce_backend backend,
     const dtfl_time_class *tc)
 {
-	__dtfl_proxy_reduce_tactic *t = __dtfl_alloc(sizeof *t);
+	__dtfl_proxy_reduce_tactic *t;
 
+	/* shortcut: bridge rows hold diffs inline, DTFL_COMMON_DIFF_MAX bytes. */
+	DTFL_ASSERT(backend.rin->width <= DTFL_COMMON_DIFF_MAX &&
+	    backend.rout->width <= DTFL_COMMON_DIFF_MAX);
+	t = __dtfl_alloc(sizeof *t);
 	t->backend = backend;
 	__dtfl_vec_init(&t->pending, sizeof(pend_row));
 	t->tc = tc;
