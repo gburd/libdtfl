@@ -117,6 +117,13 @@ buffer_update(dtfl_input_session *s, const void *record, size_t len,
 	if (__dtfl_batch_len(s->buffer) >= SESSION_BATCH)
 		session_send(s);
 	p = __dtfl_batch_push_uninit(s->buffer, len + tw + s->dw, NULL, NULL);
+	if (len == 8 && tw == 8 && s->dw == 8) {
+		/* (u64 record, u64 time, i64 diff): three fixed copies. */
+		memcpy(p, record, 8);
+		memcpy(p + 8, time, 8);
+		memcpy(p + 16, change, 8);
+		return;
+	}
 	if (len != 0)
 		memcpy(p, record, len);
 	if (tw != 0)
