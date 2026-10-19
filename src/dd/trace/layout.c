@@ -347,6 +347,23 @@ upds_last_diff(const __dtfl_upds *u)
 	return __dtfl_upds_diff(u, u->nupds - 1);
 }
 
+/*
+ * memcpy of a time or diff column cell.  The cells are usually one word,
+ * which then copies as a constant-size store instead of a libc call.
+ * dst and src either do not overlap or are equal.
+ */
+static inline void
+cell_copy(void *dst, const void *src, size_t n)
+{
+	if (n == sizeof(uint64_t)) {
+		uint64_t x;
+
+		memcpy(&x, src, sizeof x);
+		memcpy(dst, &x, sizeof x);
+	} else if (n != 0)
+		memmove(dst, src, n);
+}
+
 /* ------------------------------------------------------------------ */
 /* UpdsBuilder                                                         */
 /* ------------------------------------------------------------------ */
@@ -385,8 +402,7 @@ __dtfl_upds_builder_push(__dtfl_upds_builder *b, const uint64_t *time,
 			memcpy(slot, time, (size_t)b->tw * sizeof(uint64_t));
 	}
 	slot = __dtfl_vec_push(&b->stash_d, NULL);
-	if (b->dw != 0)
-		memcpy(slot, diff, b->dw);
+	cell_copy(slot, diff, b->dw);
 }
 
 /* Access to the i'th staged (time, diff). */
@@ -513,18 +529,15 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 	accum = b->dw <= sizeof accum_buf.bytes ? accum_buf.bytes :
 	    __dtfl_alloc(b->dw);
 	for (i = 0; i < n; i = k) {
-		if (b->dw != 0)
-			memcpy(accum, stash_diff(b, i), b->dw);
+		cell_copy(accum, stash_diff(b, i), b->dw);
 		for (k = i + 1; k < n && stash_cmp(b, i, k) == 0; k++)
 			b->dc->plus_equals(b->dc, accum, stash_diff(b, k));
 		if (b->dc->is_zero(b->dc, accum))
 			continue;
 		/* Move survivor to slot `out` (out <= i). */
-		if (b->tw != 0)
-			memmove(stash_time(b, out), stash_time(b, i),
-			    (size_t)b->tw * sizeof(uint64_t));
-		if (b->dw != 0)
-			memcpy(stash_diff(b, out), accum, b->dw);
+		cell_copy(stash_time(b, out), stash_time(b, i),
+		    (size_t)b->tw * sizeof(uint64_t));
+		cell_copy(stash_diff(b, out), accum, b->dw);
 		out++;
 	}
 	if (accum != accum_buf.bytes)
@@ -568,8 +581,7 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 				    (size_t)u->tw * sizeof(uint64_t));
 		}
 		ds = __dtfl_vec_push(&u->diffs, NULL);
-		if (u->dw != 0)
-			memcpy(ds, stash_diff(b, i), u->dw);
+		cell_copy(ds, stash_diff(b, i), u->dw);
 		u->nupds++;
 	}
 	stash_clear(b);
