@@ -175,9 +175,12 @@ Not started or partial -- MUST be finished before the project is done
 
 Examples
 --------
-[~] timely examples: 18/23 (5 blocked: capture_send/recv on the binary
-        transport, 3 logging examples on the logging subscriber being
-        wired into examples)
+[x] timely examples: all 26 resolved at the pin (22 done, 2 subsumed,
+        2 excluded).  spill_compare, the last deferred one, is done on
+        the public dtfl_config_set_spill_file hook (ADR-0012,
+        2026-10-18).  capture_send/recv run on the binary transport and
+        logging-send on the subscriber API; logging-recv and
+        logging_replay are excluded (logging is a subscriber API).
 [x] differential + dogs examples: ported (hello, degrees, bfs, projekt,
         compact, stackoverflow, accumulate, interpreted, itembased_cf,
         pagerank, monoid-bfs, cursors, dynamic, multitemporal, scc, the

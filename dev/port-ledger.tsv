@@ -9,7 +9,7 @@ timely-dataflow	communication/examples/spill_stress.rs	238	examples/comm/spill_s
 timely-dataflow	communication/src/allocator/canary.rs	22	src/comm/alloc_canary.c	P2	done	reports from an explicit drop call
 timely-dataflow	communication/src/allocator/counters.rs	145	src/comm/alloc_counters.c	P2	done	
 timely-dataflow	communication/src/allocator/generic.rs	150	src/comm/alloc_generic.c	P2	done	the enums become the allocator and builder vtables
-timely-dataflow	communication/src/allocator/mod.rs	235	src/comm/allocator.c	P2	done	the Process enum dispatch is the vtable; refill/spill hooks arrive with ProcessBinary
+timely-dataflow	communication/src/allocator/mod.rs	235	src/comm/allocator.c	P2	done	the Process enum dispatch is the vtable; the spill hook reaches ProcessBinary through __dtfl_process_binary_builders, refill stays simplified
 timely-dataflow	communication/src/allocator/process.rs	236	src/comm/alloc_process.c	P2	done	no build-time Buzzer exchange: parkers are created with the builders
 timely-dataflow	communication/src/allocator/thread.rs	106	src/comm/alloc_thread.c	P2	done	
 timely-dataflow	communication/src/allocator/zero_copy/allocator.rs	333	src/comm/zc_allocator.c	P2	done	TcpAllocator wrapping the typed Process allocator; broadcast uses the trait default (Broadcaster), not the override
@@ -19,7 +19,7 @@ timely-dataflow	communication/src/allocator/zero_copy/bytes_slab.rs	128	src/comm
 timely-dataflow	communication/src/allocator/zero_copy/initialize.rs	135	src/comm/zc_initialize.c	P2	done	create_sockets mesh plus initialize_networking_from_sockets and the CommsGuard that joins the network threads
 timely-dataflow	communication/src/allocator/zero_copy/mod.rs	18	src/comm/comm_int.h	P2	done	module glue; the TcpBuilder/send/recv declarations live in zc_int.h
 timely-dataflow	communication/src/allocator/zero_copy/push_pull.rs	140	src/comm/zc_push_pull.c	P2	done	PullerInner wrapped in counters::Puller for the Tcp allocator
-timely-dataflow	communication/src/allocator/zero_copy/spill.rs	287	src/comm/spill.c	P2	done	the allocators take Option<SpillPolicyFn> (allocator/mod.rs:120-164)
+timely-dataflow	communication/src/allocator/zero_copy/spill.rs	287	src/comm/spill.c	P2	done	SpillPolicyFn is __dtfl_spill_fn, built by dtfl_config_set_spill_file and passed into every MergeQueue pair of ProcessBinary, the TcpBuilder recv queues and the send-loop queues
 timely-dataflow	communication/src/allocator/zero_copy/stream.rs	47	src/comm/zc_tcp.c	P2	done	Stream over a socket fd folds into zc_tcp.c (read/write/shutdown/blocking are direct syscalls)
 timely-dataflow	communication/src/allocator/zero_copy/tcp.rs	225	src/comm/zc_tcp.c	P2	done	send_loop and recv_loop; comm logging omitted (no sink plumbed to the network threads)
 timely-dataflow	communication/src/buzzer.rs	19	src/comm/buzzer.c	P2	done	Buzzer is a reference to an explicit per-worker parker (futex on Linux)
@@ -85,7 +85,7 @@ timely-dataflow	timely/examples/pingpong.rs	24	examples/timely/pingpong.c	P4	don
 timely-dataflow	timely/examples/rc.rs	32	-	-	subsumed	D2: records are byte strings in refcounted batches; custom containers and Rc sharing have no C counterpart
 timely-dataflow	timely/examples/sequence.rs	24	examples/timely/sequence.c	P4	done	round-capped with a short per-round sleep so the Duration frontier releases pushes; drops the catchup dataflow before join
 timely-dataflow	timely/examples/simple.rs	8	examples/timely/simple.c	P4	done	
-timely-dataflow	timely/examples/spill_compare.rs	288	examples/timely/spill_compare.c	P12	deferred	deferred: upstream installs a file-backed Threshold/Prefetch policy pair through the public Hooks::spill and CommunicationConfig::ProcessBinary try_build_with + execute_from; dtfl_config has no spill hook, and the zero-copy spill policy (zc_int.h) is internal, so the public API cannot request spill.  The missing surface is a dtfl_config spill-policy hook (threshold, head reserve, a BytesSpill/BytesFetch callback pair) plumbed into the ProcessBinary allocator in src/comm (TSan-gated); the RSS sampler is example code (2026-10-16)
+timely-dataflow	timely/examples/spill_compare.rs	288	examples/timely/spill_compare.c	P12	done	the Hooks::spill factory is dtfl_config_set_spill_file (dir, threshold, head reserve), a built-in port of the example's file_spill module (src/comm/spill_file.c) installed on every ProcessBinary and Cluster MergeQueue; a user BytesSpill callback is not exposed.  Defaults shrunk to 64 MB / 4 MB threshold / 2 MB reserve for the smoke test (--total-gb still accepted); stdout keeps the configuration and a per-worker received count and checksum, progress, production/drain and RSS samples go to stderr, and RSS comes from /proc/self/statm or getrusage instead of ps
 timely-dataflow	timely/examples/threadless.rs	34	examples/timely/threadless.c	P4	done	
 timely-dataflow	timely/examples/unionfind.rs	95	examples/timely/unionfind.c	P4	done	fixed small graph for a checkable spanning-forest count; random mode kept
 timely-dataflow	timely/examples/unordered_input.rs	18	examples/timely/unordered_input.c	P4	done	

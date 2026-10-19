@@ -23,6 +23,7 @@ noinst_PROGRAMS += \
 	examples/timely/flow_controlled \
 	examples/timely/event_driven \
 	examples/timely/openloop \
+	examples/timely/spill_compare \
 	examples/timely/loopdemo \
 	examples/timely/unionfind \
 	examples/timely/bfs \
@@ -92,6 +93,10 @@ examples_timely_event_driven_LDADD = $(EXAMPLE_LDADD)
 examples_timely_openloop_SOURCES = examples/timely/openloop.c
 examples_timely_openloop_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_openloop_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_spill_compare_SOURCES = examples/timely/spill_compare.c
+examples_timely_spill_compare_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_spill_compare_LDADD = $(EXAMPLE_LDADD)
 
 examples_timely_loopdemo_SOURCES = examples/timely/loopdemo.c
 examples_timely_loopdemo_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -296,6 +301,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/hashjoin.expected \
 	examples/timely/capture.expected \
 	examples/timely/logging-send.expected \
+	examples/timely/spill_compare.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
 	examples/dd/monoid-bfs.expected \
