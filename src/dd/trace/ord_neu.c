@@ -267,6 +267,30 @@ stash_updates(__dtfl_merger_ord *m, const __dtfl_ord_storage *src, size_t index)
 	unsigned tw = dtfl_time_depth(m->tc);
 
 	__dtfl_upds_bounds(&src->upds, index, &lo, &hi);
+	if (m->tc->shape == DTFL_SHAPE_TOTAL) {
+		/*
+		 * One totally ordered word: advance_by is the meet (min) over
+		 * the frontier of the join (max) with each element, which is
+		 * what __dtfl_time_advance_by computes for this shape.
+		 */
+		const uint64_t *f = __dtfl_ac_base(since);
+		size_t nf = __dtfl_antichain_len(since), j;
+
+		DTFL_DEBUG_ASSERT(tw == 1);
+		for (i = lo; i < hi; i++) {
+			uint64_t t = __dtfl_upds_time(&src->upds, i)[0], r;
+
+			if (nf != 0) {
+				r = DTFL_MAX(t, f[0]);
+				for (j = 1; j < nf; j++)
+					r = DTFL_MIN(r, DTFL_MAX(t, f[j]));
+				t = r;
+			}
+			__dtfl_upds_builder_push(&m->staging, &t,
+			    __dtfl_upds_diff(&src->upds, i));
+		}
+		return;
+	}
 	for (i = lo; i < hi; i++) {
 		uint64_t t[DTFL_TIME_MAX];
 
