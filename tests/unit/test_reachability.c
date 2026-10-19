@@ -11,6 +11,8 @@
 #include "dtfl_test.h"
 #include "progress/operate_int.h"
 
+#include <unistd.h>
+
 static __dtfl_location
 src_loc(size_t node, size_t port)
 {
@@ -174,6 +176,73 @@ DTFL_TEST(scope_summary_and_outputs)
 	return MUNIT_OK;
 }
 
+/*
+ * A wide operator whose reverse maps arrive in reverse order: node 1 has
+ * WIDE inputs and outputs, input i connected to output WIDE-1-i, scope
+ * input i feeding input i and output o feeding scope output o.  Built in
+ * node order, reverse_internal is sorted descending and every scope edge
+ * sorts ahead of every node-1 edge, so summarize_outputs must sort as
+ * upstream does (sort_unstable) and accumulate through BinaryRuns; a
+ * quadratic sort or sorted-vector insert takes minutes here, and the
+ * alarm turns that into a failure.
+ */
+#define WIDE 200000
+
+DTFL_TEST(wide_reversed_operator_builds)
+{
+	__dtfl_reach_builder *b = __dtfl_reach_builder_new(u64);
+	__dtfl_connectivity scope, c0, c1;
+	__dtfl_tracker *t;
+	__dtfl_change_batch *out;
+	uint64_t zero = 0, t5 = 5, t9 = 9;
+	size_t i;
+
+	(void)params; (void)data;
+	alarm(60);
+	__dtfl_connectivity_init(&c0, u64, WIDE);
+	__dtfl_reach_builder_add_node(b, 0, WIDE, WIDE, &c0);
+	__dtfl_connectivity_init(&c1, u64, WIDE);
+	for (i = 0; i < WIDE; i++)
+		__dtfl_port_conn_insert(&c1.ports[i], WIDE - 1 - i, &zero);
+	__dtfl_reach_builder_add_node(b, 1, WIDE, WIDE, &c1);
+	for (i = 0; i < WIDE; i++)
+		__dtfl_reach_builder_add_edge(b, src_loc(0, i), tgt_loc(1, i));
+	for (i = 0; i < WIDE; i++)
+		__dtfl_reach_builder_add_edge(b, src_loc(1, i), tgt_loc(0, i));
+	t = __dtfl_reach_builder_build(b, &scope);
+
+	/* Scope input i reaches exactly scope output WIDE-1-i, unchanged. */
+	assert_size(scope.len, ==, WIDE);
+	for (i = 0; i < WIDE; i++) {
+		const __dtfl_port_conn *pc = &scope.ports[i];
+		const __dtfl_port_conn_entry *e;
+
+		assert_size(pc->entries.len, ==, 1);
+		e = DTFL_VEC_AT(&pc->entries, __dtfl_port_conn_entry, 0);
+		assert_size(e->port, ==, WIDE - 1 - i);
+		assert_size(e->summaries.len, ==, 1);
+		assert_uint64(*(const uint64_t *)(void *)e->summaries.data, ==, 0);
+	}
+
+	/* Source summaries: a capability at output 7 surfaces at scope output 7. */
+	__dtfl_tracker_update(t, src_loc(1, 7), &t5, 1);
+	/* Target summaries: a message at input 3 surfaces at scope output WIDE-4. */
+	__dtfl_tracker_update(t, tgt_loc(1, 3), &t9, 1);
+	__dtfl_tracker_propagate_all(t);
+	out = __dtfl_tracker_pushed_output(t, 7);
+	assert_size(__dtfl_cb_iter(out), ==, 1);
+	assert_uint64(__dtfl_cb_key(out, 0)[0], ==, 5);
+	out = __dtfl_tracker_pushed_output(t, WIDE - 4);
+	assert_size(__dtfl_cb_iter(out), ==, 1);
+	assert_uint64(__dtfl_cb_key(out, 0)[0], ==, 9);
+	assert_size(__dtfl_cb_iter(__dtfl_tracker_pushed_output(t, 3)), ==, 0);
+	alarm(0);
+
+	__dtfl_connectivity_free(&scope);
+	__dtfl_tracker_free(t);
+	return MUNIT_OK;
+}
+
 static void *
 setup(const MunitParameter params[], void *data)
 {
@@ -196,6 +265,7 @@ static MunitTest tests[] = {
 	T(progress_reachability__doc_example),
 	T(cycle_without_increment_is_detected),
 	T(scope_summary_and_outputs),
+	T(wide_reversed_operator_builds),
 	DTFL_T_END
 };
 

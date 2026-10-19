@@ -27,6 +27,10 @@
  */
 #include "progress/operate_int.h"
 
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
+
 /* ------------------------------------------------------------------ */
 /* Builder                                                             */
 /* ------------------------------------------------------------------ */
@@ -269,10 +273,12 @@ loc_cmp(__dtfl_location a, __dtfl_location b)
 	return __dtfl_words_cmp(ka, kb, 2);
 }
 
+/* (target, source): the reverse edge map. */
 typedef struct rev_edge {
 	__dtfl_location target, source;
 } rev_edge;
 
+/* (source, input, summary): the reverse internal map. */
 typedef struct rev_internal {
 	__dtfl_location source;	/* operator output */
 	size_t input;
@@ -286,6 +292,7 @@ typedef struct acc_entry {
 	__dtfl_vec summaries;	/* uint64_t words */
 } acc_entry;
 
+/* A (location, output, summary) triple: todo and proposals. */
 typedef struct todo_entry {
 	__dtfl_location loc;
 	size_t output;
@@ -302,64 +309,113 @@ key_cmp(__dtfl_location la, size_t oa, __dtfl_location lb, size_t ob)
 	return oa < ob ? -1 : oa > ob;
 }
 
+/* qsort, which must not see the NULL data of an empty vector. */
 static void
-sort_rev_edges(rev_edge *v, size_t n)
+sort_vec(__dtfl_vec *v, size_t from, int (*cmp)(const void *, const void *))
 {
-	size_t i, j;
-
-	/* Insertion sort on small graphs; heap of runs on large ones. */
-	for (i = 1; i < n; i++) {
-		rev_edge x = v[i];
-
-		for (j = i; j > 0 && loc_cmp(v[j - 1].target, x.target) > 0; j--)
-			v[j] = v[j - 1];
-		v[j] = x;
-	}
+	if (v->len - from > 1)
+		qsort(v->data + from * v->elem, v->len - from, v->elem, cmp);
 }
 
-static void
-sort_rev_internal(rev_internal *v, size_t n)
+/* reverse_edges.sort_unstable(): by (target, source). */
+static int
+rev_edge_cmp(const void *va, const void *vb)
 {
-	size_t i, j;
+	const rev_edge *a = va, *b = vb;
+	int c = loc_cmp(a->target, b->target);
 
-	for (i = 1; i < n; i++) {
-		rev_internal x = v[i];
+	return c != 0 ? c : loc_cmp(a->source, b->source);
+}
 
-		for (j = i; j > 0; j--) {
-			int c = loc_cmp(v[j - 1].source, x.source);
+/* reverse_internal.sort_unstable_by((x.0, x.1)): by (source, input). */
+static int
+rev_internal_cmp(const void *va, const void *vb)
+{
+	const rev_internal *a = va, *b = vb;
 
-			if (c < 0 || (c == 0 && v[j - 1].input <= x.input))
-				break;
-			v[j] = v[j - 1];
-		}
-		v[j] = x;
-	}
+	return key_cmp(a->source, a->input, b->source, b->input);
+}
+
+/* sort_unstable_by(|x, y| x.0.cmp(&y.0)) on ((Location, usize), _). */
+static int
+todo_key_cmp(const void *va, const void *vb)
+{
+	const todo_entry *a = va, *b = vb;
+
+	return key_cmp(a->loc, a->output, b->loc, b->output);
+}
+
+static int
+acc_key_cmp(const void *va, const void *vb)
+{
+	const acc_entry *a = va, *b = vb;
+
+	return key_cmp(a->loc, a->output, b->loc, b->output);
 }
 
 /*
- * Finds the accumulated entry for (loc, output) by binary search in a
- * vector kept sorted by key.  Upstream keeps binary-sized runs so a
- * round's batch is sorted only once; this single sorted vector costs
- * O(n) per novel key, acceptable for the graph sizes the tests cover.
+ * BinaryRuns: a sorted map kept as one vector of power-of-two sorted
+ * runs.  The binary representation of the length, read from the high
+ * bit down, gives the run sizes in order.  Keys are distinct across all
+ * runs.  insert_batch re-sorts the suffix whose run structure the
+ * addition changes, as in binary addition, so each element is re-sorted
+ * at most logarithmically often; get_mut visits at most logarithmically
+ * many runs.
  */
-static size_t
-acc_find(const __dtfl_vec *acc, __dtfl_location loc, size_t output, bool *found)
+static acc_entry *
+runs_get_mut(__dtfl_vec *runs, __dtfl_location loc, size_t output)
 {
-	size_t lo = 0, hi = acc->len;
+	acc_entry *base = (acc_entry *)(void *)runs->data;
+	size_t offset = 0, bit;
 
-	while (lo < hi) {
-		size_t mid = lo + (hi - lo) / 2;
-		const acc_entry *e = DTFL_VEC_AT(acc, acc_entry, mid);
-		int c = key_cmp(e->loc, e->output, loc, output);
+	for (bit = sizeof(size_t) * CHAR_BIT; bit-- > 0;) {
+		size_t size = (size_t)1 << bit, lo = 0, hi = size;
 
-		if (c < 0)
-			lo = mid + 1;
-		else
-			hi = mid;
+		if ((runs->len & size) == 0)
+			continue;
+		while (lo < hi) {
+			size_t mid = lo + (hi - lo) / 2;
+			int c = key_cmp(base[offset + mid].loc,
+			    base[offset + mid].output, loc, output);
+
+			if (c == 0)
+				return &base[offset + mid];
+			if (c < 0)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		offset += size;
 	}
-	*found = lo < acc->len && key_cmp(DTFL_VEC_AT(acc, acc_entry, lo)->loc,
-	    DTFL_VEC_AT(acc, acc_entry, lo)->output, loc, output) == 0;
-	return lo;
+	return NULL;
+}
+
+/* Introduces a batch of keys distinct from each other and from those present. */
+static void
+runs_insert_batch(__dtfl_vec *runs, __dtfl_vec *batch)
+{
+	size_t total, stable, diff;
+
+	if (batch->len == 0)
+		return;
+	total = runs->len + batch->len;
+	/*
+	 * Runs at the leading bits on which the lengths agree are
+	 * unaffected; mask away the highest differing bit and below.
+	 */
+	diff = runs->len ^ total;
+	diff |= diff >> 1;
+	diff |= diff >> 2;
+	diff |= diff >> 4;
+	diff |= diff >> 8;
+	diff |= diff >> 16;
+#if SIZE_MAX > 0xffffffffu
+	diff |= diff >> 32;
+#endif
+	stable = total & ~diff;
+	__dtfl_vec_push_n(runs, batch->data, batch->len);
+	__dtfl_vec_clear(batch);
+	sort_vec(runs, stable, acc_key_cmp);
 }
 
 /* Antichain insert on a summary vector; returns true if s was added. */
@@ -388,22 +444,31 @@ acc_insert(const dtfl_time_class *tc, __dtfl_vec *v, const uint64_t *s)
  * summarize_outputs: for every location, the antichain of summaries to
  * each scope output (node 0 targets).  Round-based semi-naive fixed
  * point: each round walks reverse edges and reverse internal summaries
- * from the triples that changed in the previous round.  Results land in
- * `acc` sorted by (location, output).
+ * from the triples that changed in the previous round, and the
+ * proposals that improve the accumulated antichains form the next
+ * round's work.  Results land in `acc` sorted by (location, output);
+ * the caller owns each entry's summaries.
  */
 static void
 summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
     size_t nn, __dtfl_vec *acc)
 {
 	size_t sw = DTFL_MAX(tc->sdepth, 1u);
-	__dtfl_vec rev_edges, rev_int, todo, next;
+	__dtfl_vec rev_edges, rev_int, todo, proposals, fresh, batch;
 	size_t i, p, e;
 
 	__dtfl_vec_init(&rev_edges, sizeof(rev_edge));
 	__dtfl_vec_init(&rev_int, sizeof(rev_internal));
 	__dtfl_vec_init(&todo, sizeof(todo_entry));
-	__dtfl_vec_init(&next, sizeof(todo_entry));
+	__dtfl_vec_init(&proposals, sizeof(todo_entry));
+	__dtfl_vec_init(&fresh, sizeof(acc_entry));
+	__dtfl_vec_init(&batch, sizeof(uint64_t));
 
+	/*
+	 * A reverse edge map, to allow us to walk back up the dataflow
+	 * graph.  Sorted by target location; each target should have at
+	 * most one source.
+	 */
 	for (i = 0; i < nn; i++)
 		for (p = 0; p < nodes[i].outputs; p++)
 			for (e = 0; e < nodes[i].edges[p].len; e++) {
@@ -415,18 +480,23 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				r.source.source = true;
 				__dtfl_vec_push(&rev_edges, &r);
 			}
-	sort_rev_edges((rev_edge *)(void *)rev_edges.data, rev_edges.len);
+	sort_vec(&rev_edges, 0, rev_edge_cmp);
 	/* dedup */
 	if (rev_edges.len > 1) {
 		rev_edge *v = (rev_edge *)(void *)rev_edges.data;
 		size_t k = 1;
 
 		for (i = 1; i < rev_edges.len; i++)
-			if (loc_cmp(v[i].target, v[k - 1].target) != 0 ||
-			    loc_cmp(v[i].source, v[k - 1].source) != 0)
+			if (rev_edge_cmp(&v[i], &v[k - 1]) != 0)
 				v[k++] = v[i];
 		__dtfl_vec_truncate(&rev_edges, k);
 	}
+
+	/*
+	 * A reverse map from operator outputs to inputs, along their
+	 * internal summaries.  Sorted by source location, so that the
+	 * entries for a location are contiguous.
+	 */
 	for (i = 0; i < nn; i++)
 		for (p = 0; p < nodes[i].summary.len; p++) {
 			const __dtfl_port_conn *pc = &nodes[i].summary.ports[p];
@@ -444,7 +514,7 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				__dtfl_vec_push(&rev_int, &r);
 			}
 		}
-	sort_rev_internal((rev_internal *)(void *)rev_int.data, rev_int.len);
+	sort_vec(&rev_int, 0, rev_internal_cmp);
 
 	/* Seed: every edge into a scope output, with the default summary. */
 	for (i = 0; i < nn; i++)
@@ -463,16 +533,17 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 				__dtfl_vec_push(&todo, &te);
 			}
 
+	/* Loop until we stop discovering novel reachability paths. */
 	while (todo.len > 0) {
-		/* Collect proposals from the triples changed last round. */
-		__dtfl_vec proposals;
-
-		__dtfl_vec_init(&proposals, sizeof(todo_entry));
+		/* Collect proposed summaries from the triples changed last round. */
 		for (i = 0; i < todo.len; i++) {
 			const todo_entry *t = DTFL_VEC_AT(&todo, todo_entry, i);
 
 			if (t->loc.source) {
-				/* Walk up the operator to its inputs. */
+				/*
+				 * An operator output or a scope input: crawl up
+				 * the operator, to its inputs.
+				 */
 				const rev_internal *ri = (const rev_internal *)(void *)rev_int.data;
 				size_t lo = 0, hi = rev_int.len, k;
 
@@ -502,7 +573,10 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 					}
 				}
 			} else {
-				/* Walk back the unique edge into this target. */
+				/*
+				 * An operator input or a scope output: walk back
+				 * the (unique) edge leading to it.
+				 */
 				const rev_edge *re = (const rev_edge *)(void *)rev_edges.data;
 				size_t lo = 0, hi = rev_edges.len;
 
@@ -523,37 +597,65 @@ summarize_outputs(const dtfl_time_class *tc, const reach_node *nodes,
 		}
 		__dtfl_vec_clear(&todo);
 
-		/* Merge proposals into the accumulated antichains. */
-		for (i = 0; i < proposals.len; i++) {
+		/*
+		 * Merge the batch of proposals into the accumulated
+		 * summaries.  Proposals are first collapsed per key into an
+		 * antichain, so that only elements novel to the accumulated
+		 * antichain (in an order-independent sense) seed the next
+		 * round.
+		 */
+		sort_vec(&proposals, 0, todo_key_cmp);
+		for (i = 0; i < proposals.len;) {
 			const todo_entry *pr = DTFL_VEC_AT(&proposals, todo_entry, i);
-			bool found;
-			size_t at = acc_find(acc, pr->loc, pr->output, &found);
 			acc_entry *a;
+			size_t j, nb, k;
 
-			if (!found) {
-				acc_entry fresh;
+			/* Collapse this round's proposals for the key into one antichain. */
+			for (j = i; j < proposals.len && todo_key_cmp(pr,
+			    DTFL_VEC_AT(&proposals, todo_entry, j)) == 0; j++)
+				(void)acc_insert(tc, &batch,
+				    DTFL_VEC_AT(&proposals, todo_entry, j)->s);
+			nb = batch.len / sw;
+			a = runs_get_mut(acc, pr->loc, pr->output);
+			for (k = 0; k < nb; k++) {
+				const uint64_t *s = (const uint64_t *)(void *)batch.data + k * sw;
 
-				fresh.loc = pr->loc;
-				fresh.output = pr->output;
-				__dtfl_vec_init(&fresh.summaries, sizeof(uint64_t));
-				acc_entry *base;
+				if (a == NULL || acc_insert(tc, &a->summaries, s)) {
+					todo_entry te;
 
-				__dtfl_vec_push(acc, NULL);
-				base = (acc_entry *)(void *)acc->data;
-				memmove(base + at + 1, base + at,
-				    (acc->len - at - 1) * sizeof fresh);
-				base[at] = fresh;
+					memset(&te, 0, sizeof te);
+					te.loc = pr->loc;
+					te.output = pr->output;
+					memcpy(te.s, s, sw * sizeof(uint64_t));
+					__dtfl_vec_push(&todo, &te);
+				}
 			}
-			a = DTFL_VEC_AT(acc, acc_entry, at);
-			if (acc_insert(tc, &a->summaries, pr->s))
-				__dtfl_vec_push(&todo, pr);
+			if (a == NULL) {
+				acc_entry f;
+
+				f.loc = pr->loc;
+				f.output = pr->output;
+				f.summaries = batch;	/* moved: std::mem::take */
+				__dtfl_vec_push(&fresh, &f);
+				__dtfl_vec_init(&batch, sizeof(uint64_t));
+			} else
+				__dtfl_vec_clear(&batch);
+			i = j;
 		}
-		__dtfl_vec_free(&proposals);
+		__dtfl_vec_clear(&proposals);
+
+		/* Introduce the novel keys. */
+		runs_insert_batch(acc, &fresh);
 	}
+
+	/* Merge all runs into one sorted list. */
+	sort_vec(acc, 0, acc_key_cmp);
 	__dtfl_vec_free(&rev_edges);
 	__dtfl_vec_free(&rev_int);
 	__dtfl_vec_free(&todo);
-	__dtfl_vec_free(&next);
+	__dtfl_vec_free(&proposals);
+	__dtfl_vec_free(&fresh);
+	__dtfl_vec_free(&batch);
 }
 
 /* ------------------------------------------------------------------ */
