@@ -420,25 +420,6 @@ __dtfl_upds_free(__dtfl_upds *u)
 	__dtfl_vec_free(&u->diffs);
 }
 
-/*
- * Upds::bounds: equal lower and upper encodes "singleton; just before
- * here", so return (lower - 1, upper) in that case.  lower must then be
- * greater than zero, as upstream asserts.
- */
-void
-__dtfl_upds_bounds(const __dtfl_upds *u, size_t index, size_t *lo, size_t *hi)
-{
-	size_t lower = __dtfl_offsets_at(&u->offs, index);
-	size_t upper = __dtfl_offsets_at(&u->offs, index + 1);
-
-	if (lower == upper) {
-		DTFL_ASSERT(lower > 0);
-		lower -= 1;
-	}
-	*lo = lower;
-	*hi = upper;
-}
-
 /* The last stored update time, for the singleton comparison. */
 static const uint64_t *
 upds_last_time(const __dtfl_upds *u)

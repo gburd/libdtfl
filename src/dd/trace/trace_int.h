@@ -243,9 +243,24 @@ typedef struct __dtfl_upds {
 
 void __dtfl_upds_init(__dtfl_upds *u, unsigned tw, unsigned dw);
 void __dtfl_upds_free(__dtfl_upds *u);
-/* bounds, resolving the singleton encoding. */
-void __dtfl_upds_bounds(const __dtfl_upds *u, size_t index, size_t *lo,
-    size_t *hi);
+/*
+ * Upds::bounds: equal lower and upper encodes "singleton; just before
+ * here", so return (lower - 1, upper) in that case.  lower must then be
+ * greater than zero, as upstream asserts.
+ */
+static inline void
+__dtfl_upds_bounds(const __dtfl_upds *u, size_t index, size_t *lo, size_t *hi)
+{
+	size_t lower = __dtfl_offsets_at(&u->offs, index);
+	size_t upper = __dtfl_offsets_at(&u->offs, index + 1);
+
+	if (lower == upper) {
+		DTFL_ASSERT(lower > 0);
+		lower -= 1;
+	}
+	*lo = lower;
+	*hi = upper;
+}
 
 static inline size_t
 __dtfl_upds_len(const __dtfl_upds *u)
@@ -433,11 +448,23 @@ typedef struct __dtfl_cursor {
 } __dtfl_cursor;
 
 void __dtfl_cursor_init(__dtfl_cursor *c, const __dtfl_batch_ord *b);
-bool __dtfl_cursor_key_valid(const __dtfl_cursor *c, const __dtfl_batch_ord *b);
+
+static inline bool
+__dtfl_cursor_key_valid(const __dtfl_cursor *c, const __dtfl_batch_ord *b)
+{
+	return c->key_cursor < __dtfl_slices_len(&b->storage.keys);
+}
+
 bool __dtfl_cursor_val_valid(const __dtfl_cursor *c, const __dtfl_batch_ord *b);
+
 /* Current key / value bytes; assert valid.  len receives the byte length. */
-const void *__dtfl_cursor_key(const __dtfl_cursor *c,
-    const __dtfl_batch_ord *b, size_t *len);
+static inline const void *
+__dtfl_cursor_key(const __dtfl_cursor *c, const __dtfl_batch_ord *b,
+    size_t *len)
+{
+	DTFL_ASSERT(__dtfl_cursor_key_valid(c, b));
+	return __dtfl_slices_get(&b->storage.keys, c->key_cursor, len);
+}
 const void *__dtfl_cursor_val(const __dtfl_cursor *c,
     const __dtfl_batch_ord *b, size_t *len);
 /* Visit each (time, diff) of the current value. */
