@@ -14,6 +14,11 @@ are the starting point for the team:
   BEGIN, statements, OLD/NEW transition tables, COMMIT with a commit
   order number, ROLLBACK that feeds nothing, and applying each committed
   view delta to a toy view table, again checked every commit.
+- `examples/ivm/sqlrow.h` with `sqlrow_check.c`: encodings of SQL column
+  values (NULL, integers, dates and timestamps, float8 with PostgreSQL's
+  NaN and -0 rules) whose byte order is the SQL order, so group and join
+  keys compare and hash as SQL requires; the check program tests each
+  rule against a reference comparator and through a GROUP BY dataflow.
 
 Both build and run under `make check` (`tests/dist/test_examples_ivm.sh`)
 with no server, using only the public `dtfl_*` API.
@@ -402,7 +407,8 @@ the view's arrangement, so passing `n` means the trace is complete
 through `n`; and type descriptors passed to operators are bound to locals
 and freed (an inline nested `dtfl_type_pair` leaks).
 
-Record encoding: libdtfl records are byte strings with a type descriptor
+Record encoding (`examples/ivm/sqlrow.h` implements the fixed-width and
+NULL cases and documents the rest): libdtfl records are byte strings with a type descriptor
 (PLAN D1).  A PostgreSQL row maps to a tuple descriptor of fixed-width
 fields (`int2/4/8`, `float8` by an order-preserving encoding, `date`,
 `timestamp`) plus `bytes` for varlena values in their comparison-correct
