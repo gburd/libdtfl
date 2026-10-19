@@ -41,6 +41,8 @@
  * epoch EPOCHS; a trace that keeps every batch grows by thousands.
  */
 #define MAX_LIVE_GROWTH 1000
+/* Distinct output records seen over a run (transients included). */
+#define MAX_SEEN 256
 
 /*
  * Live-allocation counter behind the library's allocation hooks.  Each
@@ -113,7 +115,86 @@ typedef struct lr {
 	size_t nbox;
 	/* S_UNREAD: a weak reference, so the test does not keep it alive. */
 	__dtfl_trace_box *weak;
+	/* The output, consolidated: up to 24 record bytes and a net diff. */
+	struct {
+		unsigned char rec[24];
+		size_t len;
+		int64_t diff;
+	} seen[MAX_SEEN];
+	size_t nseen;
 } lr;
+
+/* Accumulates the output by record, in fixed storage (no allocation). */
+static void
+sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	lr *c = ctx;
+	int64_t d;
+	size_t i;
+
+	(void)time;
+	assert_size(len, <=, sizeof c->seen[0].rec);
+	memcpy(&d, diff, sizeof d);
+	for (i = 0; i < c->nseen; i++)
+		if (c->seen[i].len == len && memcmp(c->seen[i].rec, rec,
+		    len) == 0)
+			break;
+	if (i == c->nseen) {
+		assert_size(c->nseen, <, MAX_SEEN);
+		memcpy(c->seen[i].rec, rec, len);
+		c->seen[i].len = len;
+		c->seen[i].diff = 0;
+		c->nseen++;
+	}
+	c->seen[i].diff += d;
+}
+
+/*
+ * Every epoch's insert is removed by the next, so the output ends as the
+ * answer over the four base rows (k, 100 + k): the key, then for each
+ * shape its result for that row, each record with multiplicity one.
+ */
+static void
+check_output(const lr *c)
+{
+	size_t i, nlive = 0;
+
+	for (i = 0; i < c->nseen; i++) {
+		const unsigned char *r = c->seen[i].rec;
+		uint64_t k;
+
+		if (c->seen[i].diff == 0)
+			continue;
+		nlive++;
+		assert_int64(c->seen[i].diff, ==, 1);
+		k = dtfl_get_u64(r);
+		assert_uint64(k, <, 4);
+		switch (c->shape) {
+		case S_ARRANGED:
+		case S_REDUCE:		/* (k, count of k's values = 1) */
+			assert_size(c->seen[i].len, ==, 16);
+			assert_int64(dtfl_get_i64(r + 8), ==, 1);
+			break;
+		case S_COUNT:		/* ((k, 100 + k), count 1) */
+			assert_size(c->seen[i].len, ==, 24);
+			assert_uint64(dtfl_get_u64(r + 8), ==, 100 + k);
+			assert_int64(dtfl_get_i64(r + 16), ==, 1);
+			break;
+		case S_JOIN_CORE:
+		case S_JOIN:		/* (k, 100 + k, 100 + k) */
+			assert_size(c->seen[i].len, ==, 24);
+			assert_uint64(dtfl_get_u64(r + 8), ==, 100 + k);
+			assert_uint64(dtfl_get_u64(r + 16), ==, 100 + k);
+			break;
+		case S_UNREAD:		/* (k, 100 + k) */
+			assert_size(c->seen[i].len, ==, 16);
+			assert_uint64(dtfl_get_u64(r + 8), ==, 100 + k);
+			break;
+		}
+	}
+	assert_size(nlive, ==, 4);
+}
 
 static void
 keep_box(lr *c, dtfl_arranged *a)
@@ -165,6 +246,19 @@ cnt(void *ctx, const void *key, size_t klen, size_t n,
 	emit_count(n, diffs, out);
 }
 
+/* An arranged (key, val) as the record key || val. */
+static void
+kv_cat(void *ctx, const void *key, size_t klen, const void *val, size_t vlen,
+    dtfl_arranged_emit *out)
+{
+	unsigned char b[16];
+
+	(void)ctx;
+	memcpy(b, key, klen);
+	memcpy(b + klen, val, vlen);
+	dtfl_arranged_emit_record(out, b, klen + vlen);
+}
+
 static void
 join_res(void *ctx, const void *key, size_t klen, const void *v1, size_t l1,
     const void *v2, size_t l2, dtfl_join_emit *out)
@@ -191,7 +285,7 @@ build(dtfl_scope *scope, void *arg)
 	dtfl_collection *in = dtfl_input_session_to_collection(c->in1, scope);
 	dtfl_collection *in2 = dtfl_input_session_to_collection(c->in2, scope);
 	dtfl_collection *m = dtfl_collection_map(in, kv, ident, DTFL_NOCTX);
-	dtfl_collection *out = NULL, *p;
+	dtfl_collection *out = NULL, *ins, *p;
 
 	switch (c->shape) {
 	case S_ARRANGED: {
@@ -202,7 +296,7 @@ build(dtfl_scope *scope, void *arg)
 
 		keep_box(c, a);
 		keep_box(c, r);
-		out = dtfl_arranged_as_collection(r, ki, NULL, DTFL_NOCTX);
+		out = dtfl_arranged_as_collection(r, ki, kv_cat, DTFL_NOCTX);
 		dtfl_arranged_free(r);
 		dtfl_arranged_free(a);
 		break;
@@ -242,8 +336,10 @@ build(dtfl_scope *scope, void *arg)
 		break;
 	}
 	}
-	p = dtfl_collection_probe_with(out, c->probe);
+	ins = dtfl_collection_inspect(out, sink, DTFL_CTX(c, NULL));
+	p = dtfl_collection_probe_with(ins, c->probe);
 	dtfl_collection_free(p);
+	dtfl_collection_free(ins);
 	dtfl_collection_free(out);
 	dtfl_collection_free(m);
 	dtfl_collection_free(in2);
@@ -335,6 +431,7 @@ run(enum shape shape)
 	dtfl_input_session_close(c.in2);
 	while (dtfl_worker_step(w))
 		;
+	check_output(&c);
 	for (i = 0; i < c.nbox; i++)
 		__dtfl_trace_box_release(c.box[i]);
 	__dtfl_trace_box_release_weak(c.weak);

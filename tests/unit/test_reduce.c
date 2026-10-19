@@ -433,8 +433,12 @@ DTFL_TEST(reduce__count_total_matches)
  * count_total, distinct_total and threshold_total must stay correct when
  * one activation receives several input batches: each batch's counts are
  * relative to the trace through the earlier batches.  Seal several epochs
- * before stepping so the arranged batches queue up, then compare every
- * key's accumulated output with the from-scratch answer.
+ * before stepping, then compare every key's accumulated output with the
+ * from-scratch answer.  This caught the per-batch cursor while arrange kept
+ * one capability per time and sealed a batch per epoch.  Arrange now holds
+ * an antichain (CapabilitySet), so a total order seals one batch per
+ * activation and this case no longer queues several; it still checks the
+ * operators' answers across epochs.
  */
 static collected
 run_total_queued(which which_op)

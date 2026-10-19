@@ -120,6 +120,8 @@ __dtfl_trace_box_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 __dtfl_trace_box *
 __dtfl_trace_box_retain(__dtfl_trace_box *b)
 {
+	/* Only a strong owner may clone: a zero count means the trace is gone. */
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) > 0);
 	__dtfl_arc_retain(&b->ref);
 	return b;
 }

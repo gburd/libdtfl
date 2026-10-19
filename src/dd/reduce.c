@@ -2406,14 +2406,20 @@ reduce_logic(dtfl_op *op, void *vctx)
 		}
 	}
 
+	/*
+	 * Pull in any subsequent empty batches we believe to exist.  Not
+	 * redundant with the frontier join below: the writer seals empty
+	 * batches into the source trace without sending them, and the trace's
+	 * upper may lead the input frontier this activation sees.
+	 */
+	__dtfl_trace_advance_upper(c->source.box->trace, &c->upper_limit);
+
 	/* The input frontier as a flat run. */
 	frontier = dtfl_op_frontier(op, 0, &fn);
 
 	/*
-	 * Incorporate the input frontier guarantees: upper_limit =
-	 * upper_limit join frontier (antichain join).  Advance upper to the
-	 * frontier where the source trace has sealed further; here the source
-	 * trace advance is folded into the input frontier the operator sees.
+	 * Incorporate the input frontier guarantees as well: upper_limit =
+	 * upper_limit join frontier (antichain join).
 	 */
 	{
 		__dtfl_antichain joined;

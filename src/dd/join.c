@@ -299,7 +299,7 @@ deferred_init_con(join_ctx *jc, deferred *d)
  * acknowledged frontier.  `fresh` selects which cursor is the novel batch
  * and which is the accumulated trace, and which side is advanced by meet.
  * Retains `cap` and the novel batch; the accumulated cursor retains its own
- * batch references.  Returns NULL (nothing enqueued) if the cut is unclean.
+ * batch references.
  */
 static deferred *
 make_deferred(join_ctx *jc, __dtfl_batch_ord *novel, bool fresh_is_input0,
@@ -316,6 +316,7 @@ make_deferred(join_ctx *jc, __dtfl_batch_ord *novel, bool fresh_is_input0,
 	    : &d->cursor2;
 	__dtfl_cursor_list *acc_cl = fresh_is_input0 ? &d->cursor2
 	    : &d->cursor1;
+	bool have_acc;
 
 	memset(d, 0, sizeof *d);
 	d->cap = dtfl_cap_clone(cap);
@@ -334,11 +335,13 @@ make_deferred(join_ctx *jc, __dtfl_batch_ord *novel, bool fresh_is_input0,
 	one[0] = __dtfl_batch_ord_retain(novel);
 	__dtfl_cursor_list_init(novel_cl, one, 1, na->kt, na->vt);
 
-	/* The accumulated side: a cursor through the acknowledged frontier. */
-	if (!__dtfl_trace_agent_cursor_through(acc, ack, acc_cl)) {
-		/* No clean cut: a whole-trace cursor is a safe superset here. */
-		__dtfl_trace_agent_cursor(acc, acc_cl);
-	}
+	/*
+	 * The accumulated side: a cursor through the acknowledged frontier.
+	 * It is safe to ask for `ack` as physical compaction has been held
+	 * back to it ever since; upstream unwraps.
+	 */
+	have_acc = __dtfl_trace_agent_cursor_through(acc, ack, acc_cl);
+	DTFL_ASSERT(have_acc);
 
 	deferred_init_con(jc, d);
 	return d;
@@ -367,6 +370,15 @@ ack_advance(__dtfl_antichain *ack, const __dtfl_batch_ord *b)
 	const __dtfl_antichain *up = __dtfl_batch_ord_upper(b);
 	size_t i;
 
+	/*
+	 * An arriving batch must lie wholly on one side of `acknowledged`:
+	 * the frontier is drawn from the lattice of stream batch boundaries
+	 * (received uppers, and uppers of trace merges of whole stream
+	 * batches).  A batch spanning it would be mis-accounted.
+	 */
+	DTFL_ASSERT((__dtfl_antichain_dominates(ack, __dtfl_batch_ord_lower(b)) ||
+	    __dtfl_antichain_dominates(up, ack)) &&
+	    "batch spans the acknowledged frontier");
 	if (!__dtfl_antichain_dominates(ack, __dtfl_batch_ord_lower(b)))
 		return;
 	__dtfl_antichain_clear(ack);
