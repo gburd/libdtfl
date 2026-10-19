@@ -342,10 +342,24 @@ DTFL_TEST(longrun__count_total_stays_bounded)
 	return run(S_COUNT);
 }
 
+DTFL_TEST(longrun__join_core_traces_stay_compact)
+{
+	(void)params; (void)data;
+	return run(S_JOIN_CORE);
+}
+
+DTFL_TEST(longrun__join_map_stays_bounded)
+{
+	(void)params; (void)data;
+	return run(S_JOIN);
+}
+
 static MunitTest tests[] = {
 	DTFL_T(longrun__arranged_reduce_traces_stay_compact),
+	DTFL_T(longrun__join_core_traces_stay_compact),
 	DTFL_T(longrun__reduce_stays_bounded),
 	DTFL_T(longrun__count_total_stays_bounded),
+	DTFL_T(longrun__join_map_stays_bounded),
 	DTFL_T_END
 };
 

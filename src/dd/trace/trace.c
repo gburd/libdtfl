@@ -186,3 +186,36 @@ __dtfl_trace_batch_count(const __dtfl_trace *t)
 	}
 	return n;
 }
+
+static void
+advance_upper_by(const __dtfl_batch_ord *b, __dtfl_antichain *upper)
+{
+	if (__dtfl_batch_ord_is_empty(b) &&
+	    __dtfl_antichain_eq(__dtfl_batch_ord_lower(b), upper)) {
+		__dtfl_antichain_free(upper);
+		__dtfl_antichain_copy(upper, __dtfl_batch_ord_upper(b));
+	}
+}
+
+void
+__dtfl_trace_advance_upper(const __dtfl_trace *t, __dtfl_antichain *upper)
+{
+	const __dtfl_spine *s = &t->spine;
+	size_t i;
+
+	/* map_batches order: merging layers largest first, then pending. */
+	for (i = s->merging.len; i-- > 0;) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&s->merging,
+		    __dtfl_merge_state, i);
+
+		if (m->kind == DTFL_MERGE_INPROGRESS) {
+			advance_upper_by(m->in1, upper);
+			advance_upper_by(m->in2, upper);
+		} else if (m->kind != DTFL_MERGE_VACANT && m->present) {
+			advance_upper_by(m->batch, upper);
+		}
+	}
+	for (i = 0; i < s->pending.len; i++)
+		advance_upper_by(*DTFL_VEC_AT(&s->pending, __dtfl_batch_ord *,
+		    i), upper);
+}

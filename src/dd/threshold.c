@@ -147,8 +147,7 @@ thr_logic(dtfl_op *op, void *vctx)
 {
 	thr_ctx *c = vctx;
 	dtfl_message *m;
-	const uint64_t *frontier;
-	size_t fn, i;
+	size_t i;
 
 	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
 
@@ -184,6 +183,8 @@ thr_logic(dtfl_op *op, void *vctx)
 			}
 			have_trace = __dtfl_trace_agent_cursor_through(
 			    &c->trace, &c->lower_limit, &tcl);
+			/* Upstream unwraps: the cut at lower_limit is clean. */
+			DTFL_ASSERT(have_trace);
 			__dtfl_cursor_init(&bcur, batch);
 			while (__dtfl_cursor_key_valid(&bcur, batch)) {
 				size_t klen;
@@ -211,7 +212,9 @@ thr_logic(dtfl_op *op, void *vctx)
 							    &tcl, acc_on_time,
 							    &acc);
 					}
-					__dtfl_cursor_list_rewind_keys(&tcl);
+					/* Batch keys ascend, so the trace
+					 * cursor only seeks forward (count.rs /
+					 * threshold.rs never rewind it). */
 				}
 				w.c = c;
 				w.s = s;
@@ -229,9 +232,20 @@ thr_logic(dtfl_op *op, void *vctx)
 		dtfl_cap_drop(cap);
 	}
 
-	frontier = dtfl_op_frontier(op, 0, &fn);
-	__dtfl_trace_agent_set_logical(&c->trace, frontier, fn);
-	__dtfl_trace_agent_set_physical(&c->trace, frontier, fn);
+	/*
+	 * Tidy up the shared input trace (count.rs / threshold.rs): step
+	 * upper_limit over the empty batches the writer sealed without
+	 * sending, then compact to it.  Not the input frontier: that may run
+	 * ahead of the trace's upper, and a physical frontier beyond the next
+	 * batch's lower would leave the next cursor_through no clean cut.
+	 */
+	__dtfl_trace_advance_upper(c->trace.box->trace, &c->upper_limit);
+	__dtfl_trace_agent_set_logical(&c->trace,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
+	    __dtfl_antichain_len(&c->upper_limit));
+	__dtfl_trace_agent_set_physical(&c->trace,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
+	    __dtfl_antichain_len(&c->upper_limit));
 	return false;
 }
 

@@ -660,5 +660,14 @@ __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
  * holds advance keeps this logarithmic in the number of inserted batches.
  */
 size_t __dtfl_trace_batch_count(const __dtfl_trace *t);
+/*
+ * TraceReader::advance_upper (trace/mod.rs): advance `upper` across the
+ * trace's empty batches.  An empty batch whose lower equals `upper` moves
+ * `upper` to its upper; walked over every batch in order (map_batches,
+ * which unlike batches_through includes empty batches), this steps `upper`
+ * over the empty seal batches a writer inserts without sending them.
+ */
+void __dtfl_trace_advance_upper(const __dtfl_trace *t,
+    __dtfl_antichain *upper);
 
 #endif /* DTFL_TRACE_INT_H */

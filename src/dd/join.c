@@ -28,12 +28,12 @@
  * Simplification: the C arrange and join operators are built together over
  * a trace that starts empty, so there are no preloaded batches to skip and
  * no in-flight batch whose updates a concurrent merge could consolidate
- * away before the join reads them.  The elaborate preload/advance_upper
- * boundary bookkeeping of upstream join_traces (which guards a trace shared
- * with an already-running writer) is therefore not reproduced; the
- * acknowledged frontiers that make each (batch1, batch2) pair join exactly
- * once are.  A join over an imported, already-populated trace would need
- * the preload step added here.
+ * away before the join reads them.  The preload boundary bookkeeping of
+ * upstream join_traces (which guards a trace shared with an already-running
+ * writer) is therefore not reproduced; the acknowledged frontiers that make
+ * each (batch1, batch2) pair join exactly once are, including their
+ * advance_upper step over empty seal batches.  A join over an imported,
+ * already-populated trace would need the preload step added here.
  */
 #include "dd/arrange_int.h"
 #include "dd/common_int.h"
@@ -356,13 +356,19 @@ record_batch(const dtfl_message *m, size_t i)
 	return b;
 }
 
-/* Advances `ack` to the batch's upper (acknowledged frontier update). */
+/*
+ * Advances `ack` to the batch's upper (acknowledged frontier update), unless
+ * advance_upper has already moved `ack` past this batch, in which case the
+ * further frontier is kept (join.rs: `if acknowledged <= batch.lower`).
+ */
 static void
 ack_advance(__dtfl_antichain *ack, const __dtfl_batch_ord *b)
 {
 	const __dtfl_antichain *up = __dtfl_batch_ord_upper(b);
 	size_t i;
 
+	if (!__dtfl_antichain_dominates(ack, __dtfl_batch_ord_lower(b)))
+		return;
 	__dtfl_antichain_clear(ack);
 	for (i = 0; i < __dtfl_antichain_len(up); i++)
 		__dtfl_antichain_insert(ack, __dtfl_antichain_at(up, i));
@@ -423,6 +429,16 @@ join_logic(dtfl_op *op, void *vctx)
 		}
 		dtfl_cap_drop(cap);
 	}
+
+	/*
+	 * Advance the acknowledged frontiers through any empty regions that
+	 * arrive in the traces but never as batches (join.rs advance_upper):
+	 * the arrange writer seals an empty batch into its trace for an epoch
+	 * with no data and does not send it, so without this step an input
+	 * that stays quiet pins the physical compaction of its trace.
+	 */
+	__dtfl_trace_advance_upper(jc->reader1.box->trace, &jc->acknowledged1);
+	__dtfl_trace_advance_upper(jc->reader2.box->trace, &jc->acknowledged2);
 
 	/*
 	 * Perform fuel-bounded work: each direction drains half the budget so
