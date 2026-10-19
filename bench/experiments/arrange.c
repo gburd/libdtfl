@@ -13,7 +13,7 @@
  * The computation under test is selected by `comp`:
  *
  *   nothing   just probe the raw collection
- *   arrange   arrange the collection, then probe
+ *   arrange   arrange the collection, then probe its batch stream
  *   count     count_total, then probe
  *   distinct  distinct_total, then probe
  *
@@ -23,9 +23,8 @@
  * A benchmark, not a test: not run by make check.  It uses the public
  * API and a deterministic xorshift RNG (upstream uses a seeded StdRng),
  * so a run is reproducible given the arguments.  Upstream also has an
- * open-loop mode and runs for 25 seconds; this port runs a bounded
- * window (default 5 s, override with the 5th positional) so a run on a
- * dedicated host finishes predictably.
+ * open-loop mode; this port runs the closed loop for a bounded window,
+ * 25 s by default as upstream (override with the 5th positional).
  *
  * Run as: bench/experiments/arrange [keys [recs [rate [comp [seconds]]]]]
  */
@@ -51,15 +50,6 @@ typedef struct bench_ctx {
 	enum comp comp;
 } bench_ctx;
 
-/* arranged -> collection: re-emit each (key, ()) pair as the key record. */
-static void
-arr_kv(void *ctx, const void *key, size_t klen, const void *val, size_t vlen,
-    dtfl_arranged_emit *out)
-{
-	(void)ctx; (void)val; (void)vlen;
-	dtfl_arranged_emit_record(out, key, klen);
-}
-
 static void
 build(dtfl_scope *scope, void *arg)
 {
@@ -71,13 +61,12 @@ build(dtfl_scope *scope, void *arg)
 
 	switch (c->comp) {
 	case C_ARRANGE: {
+		/* arrange_by_self().stream.probe(), as upstream. */
 		dtfl_arranged *a = dtfl_collection_arrange(data, "arrange");
-		dtfl_collection *ac = dtfl_arranged_as_collection(a,
-		    dtfl_type_u64(), arr_kv, DTFL_NOCTX);
 
-		probed = dtfl_collection_probe_with(ac, c->probe);
-		dtfl_collection_free(ac);
+		(void)dtfl_stream_probe_with(dtfl_arranged_stream(a), c->probe);
 		dtfl_arranged_free(a);
+		probed = NULL;
 		break;
 	}
 	case C_COUNT: {
@@ -227,6 +216,6 @@ main(int argc, char **argv)
 	cfg.recs = argc > 2 ? strtoull(argv[2], NULL, 10) : 1000000;
 	cfg.rate = argc > 3 ? strtoull(argv[3], NULL, 10) : 1000;
 	cfg.comp = argc > 4 ? parse_comp(argv[4]) : C_ARRANGE;
-	cfg.seconds = argc > 5 ? strtod(argv[5], NULL) : 5.0;
+	cfg.seconds = argc > 5 ? strtod(argv[5], NULL) : 25.0;
 	return dtfl_execute_directly(worker, &cfg);
 }

@@ -65,7 +65,6 @@ struct dtfl_trace {
 typedef struct arrange_ctx {
 	__dtfl_merge_batcher batcher;
 	__dtfl_chunker chunker;
-	__dtfl_trace_agent reader;	/* the shared reader (also in Arranged) */
 	__dtfl_trace_writer writer;
 	__dtfl_vec caps;		/* dtfl_cap *, lower envelope of batcher */
 	__dtfl_antichain prev_frontier;
@@ -241,9 +240,9 @@ arrange_logic(dtfl_op *op, void *vctx)
 			 * when the shared spine merges and drops the trace's own
 			 * reference.
 			 */
+			__dtfl_batch_ord_retain(batch);
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
-			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
 			__dtfl_session_set_batch_ptr(s);
 			{
@@ -342,12 +341,10 @@ arrange_free(void *vctx)
 	__dtfl_antichain_free(&c->prev_frontier);
 	/*
 	 * The writer seals to the empty frontier on free (writer.rs Drop),
-	 * closing the trace.  The operator's own reader (ac->reader) is a
-	 * referee like any other and is released here; the Arranged keeps its
-	 * own cloned reader, so the shared trace lives until that is freed too.
+	 * closing the trace.  The operator holds no reader of its own: the
+	 * only reader is the one moved into the Arranged.
 	 */
 	__dtfl_trace_writer_free(&c->writer);
-	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
 	dtfl_type_free(c->rt);
@@ -436,11 +433,15 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 	/* Acquire a logger for arrange events (batcher, trace, agent). */
 	__dtfl_dd_logging_install(scope, b, trace, &ac->batcher);
 
-	/* TraceAgent::new gives the reader (shared) and the writer. */
-	__dtfl_trace_agent_new(trace, keyed, kt, vt, tc, dc, &ac->reader,
+	/*
+	 * TraceAgent::new gives the reader and the writer.  The reader moves
+	 * into the Arranged (`*reader_ref = Some(reader_local)`); the operator
+	 * keeps only the writer.  An operator-held reader would pin the
+	 * compaction frontiers at the minimum for the operator's life, so the
+	 * spine would never merge and every cursor would walk every batch.
+	 */
+	__dtfl_trace_agent_new(trace, keyed, kt, vt, tc, dc, &a->agent,
 	    &ac->writer);
-	/* The Arranged keeps a cloned reader; the operator keeps ac->reader. */
-	__dtfl_trace_agent_clone(&ac->reader, &a->agent);
 
 	if (keyed) {
 		pact = dtfl_pact_exchange(NULL, NULL);
@@ -1138,6 +1139,12 @@ dtfl_stream *
 __dtfl_arranged_stream(const dtfl_arranged *a)
 {
 	return a->stream;
+}
+
+dtfl_stream *
+dtfl_arranged_stream(const dtfl_arranged *a)
+{
+	return __dtfl_arranged_stream(a);
 }
 
 __dtfl_trace_agent *

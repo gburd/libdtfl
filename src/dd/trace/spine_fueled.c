@@ -596,6 +596,18 @@ __dtfl_spine_batches_through(__dtfl_spine *s, const __dtfl_antichain *upper,
 		return NULL;
 	}
 
+	/*
+	 * `upper` must be greater or equal to the physical frontier
+	 * (spine_fueled.rs batches_through asserts this).  Behind it the cut
+	 * could fall inside a merged batch in `merging`, whose updates the
+	 * loop below would include whole, so there is no clean cut.
+	 */
+	if (upper != NULL && !__dtfl_frontier_le(&s->physical_frontier, upper)) {
+		*nout = SIZE_MAX;
+		__dtfl_vec_free(&storage);
+		return NULL;
+	}
+
 #define PUSH_RETAIN(b)							\
 	do {								\
 		__dtfl_batch_ord *bb = __dtfl_batch_ord_retain(b);	\

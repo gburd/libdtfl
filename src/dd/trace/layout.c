@@ -445,7 +445,12 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 	if (n == 0)
 		return false;
 
-	/* Sort stash indices by time (stable insertion sort; n is small). */
+	/*
+	 * Sort stash indices by time (stable insertion sort).
+	 * shortcut: O(n^2) in the updates of one (key, val), fine while a
+	 * value's history is short; switch to a merge sort if a hot key's
+	 * history grows to thousands of times (merges re-seal it each time).
+	 */
 	order = __dtfl_alloc(n * sizeof *order);
 	for (i = 0; i < n; i++)
 		order[i] = i;

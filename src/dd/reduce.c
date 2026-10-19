@@ -2410,14 +2410,20 @@ reduce_logic(dtfl_op *op, void *vctx)
 		}
 	}
 
+	/*
+	 * Pull in any subsequent empty batches we believe to exist.  Not
+	 * redundant with the frontier join below: the writer seals empty
+	 * batches into the source trace without sending them, and the trace's
+	 * upper may lead the input frontier this activation sees.
+	 */
+	__dtfl_trace_advance_upper(c->source.box->trace, &c->upper_limit);
+
 	/* The input frontier as a flat run. */
 	frontier = dtfl_op_frontier(op, 0, &fn);
 
 	/*
-	 * Incorporate the input frontier guarantees: upper_limit =
-	 * upper_limit join frontier (antichain join).  Advance upper to the
-	 * frontier where the source trace has sealed further; here the source
-	 * trace advance is folded into the input frontier the operator sees.
+	 * Incorporate the input frontier guarantees as well: upper_limit =
+	 * upper_limit join frontier (antichain join).
 	 */
 	{
 		__dtfl_antichain joined;
@@ -2481,9 +2487,9 @@ reduce_logic(dtfl_op *op, void *vctx)
 		 * stream message frees).  The downstream reader must survive the
 		 * shared spine merging and dropping the trace's reference.
 		 */
+		__dtfl_batch_ord_retain(produced[i].batch);
 		__dtfl_trace_writer_insert(&c->out_writer, produced[i].batch,
 		    produced[i].tag);
-		__dtfl_batch_ord_retain(produced[i].batch);
 		dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 		memcpy(dst, &produced[i].batch, sizeof produced[i].batch);
 		dtfl_session_close(s);
@@ -2852,8 +2858,7 @@ typedef struct abk_route {
 typedef struct abk_ctx {
 	__dtfl_merge_batcher batcher;
 	__dtfl_chunker chunker;
-	__dtfl_trace_agent reader;
-	__dtfl_trace_writer writer;
+	__dtfl_trace_writer writer;	/* the reader moves to the Arranged */
 	__dtfl_vec caps;		/* dtfl_cap * */
 	__dtfl_antichain prev_frontier;
 	const dtfl_type *rt;		/* key || val record type (retained) */
@@ -2991,9 +2996,9 @@ abk_logic(dtfl_op *op, void *vctx)
 			 * writer takes one reference into the trace and the stream
 			 * record owns a second, released when the message frees.
 			 */
+			__dtfl_batch_ord_retain(batch);
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
-			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
 			__dtfl_session_set_batch_ptr(s);
 			dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
@@ -3079,7 +3084,6 @@ abk_free(void *vctx)
 	__dtfl_vec_free(&c->caps);
 	__dtfl_antichain_free(&c->prev_frontier);
 	__dtfl_trace_writer_free(&c->writer);
-	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
 	dtfl_type_free(c->rt);
@@ -3124,9 +3128,9 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
 	/* Acquire a logger for arrange events. */
 	__dtfl_dd_logging_install(scope, b, trace, &c->batcher);
+	/* As arrange_core: the reader moves to the Arranged, not cloned. */
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
-	    &c->reader, &c->writer);
-	__dtfl_trace_agent_clone(&c->reader, &arr_reader);
+	    &arr_reader, &c->writer);
 
 	c->route.kt = key_type;
 	c->route.depth = depth;

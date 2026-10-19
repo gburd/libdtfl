@@ -345,8 +345,8 @@ process_interval(upsert_ctx *c, dtfl_op *op, dtfl_cap *cap,
 	 * takes one reference into the trace and the stream record owns a
 	 * second (released by the consumer when it is done cursoring).
 	 */
-	__dtfl_trace_writer_insert(&c->writer, batch, dtfl_cap_time(cap));
 	__dtfl_batch_ord_retain(batch);
+	__dtfl_trace_writer_insert(&c->writer, batch, dtfl_cap_time(cap));
 	{
 		dtfl_session *s = dtfl_op_session(op, 0, cap);
 		unsigned char *dst;

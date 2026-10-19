@@ -9,9 +9,10 @@
  *
  * count_total counts the occurrences of each key when the time is totally
  * ordered (count.rs CountTotal).  It arranges the collection by self into a
- * shared key trace, then a unary operator reads, for each key in a new
- * batch, the key's accumulated difference in the trace before the batch and
- * walks the batch's (time, diff) updates in order, emitting a retraction of
+ * shared key trace, then a unary operator gathers every batch of an
+ * activation into one cursor list and, for each key in it, reads the key's
+ * accumulated difference in the trace before those batches and walks the
+ * batches' (time, diff) updates in order, emitting a retraction of
  * the old count and an assertion of the new count at each time.  Because the
  * time is totally ordered the running count is exact without the general
  * reduce engine; the output difference is one of the output class.
@@ -160,97 +161,106 @@ count_logic(dtfl_op *op, void *vctx)
 {
 	count_ctx *c = vctx;
 	dtfl_message *m;
-	const uint64_t *frontier;
-	size_t fn, i;
+	dtfl_cap *cap = NULL;
+	__dtfl_vec batch_storage;	/* __dtfl_batch_ord *, retained */
+	size_t i;
 
 	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	__dtfl_vec_init(&batch_storage, sizeof(__dtfl_batch_ord *));
 
-	/* Downgrade previous upper to lower. */
-	__dtfl_antichain_clear(&c->lower_limit);
-	for (i = 0; i < __dtfl_antichain_len(&c->upper_limit); i++)
-		__dtfl_antichain_insert(&c->lower_limit,
-		    __dtfl_antichain_at(&c->upper_limit, i));
+	/* Downgrade previous upper limit to be current lower limit. */
+	__dtfl_antichain_copy(&c->lower_limit, &c->upper_limit);
 
 	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
-		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
-		dtfl_session *s = dtfl_op_session(op, 0, cap);
+		dtfl_cap *mcap = dtfl_op_input_cap(op, 0, 0);
 		size_t n = dtfl_message_len(m);
 
+		/* NB: Assumes batches are in-order. */
+		if (cap == NULL)
+			cap = mcap;
+		else
+			dtfl_cap_drop(mcap);
 		for (i = 0; i < n; i++) {
 			size_t len;
 			const void *recp = dtfl_message_record(m, i, &len);
 			__dtfl_batch_ord *batch;
-			__dtfl_cursor bcur;
-			__dtfl_cursor_list tcl;
-			bool have_trace;
 
 			memcpy(&batch, recp, sizeof batch);
-			/* upper_limit = batch.upper. */
-			__dtfl_antichain_clear(&c->upper_limit);
-			{
-				const __dtfl_antichain *bu =
-				    __dtfl_batch_ord_upper(batch);
-				size_t j;
-
-				for (j = 0; j < __dtfl_antichain_len(bu); j++)
-					__dtfl_antichain_insert(
-					    &c->upper_limit,
-					    __dtfl_antichain_at(bu, j));
-			}
-			/* Trace cursor over batches before lower_limit. */
-			have_trace = __dtfl_trace_agent_cursor_through(
-			    &c->trace, &c->lower_limit, &tcl);
-			__dtfl_cursor_init(&bcur, batch);
-			while (__dtfl_cursor_key_valid(&bcur, batch)) {
-				size_t klen;
-				const void *key = __dtfl_cursor_key(&bcur,
-				    batch, &klen);
-				unsigned char accbuf[64];
-				count_acc acc;
-				count_scan w;
-
-				acc.val = accbuf;
-				acc.some = false;
-				acc.idc = c->idc;
-				/* Accumulate the key's count before the batch. */
-				if (have_trace) {
-					__dtfl_cursor_list_seek_key(&tcl, key,
-					    klen);
-					if (__dtfl_cursor_list_key_valid(&tcl)) {
-						size_t tkl;
-						const void *tk =
-						    __dtfl_cursor_list_key(&tcl,
-						    &tkl);
-
-						if (tkl == klen && memcmp(tk,
-						    key, klen) == 0)
-							__dtfl_cursor_list_map_times(
-							    &tcl, acc_on_time,
-							    &acc);
-					}
-					__dtfl_cursor_list_rewind_keys(&tcl);
-				}
-				/* The key batch has one value (unit). */
-				w.c = c;
-				w.s = s;
-				w.key = key;
-				w.klen = klen;
-				w.acc = &acc;
-				__dtfl_cursor_map_times(&bcur, batch,
-				    batch_on_time, &w);
-				__dtfl_cursor_step_key(&bcur, batch);
-			}
-			if (have_trace)
-				__dtfl_cursor_list_free(&tcl);
+			/* NB: Assumes batches are in-order. */
+			__dtfl_antichain_copy(&c->upper_limit,
+			    __dtfl_batch_ord_upper(batch));
+			/* The record is a borrow; batch_storage holds its own. */
+			batch = __dtfl_batch_ord_retain(batch);
+			__dtfl_vec_push(&batch_storage, &batch);
 		}
+	}
+
+	if (cap != NULL) {
+		dtfl_session *s = dtfl_op_session(op, 0, cap);
+		__dtfl_cursor_list bcl, tcl;
+		bool have_trace;
+
+		/* cursor_list takes the batch_storage references. */
+		__dtfl_cursor_list_init(&bcl,
+		    (__dtfl_batch_ord **)(void *)batch_storage.data,
+		    batch_storage.len, c->trace.kt, c->trace.vt);
+		have_trace = __dtfl_trace_agent_cursor_through(&c->trace,
+		    &c->lower_limit, &tcl);
+		/* Upstream unwraps: the cut at lower_limit is clean. */
+		DTFL_ASSERT(have_trace);
+
+		while (__dtfl_cursor_list_key_valid(&bcl)) {
+			size_t klen;
+			const void *key = __dtfl_cursor_list_key(&bcl, &klen);
+			unsigned char accbuf[64];
+			count_acc acc;
+			count_scan w;
+
+			acc.val = accbuf;
+			acc.some = false;
+			acc.idc = c->idc;
+			/* The key's count in the trace before the batches. */
+			__dtfl_cursor_list_seek_key(&tcl, key, klen);
+			if (__dtfl_cursor_list_key_valid(&tcl)) {
+				size_t tkl;
+				const void *tk = __dtfl_cursor_list_key(&tcl,
+				    &tkl);
+
+				if (tkl == klen && memcmp(tk, key, klen) == 0)
+					__dtfl_cursor_list_map_times(&tcl,
+					    acc_on_time, &acc);
+			}
+			/* The key batch has one value (unit). */
+			w.c = c;
+			w.s = s;
+			w.key = key;
+			w.klen = klen;
+			w.acc = &acc;
+			__dtfl_cursor_list_map_times(&bcl, batch_on_time, &w);
+			__dtfl_cursor_list_step_key(&bcl);
+		}
+		__dtfl_cursor_list_free(&tcl);
+		__dtfl_cursor_list_free(&bcl);
 		dtfl_session_close(s);
 		dtfl_cap_drop(cap);
 	}
+	/* No message means no batch, so nothing is left to release. */
+	__dtfl_vec_free(&batch_storage);
 
-	/* Advance trace compaction to the input frontier. */
-	frontier = dtfl_op_frontier(op, 0, &fn);
-	__dtfl_trace_agent_set_logical(&c->trace, frontier, fn);
-	__dtfl_trace_agent_set_physical(&c->trace, frontier, fn);
+	/*
+	 * Tidy up the shared input trace (count.rs / threshold.rs): step
+	 * upper_limit over the empty batches the writer sealed without
+	 * sending, then compact to it.  Not the input frontier: that may run
+	 * ahead of the trace's upper, and a physical frontier beyond the next
+	 * batch's lower would leave the next cursor_through no clean cut.
+	 */
+	__dtfl_trace_advance_upper(c->trace.box->trace, &c->upper_limit);
+	__dtfl_trace_agent_set_logical(&c->trace,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
+	    __dtfl_antichain_len(&c->upper_limit));
+	__dtfl_trace_agent_set_physical(&c->trace,
+	    (const uint64_t *)(void *)c->upper_limit.elems.data,
+	    __dtfl_antichain_len(&c->upper_limit));
 	return false;
 }
 

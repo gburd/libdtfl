@@ -80,14 +80,20 @@ __dtfl_trace_box_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 	__dtfl_trace_box *b = __dtfl_alloc(sizeof *b);
 
 	__dtfl_arc_init(&b->ref);
+	b->weak = 0;
 	__dtfl_mantichain_init(&b->logical_compaction, tc);
 	__dtfl_mantichain_init(&b->physical_compaction, tc);
 	b->trace = trace;
 	b->tc = tc;
 	b->keyed = keyed;
-	b->kt = kt;
-	b->vt = vt;
-	b->dc = dc;
+	/*
+	 * The box outlives its trace while the writer's weak reference holds
+	 * it, and the writer's empty-batch seal reads these, so the box keeps
+	 * its own references (the trace's die with the trace).
+	 */
+	b->kt = kt != NULL ? dtfl_type_retain(kt) : NULL;
+	b->vt = vt != NULL ? dtfl_type_retain(vt) : NULL;
+	b->dc = __dtfl_diff_class_retain(dc);
 	/*
 	 * Seed each hold from the trace's current compaction frontier
 	 * (TraceBox::new: update_iter over get_logical/physical_compaction).
@@ -114,8 +120,22 @@ __dtfl_trace_box_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 __dtfl_trace_box *
 __dtfl_trace_box_retain(__dtfl_trace_box *b)
 {
+	/* Only a strong owner may clone: a zero count means the trace is gone. */
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) > 0);
 	__dtfl_arc_retain(&b->ref);
 	return b;
+}
+
+/* Frees the box struct once no strong or weak reference remains. */
+static void
+box_free(__dtfl_trace_box *b)
+{
+	if (b->kt != NULL)
+		dtfl_type_free(b->kt);
+	if (b->vt != NULL)
+		dtfl_type_free(b->vt);
+	__dtfl_diff_class_free(b->dc);
+	__dtfl_free(b);
 }
 
 void
@@ -123,10 +143,30 @@ __dtfl_trace_box_release(__dtfl_trace_box *b)
 {
 	if (b == NULL || !__dtfl_arc_release(&b->ref))
 		return;
+	/* The last strong owner: drop the TraceBox (and its trace). */
 	__dtfl_mantichain_free(&b->logical_compaction);
 	__dtfl_mantichain_free(&b->physical_compaction);
 	__dtfl_trace_free(b->trace);
-	__dtfl_free(b);
+	b->trace = NULL;
+	if (b->weak == 0)
+		box_free(b);
+}
+
+__dtfl_trace_box *
+__dtfl_trace_box_downgrade(__dtfl_trace_box *b)
+{
+	b->weak++;
+	return b;
+}
+
+void
+__dtfl_trace_box_release_weak(__dtfl_trace_box *b)
+{
+	if (b == NULL)
+		return;
+	DTFL_ASSERT(b->weak > 0);
+	if (--b->weak == 0 && b->trace == NULL)
+		box_free(b);
 }
 
 /*
@@ -349,9 +389,12 @@ __dtfl_trace_agent_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 	reader->dc = dc;
 	agent_log_share(reader, 1);
 
-	/* The writer shares the box and the queue list (writer.rs new). */
-	__dtfl_trace_writer_init(writer, __dtfl_trace_box_retain(box), queues,
-	    tc);
+	/*
+	 * The writer holds the box weakly (writer.rs new: Rc::downgrade) and
+	 * the queue list strongly.
+	 */
+	__dtfl_trace_writer_init(writer, __dtfl_trace_box_downgrade(box),
+	    queues, tc);
 }
 
 void

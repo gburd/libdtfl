@@ -76,10 +76,19 @@ void __dtfl_session_set_batch_ptr(dtfl_session *s);
  * resulting frontier.  Owns the trace; freed when the last reference drops.
  */
 typedef struct __dtfl_trace_box {
+	/*
+	 * ref counts the strong owners (agents, the Rc of agent.rs); weak
+	 * counts the writer's Weak.  When ref reaches zero the trace and the
+	 * holds are freed and `trace` becomes NULL, so a writer whose readers
+	 * are all gone stops maintaining it (writer.rs `trace.upgrade()` fails);
+	 * the struct itself is freed once ref and weak are both zero.  The box
+	 * is worker-owned, so the two counts never race with each other.
+	 */
 	__dtfl_arc ref;
+	size_t weak;
 	__dtfl_mutable_antichain logical_compaction;
 	__dtfl_mutable_antichain physical_compaction;
-	__dtfl_trace *trace;		/* owned */
+	__dtfl_trace *trace;		/* owned; NULL once ref drops to 0 */
 	const dtfl_time_class *tc;	/* not retained */
 	/* The descriptors the trace was built with, for empty-batch seals. */
 	bool keyed;
@@ -94,6 +103,9 @@ __dtfl_trace_box *__dtfl_trace_box_new(__dtfl_trace *trace, bool keyed,
     const __dtfl_diff_class *dc);
 __dtfl_trace_box *__dtfl_trace_box_retain(__dtfl_trace_box *b);
 void __dtfl_trace_box_release(__dtfl_trace_box *b);
+/* Rc::downgrade / Weak drop: the writer's reference to the box. */
+__dtfl_trace_box *__dtfl_trace_box_downgrade(__dtfl_trace_box *b);
+void __dtfl_trace_box_release_weak(__dtfl_trace_box *b);
 /* adjust_logical_compaction / adjust_physical_compaction (frontier runs). */
 void __dtfl_trace_box_adjust_logical(__dtfl_trace_box *b, const uint64_t *lower,
     size_t nlo, const uint64_t *upper, size_t nhi);
@@ -171,13 +183,13 @@ void __dtfl_queue_list_release(__dtfl_queue_list *l);
 /*
  * The write endpoint: pushes finished batches into the shared trace and the
  * listener queues.  `upper` tracks the current upper limit (next batch must
- * have lower == upper).  Holds a strong box reference and the shared queue
- * list; when the agent is gone the box reference count still keeps the trace
- * alive for the writer, but importers can no longer attach.
+ * have lower == upper).  Holds a weak box reference (writer.rs
+ * `Weak<RefCell<TraceBox>>`) and the shared queue list: once every reader is
+ * gone the trace is freed, and the writer feeds only the listener queues.
  */
 typedef struct __dtfl_trace_writer {
 	__dtfl_antichain upper;
-	__dtfl_trace_box *box;		/* retained */
+	__dtfl_trace_box *box;		/* weak (__dtfl_trace_box_downgrade) */
 	__dtfl_queue_list *queues;	/* retained */
 	const dtfl_time_class *tc;
 } __dtfl_trace_writer;
@@ -186,7 +198,9 @@ void __dtfl_trace_writer_init(__dtfl_trace_writer *w, __dtfl_trace_box *box,
     __dtfl_queue_list *queues, const dtfl_time_class *tc);
 void __dtfl_trace_writer_free(__dtfl_trace_writer *w);
 /*
- * insert: advance the trace by `batch` (takes ownership of the reference).
+ * insert: advance the trace by `batch` (takes ownership of the reference;
+ * the trace may be gone, in which case the reference is released at once,
+ * so a caller that keeps using the batch retains it before inserting).
  * `hint` is NULL (empty batch) or a time <= every update in the batch.
  * Asserts upper == batch.lower and batch.lower != batch.upper.
  */

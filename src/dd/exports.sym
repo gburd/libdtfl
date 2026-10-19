@@ -66,6 +66,7 @@ dtfl_arranged_leave_region
 dtfl_arranged_type
 dtfl_arranged_diff
 dtfl_arranged_scope
+dtfl_arranged_stream
 dtfl_arranged_free
 dtfl_reduce_emit_pair
 dtfl_arranged_reduce_core
