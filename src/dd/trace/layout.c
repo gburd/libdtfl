@@ -445,6 +445,11 @@ bool
 __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 {
 	size_t n = stash_len(b), i, k, out = 0;
+	/* Aligned as an allocation is, since diff classes cast accum. */
+	union {
+		max_align_t align;
+		unsigned char bytes[32];
+	} accum_buf;
 	unsigned char *accum;
 	size_t *order;
 
@@ -452,49 +457,61 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 		return false;
 
 	/*
-	 * Sort stash indices by time (stable insertion sort).
-	 * shortcut: O(n^2) in the updates of one (key, val), fine while a
-	 * value's history is short; switch to a merge sort if a hot key's
-	 * history grows to thousands of times (merges re-seal it each time).
+	 * Sort the stash by time (stable).  consolidate_slice only sorts when
+	 * there are two or more updates, and a stash already in time order,
+	 * the usual case, needs no permutation.
 	 */
-	order = __dtfl_alloc(n * sizeof *order);
-	for (i = 0; i < n; i++)
-		order[i] = i;
-	for (i = 1; i < n; i++) {
-		size_t key = order[i], j = i;
+	for (i = 1; i < n && stash_cmp(b, i - 1, i) <= 0; i++)
+		;
+	if (i < n) {
+		/*
+		 * Sort stash indices by time (stable insertion sort).
+		 * shortcut: O(n^2) in the updates of one (key, val), fine while
+		 * a value's history is short; switch to a merge sort if a hot
+		 * key's history grows to thousands of times (merges re-seal it
+		 * each time).
+		 */
+		order = __dtfl_alloc(n * sizeof *order);
+		for (i = 0; i < n; i++)
+			order[i] = i;
+		for (i = 1; i < n; i++) {
+			size_t key = order[i], j = i;
 
-		while (j > 0 && stash_cmp(b, order[j - 1], key) > 0) {
-			order[j] = order[j - 1];
-			j--;
+			while (j > 0 && stash_cmp(b, order[j - 1], key) > 0) {
+				order[j] = order[j - 1];
+				j--;
+			}
+			order[j] = key;
 		}
-		order[j] = key;
-	}
 
-	/*
-	 * Apply the permutation, as consolidate_slice sorts the stash itself:
-	 * the in-place compaction below then reads slot i >= out, so it never
-	 * reads a slot it has already overwritten.
-	 */
-	{
-		__dtfl_vec st, sd;
+		/*
+		 * Apply the permutation, as consolidate_slice sorts the stash
+		 * itself: the in-place compaction below then reads slot
+		 * i >= out, so it never reads a slot it has already
+		 * overwritten.
+		 */
+		{
+			__dtfl_vec st, sd;
 
-		__dtfl_vec_init(&st, b->stash_t.elem);
-		__dtfl_vec_init(&sd, b->stash_d.elem);
-		for (i = 0; i < n; i++) {
-			__dtfl_vec_push(&st, __dtfl_vec_at(&b->stash_t,
-			    order[i]));
-			__dtfl_vec_push(&sd, __dtfl_vec_at(&b->stash_d,
-			    order[i]));
+			__dtfl_vec_init(&st, b->stash_t.elem);
+			__dtfl_vec_init(&sd, b->stash_d.elem);
+			for (i = 0; i < n; i++) {
+				__dtfl_vec_push(&st, __dtfl_vec_at(&b->stash_t,
+				    order[i]));
+				__dtfl_vec_push(&sd, __dtfl_vec_at(&b->stash_d,
+				    order[i]));
+			}
+			__dtfl_vec_swap(&b->stash_t, &st);
+			__dtfl_vec_swap(&b->stash_d, &sd);
+			__dtfl_vec_free(&st);
+			__dtfl_vec_free(&sd);
 		}
-		__dtfl_vec_swap(&b->stash_t, &st);
-		__dtfl_vec_swap(&b->stash_d, &sd);
-		__dtfl_vec_free(&st);
-		__dtfl_vec_free(&sd);
+		__dtfl_free(order);
 	}
-	__dtfl_free(order);
 
 	/* Consolidate equal-time runs in place, compacting to the front. */
-	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
+	accum = b->dw <= sizeof accum_buf.bytes ? accum_buf.bytes :
+	    __dtfl_alloc(b->dw);
 	for (i = 0; i < n; i = k) {
 		if (b->dw != 0)
 			memcpy(accum, stash_diff(b, i), b->dw);
@@ -510,7 +527,8 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 			memcpy(stash_diff(b, out), accum, b->dw);
 		out++;
 	}
-	__dtfl_free(accum);
+	if (accum != accum_buf.bytes)
+		__dtfl_free(accum);
 
 	if (out == 0) {
 		stash_clear(b);
