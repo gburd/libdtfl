@@ -165,6 +165,21 @@ struct dtfl_session {
 	void (*elem_retain)(void *rec);
 };
 
+/*
+ * A fresh session buffer.  ensure_capacity reserves the container's
+ * preferred capacity before the first push; here that is the flush
+ * threshold's worth of record bytes (row count unknown, so the offsets
+ * still grow).
+ */
+static __dtfl_batch *
+session_buffer(size_t cap_bytes)
+{
+	__dtfl_batch *b = __dtfl_batch_new(0, 0);
+
+	__dtfl_batch_reserve(b, 0, cap_bytes);
+	return b;
+}
+
 dtfl_session *
 dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
 {
@@ -179,8 +194,8 @@ dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
 	s = __dtfl_alloc(sizeof *s);
 	s->out = o;
 	__dtfl_time_copy(o->tc, s->time, dtfl_cap_time(cap));
-	s->buffer = __dtfl_batch_new(0, 0);
 	s->cap_bytes = DTFL_BUFFER_SIZE_BYTES;
+	s->buffer = session_buffer(s->cap_bytes);
 	s->elem_drop = NULL;
 	s->elem_retain = NULL;
 	return s;
@@ -208,7 +223,7 @@ session_flush(dtfl_session *s)
 	if (__dtfl_batch_len(s->buffer) == 0)
 		return;
 	__dtfl_output_give(s->out, s->time, s->buffer);	/* consumes buffer */
-	s->buffer = __dtfl_batch_new(0, 0);
+	s->buffer = session_buffer(s->cap_bytes);
 	if (s->elem_drop != NULL || s->elem_retain != NULL)
 		__dtfl_batch_set_elem_hooks(s->buffer, s->elem_drop,
 		    s->elem_retain);
