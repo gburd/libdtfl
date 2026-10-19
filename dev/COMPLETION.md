@@ -164,14 +164,14 @@ Not started or partial -- MUST be finished before the project is done
         validates the alignment-cast laundering).  The dist tarball
         builds and checks from scratch on riscv64.  Fuzz campaign DONE
         (24 suites, ~230000 cases, ASan-clean; dev/P15-measurements.md).
-        Performance parity MEASURED and then addressed
-        (dev/P15-measurements.md, dev/columnar-experiment.md): a first
-        optimisation pass cut the gap to ~8x arrange / ~29x count, and a
-        flag-gated columnar experiment showed 1.5x is not reachable for a
-        fidelity-first port (see the resolved parity item below).
-        REMAINING: distcheck on musl and macOS (now CI jobs; glibc
-        distcheck green on floki; a full FreeBSD distcheck is impractical
-        on the available host, but FreeBSD make check passes).
+        musl 1.2.5 make check and make distcheck DONE (floki, gcc 15
+        musl wrapper), as are glibc distcheck and clang 21 -Werror.
+        Performance parity is its own open item below.  REMAINING: macOS
+        (no Darwin host; the macos CI job runs make check and distcheck,
+        and the Darwin-specific code paths -- the ld64 exported-symbols
+        list and SO_NOSIGPIPE -- were checked by forcing the configure
+        branch on Linux); a full FreeBSD distcheck (impractical on the
+        available host; FreeBSD make check passes).
 
 Examples
 --------
