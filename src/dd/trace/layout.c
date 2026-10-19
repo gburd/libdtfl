@@ -605,8 +605,14 @@ seal_t1_int8(__dtfl_upds_builder *b, __dtfl_upds *u, size_t n)
 	b->total += out;
 	__dtfl_vec_reserve(&u->times, out);
 	__dtfl_vec_reserve(&u->diffs, out);
-	memcpy(u->times.data + u->times.len * 8, t, out * 8);
-	memcpy(u->diffs.data + u->diffs.len * 8, d, out * 8);
+	if (out == 1) {
+		/* The usual single survivor: two fixed 8-byte stores. */
+		memcpy(u->times.data + u->times.len * 8, t, 8);
+		memcpy(u->diffs.data + u->diffs.len * 8, d, 8);
+	} else {
+		memcpy(u->times.data + u->times.len * 8, t, out * 8);
+		memcpy(u->diffs.data + u->diffs.len * 8, d, out * 8);
+	}
 	u->times.len += out;
 	u->diffs.len += out;
 	u->nupds += out;
