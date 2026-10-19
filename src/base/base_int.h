@@ -103,15 +103,90 @@ typedef struct __dtfl_vec {
 
 void __dtfl_vec_init(__dtfl_vec *v, size_t elem);
 void __dtfl_vec_free(__dtfl_vec *v);
-void __dtfl_vec_reserve(__dtfl_vec *v, size_t additional);
 void __dtfl_vec_shrink(__dtfl_vec *v);
-void *__dtfl_vec_push(__dtfl_vec *v, const void *elem);	/* returns slot */
-void *__dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n);
+/* The out-of-line slow path of __dtfl_vec_reserve. */
+void __dtfl_vec_grow(__dtfl_vec *v, size_t additional);
+
+static inline void
+__dtfl_vec_reserve(__dtfl_vec *v, size_t additional)
+{
+	if (DTFL_UNLIKELY(v->cap - v->len < additional))
+		__dtfl_vec_grow(v, additional);
+}
+
 /*
  * Grows by n elements and returns the first new slot without zeroing it.
  * The caller must fully overwrite the returned [slot, slot + n*elem).
  */
-void *__dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n);
+static inline void *
+__dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n)
+{
+	unsigned char *slot;
+
+	__dtfl_vec_reserve(v, n);
+	slot = v->data + v->len * v->elem;
+	v->len += n;
+	return slot;
+}
+
+/* Appends n elements copied from elems (zeros if NULL); returns slot. */
+static inline void *
+__dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n)
+{
+	size_t bytes = n * v->elem;
+	unsigned char *slot;
+
+	if (n == 0)
+		return v->data + v->len * v->elem;
+	__dtfl_vec_reserve(v, n);
+	slot = v->data + v->len * v->elem;
+	if (elems != NULL)
+		memcpy(slot, elems, bytes);
+	else
+		memset(slot, 0, bytes);
+	v->len += n;
+	return slot;
+}
+
+static inline void *
+__dtfl_vec_push(__dtfl_vec *v, const void *elem)	/* returns slot */
+{
+	return __dtfl_vec_push_n(v, elem, 1);
+}
+
+/*
+ * Fixed-width pushes for the offsets, time and 8-byte diff columns.  The
+ * value travels by value, so the copy is a constant-size store and the
+ * compiler never sizes a copy against the caller's object.
+ */
+static inline void
+__dtfl_vec_push_size(__dtfl_vec *v, size_t x)
+{
+	DTFL_DEBUG_ASSERT(v->elem == sizeof x);
+	__dtfl_vec_reserve(v, 1);
+	memcpy(v->data + v->len * sizeof x, &x, sizeof x);
+	v->len++;
+}
+
+static inline void
+__dtfl_vec_push_u64(__dtfl_vec *v, uint64_t x)
+{
+	DTFL_DEBUG_ASSERT(v->elem == sizeof x);
+	__dtfl_vec_reserve(v, 1);
+	memcpy(v->data + v->len * sizeof x, &x, sizeof x);
+	v->len++;
+}
+
+/* Appends the 8 bytes of x to a byte vector (elem 1). */
+static inline void
+__dtfl_vec_push_8bytes(__dtfl_vec *v, uint64_t x)
+{
+	DTFL_DEBUG_ASSERT(v->elem == 1);
+	__dtfl_vec_reserve(v, sizeof x);
+	memcpy(v->data + v->len, &x, sizeof x);
+	v->len += sizeof x;
+}
+
 void __dtfl_vec_truncate(__dtfl_vec *v, size_t len);
 void __dtfl_vec_remove(__dtfl_vec *v, size_t index);	/* order preserving */
 void __dtfl_vec_swap_remove(__dtfl_vec *v, size_t index);

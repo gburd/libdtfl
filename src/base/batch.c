@@ -152,38 +152,6 @@ __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes)
 }
 
 /*
- * Appends a record of len uninitialized bytes and returns them; the
- * pointer is valid until the next push.  A NULL time or diff stores
- * zeros.
- */
-void *
-__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len, const uint64_t *time,
-    const void *diff)
-{
-	size_t start = b->arena.len, end = start + len;
-
-	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&b->ref) == 1);
-	if (end < start)
-		__dtfl_panic("batch arena overflow");
-	/* The caller fully overwrites these len bytes, so leave them uninit. */
-	__dtfl_vec_push_n_uninit(&b->arena, len);
-	__dtfl_vec_push(&b->offs, &end);
-	__dtfl_vec_push_n(&b->times, time, b->tw);
-	__dtfl_vec_push_n(&b->diffs, diff, b->dw);
-	return b->arena.data + start;
-}
-
-void
-__dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
-    const uint64_t *time, const void *diff)
-{
-	void *p = __dtfl_batch_push_uninit(b, len, time, diff);
-
-	if (len != 0)
-		memcpy(p, rec, len);
-}
-
-/*
  * Appends record i of src.  Copies after the push so that b == src
  * works: the push may move src's storage.
  */

@@ -142,12 +142,52 @@ __dtfl_batch_len(const __dtfl_batch *b)
 }
 
 void __dtfl_batch_clear(__dtfl_batch *b);
+
+/*
+ * Appends a record of len uninitialized bytes and returns them; the
+ * pointer is valid until the next push.  A NULL time or diff stores
+ * zeros.  Inline because it is the per-row cost of every container
+ * fill; the column pushes copy 8-byte times and diffs inline.
+ */
+static inline void *
+__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	size_t start = b->arena.len, end = start + len;
+
+	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	if (DTFL_UNLIKELY(end < start))
+		__dtfl_panic("batch arena overflow");
+	/* The caller fully overwrites these len bytes, so leave them uninit. */
+	__dtfl_vec_push_n_uninit(&b->arena, len);
+	__dtfl_vec_push_size(&b->offs, end);
+	if (b->tw == 1 && time != NULL)
+		__dtfl_vec_push_u64(&b->times, time[0]);
+	else
+		__dtfl_vec_push_n(&b->times, time, b->tw);
+	if (b->dw == sizeof(uint64_t) && diff != NULL) {
+		uint64_t d;
+
+		/* Common case: an 8-byte diff (i64), copied as one word. */
+		memcpy(&d, diff, sizeof d);
+		__dtfl_vec_push_8bytes(&b->diffs, d);
+	} else
+		__dtfl_vec_push_n(&b->diffs, diff, b->dw);
+	return b->arena.data + start;
+}
+
 /* Appends a record; time and diff may be NULL when tw/dw are 0. */
-void __dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
-    const uint64_t *time, const void *diff);
-/* Reserves space and returns a pointer for a record of `len` bytes. */
-void *__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len,
-    const uint64_t *time, const void *diff);
+static inline void
+__dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
+    const uint64_t *time, const void *diff)
+{
+	unsigned char *p = __dtfl_batch_push_uninit(b, len, time, diff);
+
+	if (len == 8)
+		memcpy(p, rec, 8);
+	else if (len != 0)
+		memcpy(p, rec, len);
+}
 /* Reserves room for `rows` more records and `bytes` more arena bytes. */
 void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
 /* Appends record i of src. */

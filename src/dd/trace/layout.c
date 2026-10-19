@@ -64,10 +64,16 @@ __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len)
 		__dtfl_vec_push_n(&s->arena, p, len);
 		return;
 	}
-	if (len != 0)
+	if (len == sizeof(uint64_t)) {
+		uint64_t x;
+
+		/* Common case: an 8-byte key or value, stored as one word. */
+		memcpy(&x, p, sizeof x);
+		__dtfl_vec_push_8bytes(&s->arena, x);
+	} else if (len != 0)
 		__dtfl_vec_push_n(&s->arena, p, len);
 	end = s->arena.len;
-	__dtfl_vec_push(&s->offs, &end);
+	__dtfl_vec_push_size(&s->offs, end);
 }
 
 /*
@@ -257,7 +263,7 @@ __dtfl_offsets_clear(__dtfl_offsets *o)
 void
 __dtfl_offsets_push(__dtfl_offsets *o, size_t val)
 {
-	__dtfl_vec_push(&o->v, &val);
+	__dtfl_vec_push_size(&o->v, val);
 }
 
 /* ------------------------------------------------------------------ */
@@ -374,10 +380,15 @@ void
 __dtfl_upds_builder_push(__dtfl_upds_builder *b, const uint64_t *time,
     const void *diff)
 {
-	void *slot = __dtfl_vec_push(&b->stash_t, NULL);
+	void *slot;
 
-	if (b->tw != 0)
-		memcpy(slot, time, (size_t)b->tw * sizeof(uint64_t));
+	if (b->tw == 1)
+		__dtfl_vec_push_u64(&b->stash_t, time[0]);
+	else {
+		slot = __dtfl_vec_push(&b->stash_t, NULL);
+		if (b->tw != 0)
+			memcpy(slot, time, (size_t)b->tw * sizeof(uint64_t));
+	}
 	slot = __dtfl_vec_push(&b->stash_d, NULL);
 	if (b->dw != 0)
 		memcpy(slot, diff, b->dw);
@@ -533,12 +544,16 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 	/* Conventional: append the survivors. */
 	b->total += out;
 	for (i = 0; i < out; i++) {
-		void *ts = __dtfl_vec_push(&u->times, NULL);
-		void *ds;
+		void *ts, *ds;
 
-		if (u->tw != 0)
-			memcpy(ts, stash_time(b, i),
-			    (size_t)u->tw * sizeof(uint64_t));
+		if (u->tw == 1)
+			__dtfl_vec_push_u64(&u->times, stash_time(b, i)[0]);
+		else {
+			ts = __dtfl_vec_push(&u->times, NULL);
+			if (u->tw != 0)
+				memcpy(ts, stash_time(b, i),
+				    (size_t)u->tw * sizeof(uint64_t));
+		}
 		ds = __dtfl_vec_push(&u->diffs, NULL);
 		if (u->dw != 0)
 			memcpy(ds, stash_diff(b, i), u->dw);
