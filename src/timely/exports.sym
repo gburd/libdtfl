@@ -42,6 +42,8 @@ dtfl_op_builder_input
 dtfl_op_builder_input_connection
 dtfl_op_builder_output
 dtfl_op_builder_output_connection
+dtfl_op_builder_input_sparse
+dtfl_op_builder_output_sparse
 dtfl_op_builder_set_notify
 dtfl_op_builder_build
 dtfl_op_builder_index
