@@ -473,6 +473,7 @@ typedef struct __dtfl_cursor_list {
 	__dtfl_vec min_val;		/* size_t indices */
 	const dtfl_type *kt;
 	const dtfl_type *vt;
+	bool all_keyed;			/* every batch is a key batch */
 } __dtfl_cursor_list;
 
 /* Takes ownership of the n batch references in `batches`. */

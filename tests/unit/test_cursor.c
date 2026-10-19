@@ -197,9 +197,154 @@ DTFL_TEST(cursor__list_merges_two_batches)
 	return MUNIT_OK;
 }
 
+/*
+ * A cursor list over key batches of 8-byte memcmp-ordered keys takes the
+ * all8 minimize path.  A key type with a user cmp of the same order takes
+ * the general one, so the same random batches walked by the same mix of
+ * step_key and seek_key must visit the same keys with the same min-key
+ * cursors and the same updates.  Each batch is cut on a distinct lower
+ * and upper, as a spine's are.  Both lists are of key batches, so both
+ * take the key-batch minimize_vals; its result is checked directly.
+ */
+static int
+user_memcmp(const dtfl_type *t, const void *a, size_t alen, const void *b,
+    size_t blen)
+{
+	size_t m = alen < blen ? alen : blen;
+	int c = m != 0 ? memcmp(a, b, m) : 0;
+
+	(void)t;
+	if (c != 0)
+		return c;
+	return (alen > blen) - (alen < blen);
+}
+
+static __dtfl_batch_ord *
+build_key_batch(const dtfl_type *kt, uint64_t *rng, size_t n, uint64_t lo,
+    dtfl_time_class *tc)
+{
+	__dtfl_batch *chunk = __dtfl_batch_new(1, 8);
+	__dtfl_antichain lower, upper, since;
+	__dtfl_description desc;
+	__dtfl_batch_ord *b;
+	uint64_t hi = lo + 1, zero = 0;
+	unsigned char rec[8];
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		int64_t r;
+		uint64_t t;
+
+		*rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17;
+		dtfl_put_u64(rec, *rng % 40);
+		t = lo;
+		r = (int64_t)((*rng >> 8) % 3) + 1;
+		__dtfl_batch_push(chunk, rec, 8, &t, &r);
+	}
+	__dtfl_consolidate_batch(chunk, dtfl_type_u64(), I64);
+	__dtfl_antichain_init_elem(&lower, tc, &lo);
+	__dtfl_antichain_init_elem(&upper, tc, &hi);
+	__dtfl_antichain_init_elem(&since, tc, &zero);
+	__dtfl_description_init(&desc, &lower, &upper, &since);
+	b = __dtfl_builder_ord_seal(true, kt, dtfl_type_unit(), tc, I64,
+	    &chunk, 1, &desc);
+	__dtfl_batch_release(chunk);
+	return b;
+}
+
+DTFL_TEST(cursor__list_all8_matches_general)
+{
+	dtfl_type slow = *dtfl_type_u64();
+	dtfl_time_class *tc = dtfl_time_u64();
+	uint64_t rng = 0x9e3779b97f4a7c15ULL;
+	int round;
+
+	(void)params; (void)data;
+	slow.cmp = user_memcmp;
+	for (round = 0; round < 200; round++) {
+		__dtfl_batch_ord *fb[6], *gb[6];
+		__dtfl_cursor_list fl, gl;
+		size_t nb = 1 + (size_t)round % 6, i;
+		uint64_t walk;
+
+		for (i = 0; i < nb; i++) {
+			uint64_t save = rng;
+			size_t n = (size_t)(rng % 30);
+
+			fb[i] = build_key_batch(dtfl_type_u64(), &rng, n, i, tc);
+			rng = save;
+			gb[i] = build_key_batch(&slow, &rng, n, i, tc);
+		}
+		__dtfl_cursor_list_init(&fl, fb, nb, dtfl_type_u64(),
+		    dtfl_type_unit());
+		__dtfl_cursor_list_init(&gl, gb, nb, &slow, dtfl_type_unit());
+		walk = rng;
+		for (;;) {
+			struct acc fa, ga;
+			size_t fl_len, gl_len;
+
+			assert_int(__dtfl_cursor_list_key_valid(&fl), ==,
+			    __dtfl_cursor_list_key_valid(&gl));
+			if (!__dtfl_cursor_list_key_valid(&fl))
+				break;
+			assert_memory_equal(8, __dtfl_cursor_list_key(&fl, &fl_len),
+			    __dtfl_cursor_list_key(&gl, &gl_len));
+			assert_size(fl.min_key.len, ==, gl.min_key.len);
+			assert_memory_equal(fl.min_key.len * sizeof(size_t),
+			    fl.min_key.data, gl.min_key.data);
+			assert_size(fl.min_val.len, ==, gl.min_val.len);
+			assert_memory_equal(fl.min_val.len * sizeof(size_t),
+			    fl.min_val.data, gl.min_val.data);
+			memset(&fa, 0, sizeof fa);
+			memset(&ga, 0, sizeof ga);
+			__dtfl_cursor_list_map_times(&fl, collect, &fa);
+			__dtfl_cursor_list_map_times(&gl, collect, &ga);
+			assert_size(fa.ntimes, ==, ga.ntimes);
+			assert_int64(fa.sum, ==, ga.sum);
+			walk ^= walk << 13; walk ^= walk >> 7; walk ^= walk << 17;
+			if (walk % 3 == 0) {
+				unsigned char kb[8];
+				uint64_t k = dtfl_get_u64(
+				    __dtfl_cursor_list_key(&fl, &fl_len)) +
+				    1 + (walk >> 8) % 5;
+
+				dtfl_put_u64(kb, k);
+				__dtfl_cursor_list_seek_key(&fl, kb, 8);
+				__dtfl_cursor_list_seek_key(&gl, kb, 8);
+			} else if (walk % 3 == 1) {
+				/*
+				 * A key batch has one (unit) value per key: once
+				 * stepped none is valid, and a rewind makes every
+				 * min-key cursor's valid again.
+				 */
+				__dtfl_cursor_list_step_val(&fl);
+				__dtfl_cursor_list_step_val(&gl);
+				assert_false(__dtfl_cursor_list_val_valid(&fl));
+				assert_false(__dtfl_cursor_list_val_valid(&gl));
+				__dtfl_cursor_list_rewind_vals(&fl);
+				__dtfl_cursor_list_rewind_vals(&gl);
+				assert_size(fl.min_val.len, ==, fl.min_key.len);
+				assert_size(gl.min_val.len, ==, gl.min_key.len);
+				__dtfl_cursor_list_step_val(&fl);
+				__dtfl_cursor_list_step_val(&gl);
+				__dtfl_cursor_list_step_key(&fl);
+				__dtfl_cursor_list_step_key(&gl);
+			} else {
+				__dtfl_cursor_list_step_key(&fl);
+				__dtfl_cursor_list_step_key(&gl);
+			}
+		}
+		__dtfl_cursor_list_free(&fl);
+		__dtfl_cursor_list_free(&gl);
+	}
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(cursor__single_batch_order_and_consolidation),
 	DTFL_T(cursor__list_merges_two_batches),
+	DTFL_T(cursor__list_all8_matches_general),
 	DTFL_T_END
 };
 
