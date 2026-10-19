@@ -110,6 +110,60 @@ msort_packed(packed_row *v, packed_row *tmp, size_t n)
 }
 
 /*
+ * Stable LSD radix sort of v[0..n) by (k, t), using tmp[0..n) as scratch.
+ * Stability gives the order msort_packed gives: by (k, t), ties in input
+ * order.  Only the bytes that differ between some two rows are passed
+ * over, least significant first (t's bytes, then k's), so a buffer whose
+ * keys and times span a few low bytes sorts in a few passes.  n must fit
+ * the 32-bit bucket counts.
+ */
+static void
+radix_packed(packed_row *v, packed_row *tmp, size_t n)
+{
+	packed_row *src = v, *dst = tmp, *sw;
+	uint64_t dk = 0, dt = 0;
+	uint32_t count[256];
+	unsigned pass;
+	size_t i;
+
+	DTFL_ASSERT(n <= UINT32_MAX);
+	for (i = 1; i < n; i++) {
+		dk |= v[i].k ^ v[0].k;
+		dt |= v[i].t ^ v[0].t;
+	}
+	for (pass = 0; pass < 16; pass++) {
+		bool on_t = pass < 8;
+		unsigned shift = 8 * (pass & 7), bkt;
+		uint32_t sum = 0, c;
+
+		if ((((on_t ? dt : dk) >> shift) & 0xff) == 0)
+			continue;
+		memset(count, 0, sizeof count);
+		for (i = 0; i < n; i++)
+			count[((on_t ? src[i].t : src[i].k) >> shift) & 0xff]++;
+		for (bkt = 0; bkt < 256; bkt++) {
+			c = count[bkt];
+			count[bkt] = sum;
+			sum += c;
+		}
+		for (i = 0; i < n; i++)
+			dst[count[((on_t ? src[i].t : src[i].k) >> shift) &
+			    0xff]++] = src[i];
+		sw = src;
+		src = dst;
+		dst = sw;
+	}
+	if (src != v)
+		memcpy(v, src, n * sizeof *v);
+}
+
+/*
+ * Below this many rows the merge sort beats the radix sort's fixed cost
+ * (a 256-bucket count per pass).
+ */
+#define RADIX_MIN_ROWS 64
+
+/*
  * The packed rows of b, sorted, when b admits the packed sort: a
  * memcmp-ordered record type, every record the same length of at most 8
  * bytes, and at most one time word.  A record left-aligned in a
@@ -145,7 +199,10 @@ sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
 		v[i].t = b->tw != 0 ? __dtfl_batch_time(b, i)[0] : 0;
 		v[i].i = i;
 	}
-	msort_packed(v, v + n, n);
+	if (n >= RADIX_MIN_ROWS && n <= UINT32_MAX)
+		radix_packed(v, v + n, n);
+	else
+		msort_packed(v, v + n, n);
 	return v;
 }
 
@@ -257,6 +314,12 @@ __dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
 	c->current = __dtfl_batch_new(tw, (unsigned)dc->width);
 	__dtfl_vec_init(&c->outbound, sizeof(__dtfl_batch *));
 	c->cap = default_capacity(rt, tw, dc->width);
+	{
+		size_t w = __dtfl_type_const_width(rt);
+
+		__dtfl_batch_reserve(c->current, 2 * c->cap,
+		    w == SIZE_MAX ? 0 : 2 * c->cap * w);
+	}
 }
 
 /*
@@ -289,8 +352,12 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 		}
 		if (end == 0)
 			return;
+		/*
+		 * push_into keeps current's capacity at 2 * preferred, so the
+		 * buffer refills without growing.
+		 */
 		rest = __dtfl_batch_new(cur->tw, cur->dw);
-		__dtfl_batch_reserve(rest, n - end, (n - end) * avg);
+		__dtfl_batch_reserve(rest, 2 * c->cap, 2 * c->cap * avg);
 		__dtfl_batch_push_run(rest, cur, end, n - end);
 		replace_storage(cur, rest);
 	}
