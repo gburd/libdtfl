@@ -34,6 +34,7 @@ typedef struct rendezvous {
 	size_t refs;		/* unbuilt builders; guarded */
 	bool abandoned;		/* a builder died unbuilt; guarded */
 	__dtfl_merge_queue **slot;	/* [from * peers + to]; guarded */
+	__dtfl_spill_fn *spill;	/* one reference, or NULL; immutable */
 } rendezvous;
 
 typedef struct process_builder {
@@ -56,6 +57,7 @@ rendezvous_release(rendezvous *rv)
 	for (i = 0; i < rv->peers * rv->peers; i++)
 		__dtfl_merge_queue_drop(rv->slot[i], false);
 	__dtfl_free(rv->slot);
+	__dtfl_spill_fn_release(rv->spill);
 	(void)pthread_cond_destroy(&rv->cond);
 	(void)pthread_mutex_destroy(&rv->lock);
 	__dtfl_free(rv);
@@ -324,6 +326,7 @@ process_builder_build(__dtfl_allocator_builder *bb)
 	size_t peers = rv->peers, me = b->index, r;
 	zc_process *p = __dtfl_calloc(1, sizeof *p);
 	__dtfl_merge_queue *writer, *reader;
+	__dtfl_spill_policy *wp, *rp;
 	bool abandoned = false;
 
 	p->base.ops = &zc_process_ops;
@@ -339,11 +342,16 @@ process_builder_build(__dtfl_allocator_builder *bb)
 	p->sends = __dtfl_calloc(peers, sizeof *p->sends);
 	p->recvs = __dtfl_calloc(peers, sizeof *p->recvs);
 
-	/* Fulfill puller obligations: queues r -> me, buzzing my parker. */
+	/*
+	 * Fulfill puller obligations: queues r -> me, buzzing my parker.
+	 * The peer is the writer (it extends into the queue); this builder
+	 * owns the reader.
+	 */
 	for (r = 0; r < peers; r++) {
+		__dtfl_spill_fn_make(rv->spill, &wp, &rp);
 		__dtfl_merge_queue_new_pair(buzz_parker,
-		    __dtfl_parker_retain(p->base.parker), drop_parker, NULL,
-		    NULL, &writer, &reader);
+		    __dtfl_parker_retain(p->base.parker), drop_parker, wp, rp,
+		    &writer, &reader);
 		p->recvs[r] = reader;
 		(void)pthread_mutex_lock(&rv->lock);
 		rv->slot[r * peers + me] = writer;
@@ -388,9 +396,12 @@ process_builder_destroy(__dtfl_allocator_builder *bb)
 	__dtfl_free(b);
 }
 
-/* ProcessBuilder::new_vector: `peers` builders sharing one rendezvous. */
+/*
+ * ProcessBuilder::new_vector: `peers` builders sharing one rendezvous,
+ * which holds the spill factory for every queue they create.
+ */
 void
-__dtfl_process_binary_builders(size_t peers,
+__dtfl_process_binary_builders(size_t peers, __dtfl_spill_fn *spill,
     __dtfl_allocator_builder **builders)
 {
 	rendezvous *rv = __dtfl_alloc(sizeof *rv);
@@ -403,6 +414,7 @@ __dtfl_process_binary_builders(size_t peers,
 	rv->peers = peers;
 	rv->refs = peers;
 	rv->abandoned = false;
+	rv->spill = __dtfl_spill_fn_retain(spill);
 	rv->slot = __dtfl_calloc(__dtfl_mul_size(peers, peers),
 	    sizeof *rv->slot);
 	for (i = 0; i < peers; i++) {

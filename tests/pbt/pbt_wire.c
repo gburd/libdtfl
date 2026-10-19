@@ -175,7 +175,7 @@ prop_process_binary_schedule(pbt_tc *tc)
 	}
 	memset(sent, 0, sizeof sent);
 	memset(recvd, 0, sizeof recvd);
-	__dtfl_process_binary_builders(PEERS, b);
+	__dtfl_process_binary_builders(PEERS, NULL, b);
 	for (w = 0; w < PEERS; w++) {
 		slot[w].b = b[w];
 		if (pthread_create(&th[w], NULL, build_thread, &slot[w]) != 0)

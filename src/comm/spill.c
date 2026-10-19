@@ -19,12 +19,45 @@
  *
  * Threshold pairs a strategy with threshold and reserve knobs: "spill
  * the middle of the queue when resident bytes get too large".
- * PrefetchPolicy is its reader-side dual.  Upstream's SpillPolicyFn (a
- * factory of writer/reader policy pairs) arrives with the allocator
- * configuration; until then the allocators build queues without
- * policies, which is upstream's default.
+ * PrefetchPolicy is its reader-side dual.  SpillPolicyFn, a shared
+ * factory of writer/reader policy pairs, is __dtfl_spill_fn: the
+ * configuration owns one (dtfl_config_set_spill_file, spill_file.c) and
+ * every allocator that creates a MergeQueue pair asks it for a fresh
+ * pair.  With none, queues have no policies, which is upstream's default.
  */
 #include "comm/zc_int.h"
+
+/* ------------------------------------------------------------------ */
+/* SpillPolicyFn                                                       */
+/* ------------------------------------------------------------------ */
+
+/* Arc::clone.  NULL is passed through. */
+__dtfl_spill_fn *
+__dtfl_spill_fn_retain(__dtfl_spill_fn *f)
+{
+	if (f != NULL)
+		__dtfl_arc_retain(&f->ref);
+	return f;
+}
+
+/* Drops one reference; the last destroys the factory. */
+void
+__dtfl_spill_fn_release(__dtfl_spill_fn *f)
+{
+	if (f != NULL && __dtfl_arc_release(&f->ref))
+		f->destroy(f);
+}
+
+/* build_fn(), or MergeQueue::new_pair(buzzer, None, None) without one. */
+void
+__dtfl_spill_fn_make(__dtfl_spill_fn *f, __dtfl_spill_policy **writer,
+    __dtfl_spill_policy **reader)
+{
+	*writer = NULL;
+	*reader = NULL;
+	if (f != NULL)
+		f->make(f, writer, reader);
+}
 
 /* Drops a policy not handed to a queue.  NULL is a no-op. */
 void

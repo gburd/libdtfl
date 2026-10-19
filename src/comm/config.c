@@ -21,6 +21,7 @@
  * flags from what is left.
  */
 #include "comm/init_int.h"
+#include "comm/zc_int.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -38,6 +39,7 @@ struct dtfl_config {
 	char *timely_log_addr;		/* owned or NULL */
 	char *differential_log_addr;	/* owned or NULL */
 	__dtfl_vec log_subs;		/* __dtfl_log_sub, streams owned */
+	__dtfl_spill_fn *spill;		/* one reference, or NULL */
 };
 
 dtfl_config *
@@ -80,6 +82,7 @@ dtfl_config_free(dtfl_config *cfg)
 		__dtfl_free((void *)(uintptr_t)s->stream);
 	}
 	__dtfl_vec_free(&cfg->log_subs);
+	__dtfl_spill_fn_release(cfg->spill);
 	__dtfl_free(cfg);
 }
 
@@ -198,6 +201,35 @@ uint64_t
 dtfl_config_seed(const dtfl_config *cfg)
 {
 	return cfg->seed;
+}
+
+/*
+ * Hooks::spill with the example's file-backed factory.  Upstream keeps
+ * hooks beside the configuration; here they ride on it, and
+ * dtfl_config_from_args leaves them alone.
+ */
+int
+dtfl_config_set_spill_file(dtfl_config *cfg, const char *dir,
+    size_t threshold_bytes, size_t head_reserve_bytes)
+{
+	__dtfl_spill_fn *f = NULL;
+	int rc;
+
+	if (cfg == NULL)
+		return __dtfl_err(DTFL_EINVAL, "dtfl_config_set_spill_file: "
+		    "NULL config");
+	if (dir != NULL && (rc = __dtfl_spill_file_fn_new(dir,
+	    threshold_bytes, head_reserve_bytes, &f)) != 0)
+		return rc;
+	__dtfl_spill_fn_release(cfg->spill);
+	cfg->spill = f;
+	return 0;
+}
+
+__dtfl_spill_fn *
+__dtfl_config_spill(const dtfl_config *cfg)
+{
+	return cfg->spill;
 }
 
 bool
@@ -366,8 +398,8 @@ read_hostfile(const char *path, size_t n, char **lines, size_t *got)
  * communication Config::from_matches plus worker Config::from_matches.
  * Like upstream it builds the whole communication configuration, so
  * fields from an earlier configuration (cluster addresses, process) do
- * not survive; the seed and log addresses are not command-line state
- * and are kept.  cfg changes only on success.
+ * not survive; the seed, log addresses and spill hook are not
+ * command-line state and are kept.  cfg changes only on success.
  */
 static int
 from_matches(const matches *m, dtfl_config *cfg)

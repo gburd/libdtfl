@@ -26,6 +26,7 @@
 #include "dd/common_int.h"
 #include "dd/dd_int.h"
 #include "dd/trace/trace_int.h"
+#include "dtfl/record.h"
 #include "progress/time_int.h"
 
 /*
@@ -655,4 +656,690 @@ __dtfl_join_think(__dtfl_value_history *h1, __dtfl_value_history *h2,
 		join_cross(h1, h2, emit, ctx);
 	else
 		join_wave(h1, h2, emit, ctx);
+}
+
+/* ------------------------------------------------------------------ */
+/* Integer-proxy support: ValueHistory::load_iter and step_through      */
+/* (operators/mod.rs), bilinear_wave, TimeHistory, tile_descriptions,   */
+/* KeyView, DiscoverScratch and discover_times (common.rs).             */
+/* ------------------------------------------------------------------ */
+
+const uint64_t *
+__dtfl_value_history_time(const __dtfl_value_history *h)
+{
+	return value_history_time(h);
+}
+
+const uint64_t *
+__dtfl_value_history_meet(const __dtfl_value_history *h)
+{
+	return value_history_meet(h);
+}
+
+void
+__dtfl_value_history_step(__dtfl_value_history *h)
+{
+	value_history_step(h);
+}
+
+/* Step edits while the next time equals `time`; true iff any did. */
+bool
+__dtfl_value_history_step_while_time_is(__dtfl_value_history *h,
+    const uint64_t *time)
+{
+	bool found = false;
+
+	while (value_history_time(h) != NULL &&
+	    __dtfl_words_cmp(value_history_time(h), time, h->tw) == 0) {
+		found = true;
+		value_history_step(h);
+	}
+	return found;
+}
+
+/*
+ * Step edits while the next time is <= `time` in the TOTAL order (a superset
+ * of the partially-ordered downset; readers filter the buffer by less_equal
+ * themselves).
+ */
+void
+__dtfl_value_history_step_through(__dtfl_value_history *h,
+    const uint64_t *time)
+{
+	while (value_history_time(h) != NULL &&
+	    __dtfl_words_cmp(value_history_time(h), time, h->tw) <= 0)
+		value_history_step(h);
+}
+
+void
+__dtfl_value_history_advance_buffer_by(__dtfl_value_history *h,
+    const uint64_t *meet)
+{
+	value_history_advance_buffer_by(h, meet);
+}
+
+size_t
+__dtfl_value_history_buffer_len(const __dtfl_value_history *h)
+{
+	return h->buffer.len;
+}
+
+const void *
+__dtfl_value_history_buffer_at(const __dtfl_value_history *h, size_t i,
+    size_t *vlen, const uint64_t **time, const void **diff)
+{
+	const buf_rec *b = &((const buf_rec *)(void *)h->buffer.data)[i];
+
+	*time = b->time;
+	*diff = b->diff;
+	return __dtfl_slices_get(&h->edits.vals, b->value_index, vlen);
+}
+
+/*
+ * load_iter: edits grouped by consecutive value (the presentation order),
+ * each time joined with advance_by if supplied, then build.  Ungrouped input
+ * is still correct, only less compact.  The value is the id as 8 bytes of
+ * dtfl_put_u64, so value order is id order.
+ */
+void
+__dtfl_value_history_load_iter(__dtfl_value_history *h,
+    const __dtfl_bridge_upd *rows, size_t n, const uint64_t *advance_by)
+{
+	unsigned char cur[8];
+	bool have = false;
+	size_t i;
+
+	edit_list_clear(&h->edits);
+	for (i = 0; i < n; i++) {
+		if (!have || dtfl_get_u64(cur) != rows[i].id) {
+			if (have)
+				edit_list_seal(&h->edits, cur, sizeof cur);
+			dtfl_put_u64(cur, rows[i].id);
+			have = true;
+		}
+		edit_list_push(&h->edits, rows[i].time, rows[i].diff,
+		    advance_by);
+	}
+	if (have)
+		edit_list_seal(&h->edits, cur, sizeof cur);
+	value_history_build(h);
+}
+
+/* bilinear_wave: the join of two histories, in time order. */
+void
+__dtfl_bilinear_wave(__dtfl_value_history *h0, __dtfl_value_history *h1,
+    __dtfl_join_emit_fn emit, void *ctx)
+{
+	join_wave(h0, h1, emit, ctx);
+}
+
+/* Compares two __dtfl_time_val by Ord, for idx_msort. */
+typedef struct tv_sort_ctx {
+	const __dtfl_time_val *v;
+	unsigned tw;
+} tv_sort_ctx;
+
+static int
+tv_cmp_idx(void *vctx, size_t a, size_t b)
+{
+	tv_sort_ctx *c = vctx;
+
+	return __dtfl_words_cmp(c->v[a].t, c->v[b].t, c->tw);
+}
+
+/* Sort `v` (__dtfl_time_val) ascending, or descending if `desc`. */
+static void
+times_sort(__dtfl_vec *v, unsigned tw, bool desc)
+{
+	size_t n = v->len, i;
+	__dtfl_time_val *t = (__dtfl_time_val *)(void *)v->data, *sorted;
+	size_t *idx;
+	tv_sort_ctx cx = { t, tw };
+
+	if (n < 2)
+		return;
+	idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
+	sorted = __dtfl_alloc(__dtfl_mul_size(n, sizeof *sorted));
+	for (i = 0; i < n; i++)
+		idx[i] = i;
+	idx_msort(idx, idx + n, n, tv_cmp_idx, &cx);
+	for (i = 0; i < n; i++)
+		sorted[i] = t[idx[desc ? n - 1 - i : i]];
+	memcpy(t, sorted, n * sizeof *sorted);
+	__dtfl_free(sorted);
+	__dtfl_free(idx);
+}
+
+/* Drop adjacent duplicates (Vec::dedup). */
+static void
+times_dedup(__dtfl_vec *v, unsigned tw)
+{
+	__dtfl_time_val *t = (__dtfl_time_val *)(void *)v->data;
+	size_t i, w = 0;
+
+	for (i = 0; i < v->len; i++)
+		if (w == 0 || __dtfl_words_cmp(t[w - 1].t, t[i].t, tw) != 0)
+			t[w++] = t[i];
+	v->len = w;
+}
+
+/* reduce.rs sort_dedup. */
+void
+__dtfl_times_sort_dedup(__dtfl_vec *v, unsigned tw)
+{
+	times_sort(v, tw, false);
+	times_dedup(v, tw);
+}
+
+static void
+times_push(__dtfl_vec *v, const uint64_t *t, unsigned tw)
+{
+	__dtfl_time_val x;
+
+	memset(&x, 0, sizeof x);
+	if (tw != 0)
+		memcpy(x.t, t, (size_t)tw * sizeof(uint64_t));
+	__dtfl_vec_push(v, &x);
+}
+
+static __dtfl_time_val *
+times_at(const __dtfl_vec *v, size_t i)
+{
+	return &((__dtfl_time_val *)(void *)v->data)[i];
+}
+
+typedef struct bridge_sort_ctx {
+	const __dtfl_bridge_upd *r;
+	unsigned tw;
+} bridge_sort_ctx;
+
+/* Orders bridge rows by ((hash, id), time). */
+int
+__dtfl_bridge_cmp(const __dtfl_bridge_upd *x, const __dtfl_bridge_upd *y,
+    unsigned tw)
+{
+	if (x->hash != y->hash)
+		return x->hash < y->hash ? -1 : 1;
+	if (x->id != y->id)
+		return x->id < y->id ? -1 : 1;
+	return __dtfl_words_cmp(x->time, y->time, tw);
+}
+
+static int
+bridge_cmp_idx(void *vctx, size_t a, size_t b)
+{
+	bridge_sort_ctx *c = vctx;
+
+	return __dtfl_bridge_cmp(&c->r[a], &c->r[b], c->tw);
+}
+
+void
+__dtfl_bridge_sort(__dtfl_vec *rows, unsigned tw)
+{
+	__dtfl_bridge_upd *r = (__dtfl_bridge_upd *)(void *)rows->data;
+	size_t n = rows->len, i;
+	bridge_sort_ctx cx = { r, tw };
+	size_t *idx;
+	__dtfl_bridge_upd *sorted;
+
+	if (n < 2)
+		return;
+	idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
+	sorted = __dtfl_alloc(__dtfl_mul_size(n, sizeof *sorted));
+	for (i = 0; i < n; i++)
+		idx[i] = i;
+	idx_msort(idx, idx + n, n, bridge_cmp_idx, &cx);
+	for (i = 0; i < n; i++)
+		sorted[i] = r[idx[i]];
+	memcpy(r, sorted, n * sizeof *sorted);
+	__dtfl_free(sorted);
+	__dtfl_free(idx);
+}
+
+void
+__dtfl_bridge_consolidate(__dtfl_vec *rows, unsigned tw,
+    const __dtfl_diff_class *dc)
+{
+	__dtfl_bridge_upd *r;
+	size_t n = rows->len, i, j, w = 0;
+
+	__dtfl_bridge_sort(rows, tw);
+	r = (__dtfl_bridge_upd *)(void *)rows->data;
+	for (i = 0; i < n; i = j) {
+		__dtfl_bridge_upd acc = r[i];
+		bridge_sort_ctx cx = { r, tw };
+
+		for (j = i + 1; j < n && bridge_cmp_idx(&cx, i, j) == 0; j++)
+			if (dc->width != 0)
+				dc->plus_equals(dc, acc.diff, r[j].diff);
+		if (dc->width == 0 || !dc->is_zero(dc, acc.diff))
+			r[w++] = acc;
+	}
+	rows->len = w;
+}
+
+/* TimeHistory: (time, meet) pairs, sorted descending by time. */
+typedef struct time_meet {
+	uint64_t time[DTFL_TIME_MAX];
+	uint64_t meet[DTFL_TIME_MAX];
+} time_meet;
+
+void
+__dtfl_time_history_init(__dtfl_time_history *h, const dtfl_time_class *tc)
+{
+	__dtfl_vec_init(&h->history, sizeof(time_meet));
+	__dtfl_vec_init(&h->buffer, sizeof(__dtfl_time_val));
+	h->tc = tc;
+	h->tw = dtfl_time_depth(tc);
+}
+
+void
+__dtfl_time_history_free(__dtfl_time_history *h)
+{
+	__dtfl_vec_free(&h->history);
+	__dtfl_vec_free(&h->buffer);
+}
+
+static int
+tm_desc_idx(void *vctx, size_t a, size_t b)
+{
+	struct { const time_meet *r; unsigned tw; } *c = vctx;
+
+	return __dtfl_words_cmp(c->r[b].time, c->r[a].time, c->tw);
+}
+
+/* Load times, advancing each by advance_by; sort + suffix meets. */
+void
+__dtfl_time_history_load(__dtfl_time_history *h, const uint64_t *first,
+    size_t n, size_t stride, const uint64_t *advance_by)
+{
+	time_meet *r;
+	size_t i;
+
+	__dtfl_vec_clear(&h->history);
+	__dtfl_vec_clear(&h->buffer);
+	for (i = 0; i < n; i++) {
+		time_meet x;
+		const uint64_t *t = (const uint64_t *)(const void *)
+		    ((const unsigned char *)first + i * stride);
+
+		memset(&x, 0, sizeof x);
+		if (h->tw != 0) {
+			memcpy(x.time, t, (size_t)h->tw * sizeof(uint64_t));
+			if (advance_by != NULL)
+				dtfl_time_join(h->tc, x.time, advance_by,
+				    x.time);
+			memcpy(x.meet, x.time, (size_t)h->tw * sizeof(uint64_t));
+		}
+		__dtfl_vec_push(&h->history, &x);
+	}
+	n = h->history.len;
+	r = (time_meet *)(void *)h->history.data;
+	if (n > 1) {
+		struct { const time_meet *r; unsigned tw; } cx = { r, h->tw };
+		size_t *idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
+		time_meet *sorted = __dtfl_alloc(__dtfl_mul_size(n,
+		    sizeof *sorted));
+
+		for (i = 0; i < n; i++)
+			idx[i] = i;
+		idx_msort(idx, idx + n, n, tm_desc_idx, &cx);
+		for (i = 0; i < n; i++)
+			sorted[i] = r[idx[i]];
+		memcpy(r, sorted, n * sizeof *sorted);
+		__dtfl_free(sorted);
+		__dtfl_free(idx);
+	}
+	if (h->tw != 0)
+		for (i = 1; i < n; i++)
+			dtfl_time_meet(h->tc, r[i].meet, r[i - 1].meet,
+			    r[i].meet);
+}
+
+/* The next (least) un-replayed time. */
+const uint64_t *
+__dtfl_time_history_time(const __dtfl_time_history *h)
+{
+	if (h->history.len == 0)
+		return NULL;
+	return ((const time_meet *)(void *)h->history.data)
+	    [h->history.len - 1].time;
+}
+
+/* The meet of all un-replayed times. */
+const uint64_t *
+__dtfl_time_history_meet(const __dtfl_time_history *h)
+{
+	if (h->history.len == 0)
+		return NULL;
+	return ((const time_meet *)(void *)h->history.data)
+	    [h->history.len - 1].meet;
+}
+
+/* Step times while the next equals `time`; true iff any did. */
+bool
+__dtfl_time_history_step_while_time_is(__dtfl_time_history *h,
+    const uint64_t *time)
+{
+	bool found = false;
+
+	while (__dtfl_time_history_time(h) != NULL &&
+	    __dtfl_words_cmp(__dtfl_time_history_time(h), time, h->tw) == 0) {
+		found = true;
+		times_push(&h->buffer, __dtfl_time_history_time(h), h->tw);
+		h->history.len--;
+	}
+	return found;
+}
+
+/*
+ * Advance buffered times by `meet` and deduplicate: the collapse that keeps
+ * replay linear.
+ */
+void
+__dtfl_time_history_advance_buffer_by(__dtfl_time_history *h,
+    const uint64_t *meet)
+{
+	size_t i;
+
+	if (h->tw != 0)
+		for (i = 0; i < h->buffer.len; i++)
+			dtfl_time_join(h->tc, times_at(&h->buffer, i)->t, meet,
+			    times_at(&h->buffer, i)->t);
+	__dtfl_times_sort_dedup(&h->buffer, h->tw);
+}
+
+/*
+ * tile_descriptions: the i-th cut point is the frontier formed by inserting
+ * held[i+1..] into upper, so description i covers the part of the interval
+ * not greater-or-equal any held time after held[i] (and not covered by an
+ * earlier description).  Descriptions whose interval is empty are skipped.
+ */
+size_t
+__dtfl_tile_descriptions(const __dtfl_antichain *lower,
+    const __dtfl_antichain *upper, const __dtfl_antichain *held,
+    __dtfl_description *descs, size_t *tile_held, size_t *tile_of)
+{
+	const dtfl_time_class *tc = lower->tc;
+	size_t nheld = __dtfl_antichain_len(held), index, i, ntiles = 0;
+	__dtfl_antichain out_lower;
+	uint64_t minimum[DTFL_TIME_MAX] = { 0 };
+
+	dtfl_time_minimum(tc, minimum);
+	__dtfl_antichain_init(&out_lower, tc);
+	__dtfl_antichain_copy(&out_lower, lower);
+	for (index = 0; index < nheld; index++) {
+		__dtfl_antichain out_upper;
+
+		tile_of[index] = SIZE_MAX;
+		__dtfl_antichain_init(&out_upper, tc);
+		__dtfl_antichain_copy(&out_upper, upper);
+		for (i = index + 1; i < nheld; i++)
+			__dtfl_antichain_insert(&out_upper,
+			    __dtfl_antichain_at(held, i));
+		if (!__dtfl_antichain_eq(&out_upper, &out_lower)) {
+			__dtfl_antichain lo, hi, since;
+
+			tile_of[index] = ntiles;
+			__dtfl_antichain_init(&lo, tc);
+			__dtfl_antichain_copy(&lo, &out_lower);
+			__dtfl_antichain_init(&hi, tc);
+			__dtfl_antichain_copy(&hi, &out_upper);
+			__dtfl_antichain_init_elem(&since, tc, minimum);
+			__dtfl_description_init(&descs[ntiles], &lo, &hi,
+			    &since);
+			tile_held[ntiles] = index;
+			ntiles++;
+			__dtfl_antichain_copy(&out_lower, &out_upper);
+		}
+		__dtfl_antichain_free(&out_upper);
+	}
+	__dtfl_antichain_free(&out_lower);
+	return ntiles;
+}
+
+void
+__dtfl_discover_scratch_init(__dtfl_discover_scratch *s,
+    const dtfl_time_class *tc, const __dtfl_diff_class *rin)
+{
+	__dtfl_time_history_init(&s->batch_replay, tc);
+	__dtfl_value_history_init(&s->input_replay, tc, rin);
+	__dtfl_time_history_init(&s->output_replay, tc);
+	__dtfl_vec_init(&s->synth, sizeof(__dtfl_time_val));
+	__dtfl_vec_init(&s->times_current, sizeof(__dtfl_time_val));
+	__dtfl_vec_init(&s->temporary, sizeof(__dtfl_time_val));
+	__dtfl_vec_init(&s->meets, sizeof(__dtfl_time_val));
+}
+
+void
+__dtfl_discover_scratch_free(__dtfl_discover_scratch *s)
+{
+	__dtfl_time_history_free(&s->batch_replay);
+	__dtfl_value_history_free(&s->input_replay);
+	__dtfl_time_history_free(&s->output_replay);
+	__dtfl_vec_free(&s->synth);
+	__dtfl_vec_free(&s->times_current);
+	__dtfl_vec_free(&s->temporary);
+	__dtfl_vec_free(&s->meets);
+}
+
+/* Updates an optional meet by an optional time. */
+static void
+dt_update_meet(const dtfl_time_class *tc, uint64_t *meet, bool *has,
+    const uint64_t *other)
+{
+	if (other == NULL)
+		return;
+	if (*has)
+		dtfl_time_meet(tc, meet, other, meet);
+	else {
+		memcpy(meet, other, (size_t)dtfl_time_depth(tc) *
+		    sizeof(uint64_t));
+		*has = true;
+	}
+}
+
+/* t joined with every element... of `src` not <= next, onto `dst`. */
+static void
+push_joins_not_le(const dtfl_time_class *tc, __dtfl_vec *dst,
+    const uint64_t *t, const uint64_t *next)
+{
+	uint64_t j[DTFL_TIME_MAX] = { 0 };
+
+	if (!dtfl_time_less_equal(tc, t, next)) {
+		dtfl_time_join(tc, next, t, j);
+		times_push(dst, j, dtfl_time_depth(tc));
+	}
+}
+
+/*
+ * discover_times: replays the key's seed_times and pending times in
+ * ascending order, marking those that carry updates and closing the set
+ * under joins with the input and output histories' times and with each
+ * other.  No input collection is materialized, so peak memory is O(times);
+ * buffers are advanced by the meet of the times still to come.
+ *
+ * seed_times must be the novel batch's own time support for this key.
+ * Seeding from a consolidated view is unsound: compaction may advance a
+ * history record onto a novel time, where consolidation cancels the novel
+ * update and its interesting time is missed.
+ */
+void
+__dtfl_discover_times(const __dtfl_key_view *key, const uint64_t *seed_times,
+    size_t nseed, size_t seed_stride, const uint64_t *out_times, size_t nout,
+    size_t out_stride, const uint64_t *upper, size_t nupper,
+    __dtfl_discover_scratch *scratch, __dtfl_vec *moments, __dtfl_vec *pended)
+{
+	__dtfl_time_history *batch_replay = &scratch->batch_replay;
+	__dtfl_value_history *input_replay = &scratch->input_replay;
+	__dtfl_time_history *output_replay = &scratch->output_replay;
+	__dtfl_vec *synth = &scratch->synth;
+	__dtfl_vec *times_current = &scratch->times_current;
+	__dtfl_vec *temporary = &scratch->temporary;
+	__dtfl_vec *meets = &scratch->meets;
+	const dtfl_time_class *tc = batch_replay->tc;
+	unsigned tw = batch_replay->tw;
+	uint64_t meet[DTFL_TIME_MAX] = { 0 };
+	bool has_meet = false;
+	size_t times_pos = 0, i;
+
+	__dtfl_vec_clear(synth);
+	__dtfl_vec_clear(times_current);
+	__dtfl_vec_clear(temporary);
+
+	__dtfl_time_history_load(batch_replay, seed_times, nseed, seed_stride,
+	    NULL);
+
+	__dtfl_vec_clear(meets);
+	for (i = 0; i < key->npending; i++)
+		__dtfl_vec_push(meets, &key->pending[i]);
+	for (i = meets->len; i-- > 1;)
+		dtfl_time_meet(tc, times_at(meets, i - 1)->t,
+		    times_at(meets, i)->t, times_at(meets, i - 1)->t);
+
+	dt_update_meet(tc, meet, &has_meet, meets->len != 0 ?
+	    times_at(meets, 0)->t : NULL);
+	dt_update_meet(tc, meet, &has_meet,
+	    __dtfl_time_history_meet(batch_replay));
+
+	/*
+	 * The merged (history and novel) run, replayed for its TIMES only
+	 * (join base), never accumulated.  Output times likewise: base joins,
+	 * never seeds.
+	 */
+	__dtfl_value_history_load_iter(input_replay, key->p_in + key->i0,
+	    key->i1 - key->i0, has_meet ? meet : NULL);
+	__dtfl_time_history_load(output_replay, out_times, nout, out_stride,
+	    has_meet ? meet : NULL);
+
+	for (;;) {
+		const uint64_t *cand[5];
+		uint64_t next_time[DTFL_TIME_MAX] = { 0 };
+		const uint64_t *least = NULL;
+		bool interesting;
+		size_t c;
+
+		cand[0] = __dtfl_time_history_time(batch_replay);
+		cand[1] = times_pos < key->npending ?
+		    key->pending[times_pos].t : NULL;
+		cand[2] = __dtfl_value_history_time(input_replay);
+		cand[3] = __dtfl_time_history_time(output_replay);
+		cand[4] = synth->len != 0 ?
+		    times_at(synth, synth->len - 1)->t : NULL;
+		for (c = 0; c < 5; c++)
+			if (cand[c] != NULL && (least == NULL ||
+			    __dtfl_words_cmp(cand[c], least, tw) < 0))
+				least = cand[c];
+		if (least == NULL)
+			break;
+		if (tw != 0)
+			memcpy(next_time, least, (size_t)tw * sizeof(uint64_t));
+
+		(void)__dtfl_value_history_step_while_time_is(input_replay,
+		    next_time);
+		(void)__dtfl_time_history_step_while_time_is(output_replay,
+		    next_time);
+		interesting = __dtfl_time_history_step_while_time_is(
+		    batch_replay, next_time);
+		if (interesting && has_meet)
+			__dtfl_time_history_advance_buffer_by(batch_replay,
+			    meet);
+		while (synth->len != 0 && __dtfl_words_cmp(times_at(synth,
+		    synth->len - 1)->t, next_time, tw) == 0) {
+			__dtfl_vec_push(times_current,
+			    times_at(synth, synth->len - 1));
+			synth->len--;
+			interesting = true;
+		}
+		while (times_pos < key->npending && __dtfl_words_cmp(
+		    key->pending[times_pos].t, next_time, tw) == 0) {
+			__dtfl_vec_push(times_current, &key->pending[times_pos]);
+			times_pos++;
+			interesting = true;
+		}
+		for (i = 0; !interesting && i < batch_replay->buffer.len; i++)
+			interesting = dtfl_time_less_equal(tc,
+			    times_at(&batch_replay->buffer, i)->t, next_time);
+		for (i = 0; !interesting && i < times_current->len; i++)
+			interesting = dtfl_time_less_equal(tc,
+			    times_at(times_current, i)->t, next_time);
+
+		if (!__dtfl_frontier_less_equal(tc, upper, nupper,
+		    next_time)) {
+			size_t synth_len;
+
+			if (interesting) {
+				/*
+				 * Synthesize joins against the input/output
+				 * histories (times only, no accumulation), then
+				 * record next_time as an interesting moment.
+				 */
+				if (has_meet)
+					__dtfl_value_history_advance_buffer_by(
+					    input_replay, meet);
+				for (i = 0; i < __dtfl_value_history_buffer_len(
+				    input_replay); i++) {
+					size_t vl;
+					const uint64_t *t;
+					const void *d;
+
+					(void)__dtfl_value_history_buffer_at(
+					    input_replay, i, &vl, &t, &d);
+					push_joins_not_le(tc, temporary, t,
+					    next_time);
+				}
+				if (has_meet)
+					__dtfl_time_history_advance_buffer_by(
+					    output_replay, meet);
+				for (i = 0; i < output_replay->buffer.len; i++)
+					push_joins_not_le(tc, temporary,
+					    times_at(&output_replay->buffer,
+					    i)->t, next_time);
+				times_push(moments, next_time, tw);
+			}
+			for (i = 0; i < batch_replay->buffer.len; i++)
+				push_joins_not_le(tc, temporary,
+				    times_at(&batch_replay->buffer, i)->t,
+				    next_time);
+			for (i = 0; i < times_current->len; i++)
+				push_joins_not_le(tc, temporary,
+				    times_at(times_current, i)->t, next_time);
+			__dtfl_times_sort_dedup(temporary, tw);
+			synth_len = synth->len;
+			for (i = 0; i < temporary->len; i++) {
+				const uint64_t *t = times_at(temporary, i)->t;
+
+				if (__dtfl_frontier_less_equal(tc, upper,
+				    nupper, t))
+					times_push(pended, t, tw);
+				else
+					times_push(synth, t, tw);
+			}
+			__dtfl_vec_clear(temporary);
+			if (synth->len > synth_len) {
+				times_sort(synth, tw, true);
+				times_dedup(synth, tw);
+			}
+		} else if (interesting)
+			times_push(pended, next_time, tw);
+
+		has_meet = false;
+		dt_update_meet(tc, meet, &has_meet,
+		    __dtfl_time_history_meet(batch_replay));
+		dt_update_meet(tc, meet, &has_meet,
+		    __dtfl_value_history_meet(input_replay));
+		dt_update_meet(tc, meet, &has_meet,
+		    __dtfl_time_history_meet(output_replay));
+		for (i = 0; i < synth->len; i++)
+			dt_update_meet(tc, meet, &has_meet,
+			    times_at(synth, i)->t);
+		dt_update_meet(tc, meet, &has_meet, times_pos < meets->len ?
+		    times_at(meets, times_pos)->t : NULL);
+		if (has_meet)
+			for (i = 0; i < times_current->len; i++)
+				dtfl_time_join(tc, times_at(times_current,
+				    i)->t, meet, times_at(times_current, i)->t);
+		__dtfl_times_sort_dedup(times_current, tw);
+	}
+	__dtfl_times_sort_dedup(pended, tw);
 }

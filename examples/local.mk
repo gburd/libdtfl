@@ -23,6 +23,7 @@ noinst_PROGRAMS += \
 	examples/timely/flow_controlled \
 	examples/timely/event_driven \
 	examples/timely/openloop \
+	examples/timely/spill_compare \
 	examples/timely/loopdemo \
 	examples/timely/unionfind \
 	examples/timely/bfs \
@@ -92,6 +93,10 @@ examples_timely_event_driven_LDADD = $(EXAMPLE_LDADD)
 examples_timely_openloop_SOURCES = examples/timely/openloop.c
 examples_timely_openloop_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_timely_openloop_LDADD = $(EXAMPLE_LDADD)
+
+examples_timely_spill_compare_SOURCES = examples/timely/spill_compare.c
+examples_timely_spill_compare_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_timely_spill_compare_LDADD = $(EXAMPLE_LDADD)
 
 examples_timely_loopdemo_SOURCES = examples/timely/loopdemo.c
 examples_timely_loopdemo_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -297,6 +302,7 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/timely/hashjoin.expected \
 	examples/timely/capture.expected \
 	examples/timely/logging-send.expected \
+	examples/timely/spill_compare.expected \
 	examples/dd/degrees.expected \
 	examples/dd/bfs.expected \
 	examples/dd/monoid-bfs.expected \
@@ -383,17 +389,27 @@ EXTRA_DIST += \
 # view one commit at a time and checks every point-in-time read against
 # a recomputation; txn_harness models PostgreSQL's transactions and
 # transition tables in plain C and applies each committed view delta to
-# a toy view table.  Background: dev/notes/pg-incremental-views.md.
+# a toy view table; sqlrow.h encodes SQL column values (NULL, integers,
+# float8 with PostgreSQL's NaN and -0 rules) so they compare and group as
+# SQL does, and sqlrow_check tests it.  Background:
+# dev/notes/pg-incremental-views.md.
 # ----------------------------------------------------------------------
-noinst_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+noinst_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness \
+	examples/ivm/sqlrow_check
 examples_ivm_ivm_view_SOURCES = examples/ivm/ivm_view.c
 examples_ivm_ivm_view_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 examples_ivm_ivm_view_LDADD = libdtfl.la
 examples_ivm_txn_harness_SOURCES = examples/ivm/txn_harness.c
 examples_ivm_txn_harness_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 examples_ivm_txn_harness_LDADD = libdtfl.la
+examples_ivm_sqlrow_check_SOURCES = examples/ivm/sqlrow_check.c \
+	examples/ivm/sqlrow.h
+examples_ivm_sqlrow_check_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_ivm_sqlrow_check_LDADD = libdtfl.la -lm
 
-check_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+check_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness \
+	examples/ivm/sqlrow_check
 dist_check_SCRIPTS += tests/dist/test_examples_ivm.sh
 TESTS += tests/dist/test_examples_ivm.sh
-EXTRA_DIST += examples/ivm/ivm_view.expected examples/ivm/txn_harness.expected
+EXTRA_DIST += examples/ivm/ivm_view.expected examples/ivm/txn_harness.expected \
+	examples/ivm/sqlrow_check.expected

@@ -128,7 +128,8 @@ void __dtfl_pull_counter_finish(__dtfl_pull_counter *c);
 /*
  * An Exchange pusher: routes each record of a message by `route` (its
  * hash) modulo the number of pushers, buffering per peer and flushing a
- * buffer when the time changes or on a final flush.  Takes ownership of
+ * buffer when it reaches DTFL_BUFFER_SIZE_BYTES, when the time changes,
+ * or on a final flush.  Takes ownership of
  * the `n` pushers array (allocated with __dtfl_alloc) and every pusher.
  * `tc` and `type` are retained.  The record type supplies the default
  * hash when `route` is NULL.

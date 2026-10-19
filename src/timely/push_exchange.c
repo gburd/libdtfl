@@ -10,8 +10,11 @@
  *
  * The Exchange pusher partitions each message's records among its
  * pushers by route(record) modulo the number of pushers, one buffer per
- * peer at the current time.  A buffer flushes when the time changes or
- * on a final flush, as a Message at that time.  The pact guarantees the
+ * peer at the current time.  A buffer flushes when it reaches
+ * DTFL_BUFFER_SIZE_BYTES (CapacityContainerBuilder's at_capacity, with
+ * the container's byte budget standing in for its element capacity, as
+ * in ops_input.c and handles.c), when the time changes, or on a final
+ * flush, as a Message at that time.  The pact guarantees the
  * record count per time is preserved across the output messages, which
  * progress tracking relies on.  With a single pusher there is no
  * exchange and the message passes through.  route is the record type's
@@ -92,6 +95,10 @@ exch_push(__dtfl_push *p, void **msg)
 			size_t idx = (size_t)(route_record(e, rec, len) % e->n);
 
 			__dtfl_batch_push(e->buffers[idx], rec, len, NULL, NULL);
+			/* partition: extract a container once it is full. */
+			if (__dtfl_batch_bytes(e->buffers[idx]) >=
+			    DTFL_BUFFER_SIZE_BYTES)
+				flush_buffer(e, idx);
 		}
 		__dtfl_message_free(m);
 		*msg = NULL;

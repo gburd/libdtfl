@@ -1,0 +1,5 @@
+group NULL: 2
+group 0: 2
+group 1.5: 1
+group NaN: 2
+sqlrow: all checks passed

@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 11, 2026
+.Dd October 18, 2026
 .Dt DTFL_CONFIG_NEW 3
 .Os
 .Sh NAME
@@ -11,6 +11,7 @@
 .Nm dtfl_config_set_report ,
 .Nm dtfl_config_set_progress_mode ,
 .Nm dtfl_config_set_seed ,
+.Nm dtfl_config_set_spill_file ,
 .Nm dtfl_config_mode ,
 .Nm dtfl_config_threads ,
 .Nm dtfl_config_process ,
@@ -50,6 +51,13 @@ Timely and differential dataflow library
 .Fn dtfl_config_set_progress_mode "dtfl_config *cfg" "dtfl_progress_mode mode"
 .Ft void
 .Fn dtfl_config_set_seed "dtfl_config *cfg" "uint64_t seed"
+.Ft int
+.Fo dtfl_config_set_spill_file
+.Fa "dtfl_config *cfg"
+.Fa "const char *dir"
+.Fa "size_t threshold_bytes"
+.Fa "size_t head_reserve_bytes"
+.Fc
 .Ft dtfl_comm_mode
 .Fn dtfl_config_mode "const dtfl_config *cfg"
 .Ft size_t
@@ -142,6 +150,44 @@ advance some frontier, and
 which sends them at once.
 .Fn dtfl_config_set_seed
 seeds the simulation scheduler.
+.Pp
+.Fn dtfl_config_set_spill_file
+lets the zero-copy byte queues spill to disk, so that a slow receiver
+does not make the process hold every byte sent to it.
+It applies to the queues between workers under
+.Dv DTFL_COMM_PROCESS_BINARY
+and to the queues between workers and the network threads under
+.Dv DTFL_COMM_CLUSTER ;
+the other modes have no byte queues and ignore it.
+Each queue gets its own pair of policies.
+The sending side counts the bytes resident in the queue.
+When they exceed
+.Fa head_reserve_bytes
++
+.Fa threshold_bytes ,
+it writes every queued buffer that starts after the first
+.Fa head_reserve_bytes ,
+except the newest one, to a new temporary file in
+.Fa dir .
+The receiving side reads spilled buffers back in order, about
+.Fa head_reserve_bytes
+at a time, just before it consumes them.
+A buffer holds whole serialized messages, up to about a megabyte each,
+so the bounds are approximate.
+Each file is created with
+.Xr mkstemp 3
+and unlinked at once, so nothing is left in
+.Fa dir
+even if the process dies; it is closed when its last buffer has been
+read back or the queue is dropped.
+Message order and content are unchanged.
+The directory name is copied.
+Passing
+.Dv NULL
+for
+.Fa dir
+removes the hook; queues then never spill, which is the default.
+.Pp
 The functions without
 .Dq set
 in their names return the corresponding values.
@@ -201,8 +247,8 @@ with
 otherwise the mode is
 .Dv DTFL_COMM_THREAD .
 Parsing replaces the whole communication configuration.
-The seed and the log addresses are not set on the command line, so
-they are kept.
+The seed, the log addresses and the spill hook are not set on the
+command line, so they are kept.
 .Pp
 Every argument that is not a timely flag is copied, in order, to
 .Fa rest ,
@@ -282,15 +328,26 @@ main(int argc, char *argv[])
 .It Bq Er DTFL_EINVAL
 An argument is invalid: zero threads, an unknown mode, a process index
 outside the cluster, a malformed or repeated flag, an unknown progress
-mode, or a host file with fewer lines than
-.Fl n .
+mode, a host file with fewer lines than
+.Fl n ,
+or an empty spill directory or a zero
+.Fa head_reserve_bytes .
 .It Bq Er DTFL_EIO
-The host file cannot be read.
+The host file cannot be read, or
+.Fn dtfl_config_set_spill_file
+cannot create a file in
+.Fa dir .
 .El
 .Pp
 .Fn dtfl_last_error_detail
 describes the problem.
+.Pp
+If a spill file cannot be written while the computation runs, the
+buffers stay in memory and a warning goes to the log hook
+.Pq Xr dtfl_set_log_hook 3 .
+If a spilled buffer cannot be read back, the panic hook is called.
 .Sh SEE ALSO
+.Xr dtfl_set_log_hook 3 ,
 .Xr dtfl_strerror 3 ,
 .Xr dtfl 7
 .Sh HISTORY
@@ -309,6 +366,19 @@ of 0, and a
 .Fl p
 outside the cluster, and fails later.
 This parser rejects them.
+.Fn dtfl_config_set_spill_file
+is timely's
+.Vt Hooks::spill
+with the file-backed
+.Vt Threshold
+and
+.Vt PrefetchPolicy
+pair from its
+.Pa spill_compare
+example.
+Upstream takes any policy factory and reads a spilled file back whole
+on the first fetch; libdtfl offers only the file strategy and reads
+back one buffer at a time.
 Timely 0.13 removed
 .Ev TIMELY_WORKER_LOG_ADDR ;
 libdtfl restores it, but reads it only through the caller's

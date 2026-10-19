@@ -16,6 +16,7 @@ dtfl_config_set_mode
 dtfl_config_set_progress_mode
 dtfl_config_set_report
 dtfl_config_set_seed
+dtfl_config_set_spill_file
 dtfl_config_set_threads
 dtfl_config_threads
 dtfl_config_timely_log_addr

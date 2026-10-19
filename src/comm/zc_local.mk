@@ -9,6 +9,7 @@ zc_sources = \
 	src/comm/zc_bytes_slab.c \
 	src/comm/zc_bytes_exchange.c \
 	src/comm/spill.c \
+	src/comm/spill_file.c \
 	src/comm/zc_push_pull.c \
 	src/comm/zc_tcp.c \
 	src/comm/zc_allocator.c \

@@ -21,6 +21,10 @@ dd_sources = \
 	src/dd/threshold.c \
 	src/dd/common.c \
 	src/dd/common_int.h \
+	src/dd/int_proxy_int.h \
+	src/dd/int_proxy.c \
+	src/dd/int_proxy_reduce.c \
+	src/dd/int_proxy_join.c \
 	src/dd/capture.c \
 	src/dd/join.c \
 	src/dd/iterate.c \
@@ -164,6 +168,12 @@ TESTS += tests/upstream/dd/reduce_reference
 tests_upstream_dd_reduce_reference_SOURCES = tests/upstream/dd/reduce_reference.c
 tests_upstream_dd_reduce_reference_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_dd_reduce_reference_LDADD = $(INTERNAL_LIBS)
+
+check_PROGRAMS += tests/upstream/dd/int_proxy
+TESTS += tests/upstream/dd/int_proxy
+tests_upstream_dd_int_proxy_SOURCES = tests/upstream/dd/int_proxy.c
+tests_upstream_dd_int_proxy_CFLAGS = $(TEST_CFLAGS)
+tests_upstream_dd_int_proxy_LDADD = $(INTERNAL_LIBS)
 
 check_PROGRAMS += tests/unit/test_agent
 TESTS += tests/unit/test_agent

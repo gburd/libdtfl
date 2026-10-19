@@ -25,7 +25,8 @@ trap 'rm -rf "$tmp"' EXIT
 # run NAME EXPECTED SORT ARGS...
 #   NAME      example binary under $bindir
 #   EXPECTED  expected-output file under $exp (or "-" to only check exit 0)
-#   SORT      "sort" to compare order-insensitively, else "cat"
+#   SORT      "sort" to compare order-insensitively, "sort-untimed" to also
+#             drop the "elapsed:" and "rss_peak:" lines first, else "cat"
 run() {
 	name="$1"; expected="$2"; norm="$3"; shift 3
 	bin="$bindir/$name"
@@ -47,6 +48,9 @@ run() {
 	if [ "$norm" = "sort" ]; then
 		sort "$out" >"$out.n"
 		sort "$exp/$expected" >"$tmp/$expected.n"
+	elif [ "$norm" = "sort-untimed" ]; then
+		grep -Ev '^(elapsed|rss_peak):' "$out" | LC_ALL=C sort >"$out.n"
+		LC_ALL=C sort "$exp/$expected" >"$tmp/$expected.n"
 	else
 		cp "$out" "$out.n"
 		cp "$exp/$expected" "$tmp/$expected.n"
@@ -70,6 +74,9 @@ run pagerank pagerank.expected cat
 run hashjoin hashjoin.expected cat
 run capture capture.expected sort
 run logging-send logging-send.expected sort
+# 64 MB through a 4 MB spill threshold; timing and RSS lines vary.
+run spill_compare spill_compare.expected sort-untimed --with-spill \
+	--spill-dir "$tmp"
 
 # Multi-worker runs: exercise real cross-thread execution, output varies,
 # so only require a clean exit (the point is no crash, no hang, no leak).
