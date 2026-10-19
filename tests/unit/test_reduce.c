@@ -69,6 +69,20 @@ acc_u(const collected *c, uint64_t key, uint64_t uval, uint64_t at)
 	return s;
 }
 
+/* As acc_u, for a value field that is an i64 (a count_total count). */
+static int64_t
+acc_i(const collected *c, uint64_t key, int64_t ival, uint64_t at)
+{
+	size_t i;
+	int64_t s = 0;
+
+	for (i = 0; i < c->n; i++)
+		if (c->u[i].key == key && c->u[i].ival == ival &&
+		    c->u[i].time <= at)
+			s += c->u[i].diff;
+	return s;
+}
+
 /* Net diff for a key (whole record is the key) accumulated at <= `at`. */
 static int64_t
 acc_key(const collected *c, uint64_t key, uint64_t at)
@@ -415,6 +429,76 @@ DTFL_TEST(reduce__count_total_matches)
 	return MUNIT_OK;
 }
 
+/*
+ * count_total, distinct_total and threshold_total must stay correct when
+ * one activation receives several input batches: each batch's counts are
+ * relative to the trace through the earlier batches.  Seal several epochs
+ * before stepping so the arranged batches queue up, then compare every
+ * key's accumulated output with the from-scratch answer.
+ */
+static collected
+run_total_queued(which which_op)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_cdt c;
+	collected out;
+	unsigned char k[8];
+	uint64_t t;
+
+	memset(&out, 0, sizeof out);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.w = which_op;
+	dtfl_worker_dataflow(w, "dd", tc, build_cdt_fn, &c);
+
+	/* Epoch t inserts key 5 once; no stepping until all four are sealed. */
+	for (t = 0; t < 4; t++) {
+		uint64_t next = t + 1;
+
+		dtfl_put_u64(k, 5);
+		dtfl_input_session_insert(c.in, k, sizeof k);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+	}
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return out;
+}
+
+DTFL_TEST(reduce__total_ops_queued_batches)
+{
+	collected out;
+	uint64_t t, v;
+
+	(void)params; (void)data;
+	/* count_total: key 5 has count t+1 as of epoch t, and only that. */
+	out = run_total_queued(W_COUNT_T);
+	for (t = 0; t < 4; t++)
+		for (v = 1; v <= 4; v++)
+			assert_int64(acc_i(&out, 5, (int64_t)v, t), ==,
+			    (int64_t)(v == t + 1 ? 1 : 0));
+	/* distinct_total: key 5 present once from epoch 0 on. */
+	out = run_total_queued(W_DISTINCT_T);
+	for (t = 0; t < 4; t++)
+		assert_int64(acc_key(&out, 5, t), ==, 1);
+	/* threshold_total (even, non-zero): present at counts 2 and 4. */
+	out = run_total_queued(W_THRESH_T);
+	assert_int64(acc_key(&out, 5, 0), ==, 0);
+	assert_int64(acc_key(&out, 5, 1), ==, 1);
+	assert_int64(acc_key(&out, 5, 2), ==, 0);
+	assert_int64(acc_key(&out, 5, 3), ==, 1);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(reduce__distinct_total_matches)
 {
 	collected out;
@@ -447,6 +531,7 @@ static MunitTest tests[] = {
 	DTFL_T(reduce__distinct_across_epochs),
 	DTFL_T(reduce__threshold_across_epochs),
 	DTFL_T(reduce__count_total_matches),
+	DTFL_T(reduce__total_ops_queued_batches),
 	DTFL_T(reduce__distinct_total_matches),
 	DTFL_T(reduce__threshold_total_matches),
 	DTFL_T_END
