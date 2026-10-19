@@ -469,6 +469,14 @@ __dtfl_upds_builder_push(__dtfl_upds_builder *b, const uint64_t *time,
 		if (b->tw != 0)
 			memcpy(slot, time, (size_t)b->tw * sizeof(uint64_t));
 	}
+	if (b->dw == sizeof(uint64_t)) {
+		uint64_t x;
+
+		memcpy(&x, diff, sizeof x);
+		__dtfl_vec_push_u64(&b->stash_d, x);
+		return;
+	}
+	/* Width 0 stages one zero byte (the stash's minimum element). */
 	slot = __dtfl_vec_push(&b->stash_d, NULL);
 	cell_copy(slot, diff, b->dw);
 }

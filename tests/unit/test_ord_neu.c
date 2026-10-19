@@ -366,8 +366,187 @@ DTFL_TEST(ord_neu__upds_seal_fast_path_matches_general)
 	return MUNIT_OK;
 }
 
+/*
+ * The merger's one-word-time path (stash_updates for a TOTAL time,
+ * then seal's inline path for an 8-byte integer diff) against the
+ * general path.  Product<(), u64> is also one totally ordered word but
+ * is not a TOTAL shape, and a user i64 class is not a built-in, so the
+ * same batches built and merged under those classes go the general way.
+ * The merged storage must match byte for byte, for key and value
+ * batches, random compaction frontiers and fuel split across calls.
+ */
+static uint64_t
+xs(uint64_t *s)
+{
+	*s ^= *s << 13;
+	*s ^= *s >> 7;
+	*s ^= *s << 17;
+	return *s;
+}
+
+static int
+kv_cmp(const void *a, const void *b)
+{
+	const kv *x = a, *y = b;
+
+	if (x->k != y->k)
+		return x->k < y->k ? -1 : 1;
+	if (x->v != y->v)
+		return x->v < y->v ? -1 : 1;
+	return (x->t > y->t) - (x->t < y->t);
+}
+
+/* Sort and consolidate, as the merge batcher hands the builder a chain. */
+static size_t
+kv_consolidate(kv *u, size_t n)
+{
+	size_t i, out = 0;
+
+	qsort(u, n, sizeof *u, kv_cmp);
+	for (i = 0; i < n; i++) {
+		if (out != 0 && kv_cmp(&u[out - 1], &u[i]) == 0)
+			u[out - 1].r += u[i].r;
+		else
+			u[out++] = u[i];
+		if (u[out - 1].r == 0)
+			out--;
+	}
+	return out;
+}
+
+static __dtfl_batch_ord *
+build_cls(const kv *u, size_t n, bool keyed, uint64_t lo, uint64_t hi,
+    const dtfl_time_class *tc, const __dtfl_diff_class *dc)
+{
+	__dtfl_batch *chunk = chunk_of(u, n, keyed);
+	__dtfl_antichain lower, upper, since;
+	__dtfl_description desc;
+	uint64_t zero = 0;
+	__dtfl_batch_ord *b;
+
+	__dtfl_antichain_init_elem(&lower, tc, &lo);
+	__dtfl_antichain_init_elem(&upper, tc, &hi);
+	__dtfl_antichain_init_elem(&since, tc, &zero);
+	__dtfl_description_init(&desc, &lower, &upper, &since);
+	b = __dtfl_builder_ord_seal(keyed, dtfl_type_u64(), dtfl_type_u64(),
+	    tc, dc, &chunk, 1, &desc);
+	__dtfl_batch_release(chunk);
+	return b;
+}
+
+static void
+assert_vec_eq(const __dtfl_vec *a, const __dtfl_vec *b)
+{
+	assert_size(a->len * a->elem, ==, b->len * b->elem);
+	if (a->len != 0)
+		assert_memory_equal(a->len * a->elem, a->data, b->data);
+}
+
+static void
+assert_storage_eq(const __dtfl_batch_ord *x, const __dtfl_batch_ord *y)
+{
+	assert_size(x->updates, ==, y->updates);
+	assert_vec_eq(&x->storage.keys.arena, &y->storage.keys.arena);
+	assert_vec_eq(&x->storage.keys.offs, &y->storage.keys.offs);
+	assert_vec_eq(&x->storage.vals.offs.v, &y->storage.vals.offs.v);
+	assert_vec_eq(&x->storage.vals.vals.arena, &y->storage.vals.vals.arena);
+	assert_vec_eq(&x->storage.vals.vals.offs, &y->storage.vals.vals.offs);
+	assert_vec_eq(&x->storage.upds.offs.v, &y->storage.upds.offs.v);
+	assert_vec_eq(&x->storage.upds.times, &y->storage.upds.times);
+	assert_vec_eq(&x->storage.upds.diffs, &y->storage.upds.diffs);
+	assert_size(x->storage.upds.nupds, ==, y->storage.upds.nupds);
+}
+
+DTFL_TEST(ord_neu__merge_fast_path_matches_general)
+{
+	__dtfl_diff_class def;
+	const __dtfl_diff_class *user;
+	dtfl_time_class *ftc = dtfl_time_u64();
+	dtfl_time_class *unit = dtfl_time_unit();
+	dtfl_time_class *gtc = dtfl_time_product(unit, ftc);
+	uint64_t rng = 0x2545f4914f6cdd1dULL;
+	int run;
+
+	(void)params; (void)data;
+	assert_uint(dtfl_time_depth(gtc), ==, 1);
+	memset(&def, 0, sizeof def);
+	def.name = "user-i64";
+	def.width = 8;
+	def.plus_equals = u_plus;
+	def.is_zero = u_is_zero;
+	def.cmp = u_cmp;
+	user = __dtfl_diff_class_new(&def);
+	for (run = 0; run < 400; run++) {
+		kv u1[24], u2[24];
+		size_t n1 = xs(&rng) % 24, n2 = xs(&rng) % 24, i;
+		bool keyed = run % 2 == 0;
+		uint64_t c = xs(&rng) % 12;
+		__dtfl_batch_ord *f1, *f2, *g1, *g2, *fm, *gm;
+		__dtfl_antichain fc, gc;
+		__dtfl_merger_ord fmg, gmg;
+		int64_t step = 1 + (int64_t)(xs(&rng) % 8), ff = 0, gf = 0;
+
+		for (i = 0; i < n1; i++) {
+			u1[i].k = xs(&rng) % 8;
+			u1[i].v = keyed ? 0 : xs(&rng) % 3;
+			u1[i].t = xs(&rng) % 5;
+			u1[i].r = (int64_t)(xs(&rng) % 5) - 2;
+		}
+		for (i = 0; i < n2; i++) {
+			u2[i].k = xs(&rng) % 8;
+			u2[i].v = keyed ? 0 : xs(&rng) % 3;
+			u2[i].t = 5 + xs(&rng) % 5;
+			u2[i].r = (int64_t)(xs(&rng) % 5) - 2;
+		}
+		n1 = kv_consolidate(u1, n1);
+		n2 = kv_consolidate(u2, n2);
+		f1 = build_cls(u1, n1, keyed, 0, 5, ftc, I64);
+		f2 = build_cls(u2, n2, keyed, 5, 10, ftc, I64);
+		g1 = build_cls(u1, n1, keyed, 0, 5, gtc, user);
+		g2 = build_cls(u2, n2, keyed, 5, 10, gtc, user);
+		assert_storage_eq(f1, g1);
+		assert_storage_eq(f2, g2);
+
+		/* The compaction frontier: empty, or {c}. */
+		__dtfl_antichain_init(&fc, ftc);
+		__dtfl_antichain_init(&gc, gtc);
+		if (run % 5 != 0) {
+			(void)__dtfl_antichain_insert(&fc, &c);
+			(void)__dtfl_antichain_insert(&gc, &c);
+		}
+		__dtfl_merger_ord_new(&fmg, f1, f2, &fc);
+		__dtfl_merger_ord_new(&gmg, g1, g2, &gc);
+		/* Small fuel per call, so the merge pauses between keys. */
+		while (ff <= 0) {
+			ff = step;
+			gf = step;
+			__dtfl_merger_ord_work(&fmg, &ff);
+			__dtfl_merger_ord_work(&gmg, &gf);
+			assert_int64(ff, ==, gf);
+		}
+		fm = __dtfl_merger_ord_done(&fmg);
+		gm = __dtfl_merger_ord_done(&gmg);
+		assert_storage_eq(fm, gm);
+
+		__dtfl_batch_ord_release(fm);
+		__dtfl_batch_ord_release(gm);
+		__dtfl_antichain_free(&fc);
+		__dtfl_antichain_free(&gc);
+		__dtfl_batch_ord_release(f1);
+		__dtfl_batch_ord_release(f2);
+		__dtfl_batch_ord_release(g1);
+		__dtfl_batch_ord_release(g2);
+	}
+	__dtfl_diff_class_free(user);
+	dtfl_time_class_free(gtc);
+	dtfl_time_class_free(unit);
+	dtfl_time_class_free(ftc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
+	DTFL_T(ord_neu__merge_fast_path_matches_general),
 	DTFL_T(ord_neu__upds_seal_unsorted_stash),
 	DTFL_T(ord_neu__upds_seal_checks_every_pair),
 	DTFL_T(ord_neu__upds_seal_fast_path_matches_general),
