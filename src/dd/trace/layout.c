@@ -222,7 +222,9 @@ slices_advance_col(const __dtfl_slices *s, size_t start, size_t end,
  * past `small_limit`, else a short linear scan.  The scan stops at the
  * first false, where upstream's `(start..limit).filter(..).count()` keeps
  * testing; the count is the same, because the predicate stays false once
- * false (the property `advance` documents and relies on).
+ * false (the property `advance` documents and relies on).  A user cmp
+ * inconsistent with the stored order breaks that contract either way;
+ * the two counts may then differ.
  */
 #define SLICES_ADVANCE_BODY(LESS)					\
 	do {								\
