@@ -437,11 +437,17 @@ DTFL_TEST(consolidate_packed_matches_index_sort)
 		__dtfl_consolidate_batch(b, &slow, I64);
 		assert_size(__dtfl_batch_len(a), ==, __dtfl_batch_len(b));
 		assert_size(a->arena.len, ==, b->arena.len);
-		assert_memory_equal(a->arena.len, a->arena.data, b->arena.data);
+		assert_size(a->times.len, ==, b->times.len);
+		assert_size(a->diffs.len, ==, b->diffs.len);
+		/* A zero-width column is NULL; memcmp must not see it. */
+		if (a->arena.len != 0)
+			assert_memory_equal(a->arena.len, a->arena.data,
+			    b->arena.data);
 		assert_memory_equal(a->offs.len * sizeof(size_t), a->offs.data,
 		    b->offs.data);
-		assert_memory_equal(a->times.len * a->times.elem,
-		    a->times.data, b->times.data);
+		if (a->times.len != 0)
+			assert_memory_equal(a->times.len * a->times.elem,
+			    a->times.data, b->times.data);
 		assert_memory_equal(a->diffs.len, a->diffs.data, b->diffs.data);
 		__dtfl_batch_release(a);
 		__dtfl_batch_release(b);
