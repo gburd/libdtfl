@@ -17,9 +17,10 @@
  *
  * These exercise scc, transitive closure, reachability, count, flatmap and
  * collect, and clone_identity's output-preservation.  The heavier sweeps
- * (scc 100/110, the join partner-time regression, the fuzz sweep, the
- * demand-excess report) are the Rust #[ignore] tests; they run only when
- * DTFL_EXPLAIN_HEAVY is set, and SKIP otherwise.
+ * (scc 100/110, the join partner-time regression, the fuzz sweep) are
+ * Rust #[ignore] tests; they run only when DTFL_EXPLAIN_HEAVY is set, and
+ * SKIP otherwise.  The fourth #[ignore] test, report_demand_excess,
+ * prints a metric and asserts nothing, so it is not ported.
  */
 #include "dtfl_test.h"
 
@@ -750,6 +751,58 @@ DTFL_TEST(explain__scc_row_explanations_sufficient_100)
 	return MUNIT_OK;
 }
 
+/*
+ * Regression for the join backward rule's partner-time cancellation:
+ * at 1000 nodes / 1100 edges the scc edge (773, 466) sits on a 13-node
+ * cycle whose label-flood justification pairs labels(25)=0 with the scc
+ * edge (25,236); scc retracts that edge at outer iteration 1, and
+ * without both-side time filters the +1/-1 pair rows cancel after
+ * projection, the flood path is never demanded, and the demand-set
+ * fails to regenerate the queried row.
+ */
+DTFL_TEST(explain__scc_join_partner_time_regression)
+{
+	int64_t k773[1] = { 773 }, v466[1] = { 466 };
+	input_rows edges, restricted;
+	dtfl_ddir_program *p;
+	const dtfl_ddir_row *in[1], *r_ptr[1];
+	size_t lens[1], r_len[1];
+	dd_value *qk, *qv;
+	const dd_value *qkc, *qvc;
+	rowset *demand;
+	rowset replay;
+
+	(void)params; (void)data;
+	if (getenv("DTFL_EXPLAIN_HEAVY") == NULL)
+		return MUNIT_SKIP;
+	edges = gen_edges(1000, 1100);
+	p = optimized(SCC_ROW);
+	in[0] = edges.rows;
+	lens[0] = edges.n;
+	qk = row_fields(k773, 1);
+	qv = row_fields(v466, 1);
+	qkc = qk;
+	qvc = qv;
+	demand = demand_for_queries(SCC_ROW, SCC_SHAPES, 1, in, lens, 1,
+	    &qkc, &qvc, 1);
+	restricted = restrict_input(edges.rows, edges.n, &demand[0]);
+	r_ptr[0] = restricted.rows;
+	r_len[0] = restricted.n;
+	replay = export_rows(p, r_ptr, r_len, 1, "result");
+	if (!rowset_contains(&replay, qk, qv))
+		munit_errorf("insufficient explanation for (773, 466): "
+		    "demanded %zu rows regenerate %zu rows without it",
+		    demand_total(demand, 1), replay.n);
+	dtfl_ddir_value_free(qk);
+	dtfl_ddir_value_free(qv);
+	rowset_free(&replay);
+	input_rows_free(&restricted);
+	demand_free(demand, 1);
+	dtfl_ddir_program_free(p);
+	input_rows_free(&edges);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(explain__fuzz_explanations_sufficient)
 {
 	size_t queries = 0;
@@ -802,6 +855,7 @@ static MunitTest tests[] = {
 	DTFL_T(explain__flatmap_explanations_sufficient_small),
 	DTFL_T(explain__collect_explanations_sufficient_small),
 	DTFL_T(explain__scc_row_explanations_sufficient_100),
+	DTFL_T(explain__scc_join_partner_time_regression),
 	DTFL_T(explain__fuzz_explanations_sufficient),
 	DTFL_T_END
 };

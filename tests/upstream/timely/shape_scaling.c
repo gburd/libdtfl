@@ -25,14 +25,16 @@
  * carry #[cfg_attr(miri, ignore)] but run normally.  The records are the
  * unit type, so no data flows; the test is the build and the drain.
  *
- * operator_scaling at scale 1000 and above is omitted here: building one
- * operator with that many inputs and outputs makes the subgraph
- * reachability (summaries from every location to every scope output,
- * reachability.c) superlinear in C, so scale 500 already takes about 20
- * seconds and 10000 exhausts memory.  The 1/10/100 cases prove the port
- * is correct; the wide-fanout cases wait on a reachability profiling
- * pass (port-ledger note on shape_scaling.c).  subgraph_scaling has no
- * such cost and runs every scale.
+ * The operator's shape is upstream's exactly: output i is added with no
+ * connection (new_output_connection([])), then input i with the single
+ * connection (i, identity) (new_input_connection).  The sparse builder
+ * calls express that in O(1) per port, as upstream's iterators do; the
+ * dense calls take one slot per existing port, which is O(scale^2).
+ *
+ * All six operator_scaling scales run.  Measured on an 8-core x86_64
+ * (debug build, -O1): 1000 ~0.01 s, 10000 ~0.12 s, 100000 ~1.3 s; the
+ * pinned timely release build runs the same three in 0.01, 0.04 and
+ * 0.49 s.
  */
 #include "dtfl_test.h"
 
@@ -99,30 +101,26 @@ build_operator(dtfl_scope *scope, void *arg)
 	dtfl_stream **parts = malloc(c->scale * sizeof *parts);
 	dtfl_op_builder *b = dtfl_op_builder_new(scope, "OpScaling");
 	unsigned sdepth = dtfl_summary_depth(dtfl_scope_time_class(scope));
-	uint64_t *ident = malloc((size_t)sdepth * sizeof(uint64_t));
-	const uint64_t **summaries = malloc(c->scale * sizeof *summaries);
+	uint64_t *ident = malloc(((size_t)sdepth + 1) * sizeof(uint64_t));
+	const uint64_t *summary[1];
 	size_t i;
 
 	dtfl_stream_partition(in, c->scale, to_part_zero, DTFL_NOCTX, parts);
 	dtfl_summary_default(dtfl_scope_time_class(scope), ident);
+	summary[0] = ident;
 
 	/*
-	 * Add output i, then input i connected only to output i.  When
-	 * adding input i there are i + 1 outputs; summaries[j] is the
-	 * identity summary for j == i and NULL otherwise.
+	 * new_output_connection([]), then new_input_connection with the
+	 * connectivity [(index, Antichain::from_elem(Default::default()))].
 	 */
 	for (i = 0; i < c->scale; i++) {
-		size_t j;
-
-		(void)dtfl_op_builder_output(b, dtfl_type_unit());
-		for (j = 0; j <= i; j++)
-			summaries[j] = (j == i) ? ident : NULL;
-		dtfl_op_builder_input_connection(b, parts[i],
-		    dtfl_pact_pipeline(), summaries);
+		(void)dtfl_op_builder_output_sparse(b, dtfl_type_unit(), 0, NULL,
+		    NULL);
+		(void)dtfl_op_builder_input_sparse(b, parts[i],
+		    dtfl_pact_pipeline(), 1, &i, summary);
 	}
 	dtfl_op_builder_build(b, scaling_logic, NULL, NULL);
 
-	free(summaries);
 	free(ident);
 	free(parts);
 }
@@ -223,6 +221,12 @@ DTFL_TEST(shape_scaling__operator_scaling_10)
 { (void)params; (void)data; return run_operator(10); }
 DTFL_TEST(shape_scaling__operator_scaling_100)
 { (void)params; (void)data; return run_operator(100); }
+DTFL_TEST(shape_scaling__operator_scaling_1000)
+{ (void)params; (void)data; return run_operator(1000); }
+DTFL_TEST(shape_scaling__operator_scaling_10000)
+{ (void)params; (void)data; return run_operator(10000); }
+DTFL_TEST(shape_scaling__operator_scaling_100000)
+{ (void)params; (void)data; return run_operator(100000); }
 
 DTFL_TEST(shape_scaling__subgraph_scaling_1)
 { (void)params; (void)data; return run_subgraph(1); }
@@ -241,6 +245,9 @@ static MunitTest tests[] = {
 	DTFL_T(shape_scaling__operator_scaling_1),
 	DTFL_T(shape_scaling__operator_scaling_10),
 	DTFL_T(shape_scaling__operator_scaling_100),
+	DTFL_T(shape_scaling__operator_scaling_1000),
+	DTFL_T(shape_scaling__operator_scaling_10000),
+	DTFL_T(shape_scaling__operator_scaling_100000),
 	DTFL_T(shape_scaling__subgraph_scaling_1),
 	DTFL_T(shape_scaling__subgraph_scaling_10),
 	DTFL_T(shape_scaling__subgraph_scaling_100),

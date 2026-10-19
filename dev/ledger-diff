@@ -167,6 +167,7 @@ RULES = {
         (r"^diagnostics/console/.*$", "-", "-", "excluded\tReact frontend; works unmodified against the protocol-compatible server"),
         (r"^experiments/src/bin/(arrange|graphs|graphs-static)\.rs$", r"bench/experiments/\1.c", "P15", "todo\tperformance parity table (PLAN section 9)"),
         (r"^experiments/src/bin/(\S+)\.rs$", "-", "-", "deferred\tnot needed for the performance table"),
+        (r"^experiments/src/lib.rs$", "-", "-", "excluded\tcargo new template: the file holds only the it_works test, assert_eq!(2 + 2, 4)"),
         (r"^experiments/.*$", "-", "-", "deferred\tbenchmark support code"),
         (r"^mdbook/src/(chapter_\w+)/.*\.md$", r"doc/differential/\1.texi", "P8", "todo\tmanual chapter rewritten for C"),
         (r"^mdbook/src/introduction.md$", "doc/differential/introduction.texi", "P5", "todo\t"),

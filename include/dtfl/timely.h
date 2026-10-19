@@ -215,6 +215,19 @@ DTFL_API dtfl_stream *dtfl_op_builder_output(dtfl_op_builder *b,
     const dtfl_type *type);
 DTFL_API dtfl_stream *dtfl_op_builder_output_connection(dtfl_op_builder *b,
     const dtfl_type *type, const uint64_t *const *summaries);
+/*
+ * Sparse forms of the two above, as upstream's (port, Antichain)
+ * iterators: `n` pairs (ports[k], summaries[k]) naming existing outputs
+ * (input_sparse) or inputs (output_sparse); unnamed ports are not
+ * connected, a repeated port merges its summaries.  Cost is O(n), not
+ * O(ports).
+ */
+DTFL_API size_t dtfl_op_builder_input_sparse(dtfl_op_builder *b,
+    dtfl_stream *in, dtfl_pact pact, size_t n, const size_t *outputs,
+    const uint64_t *const *summaries);
+DTFL_API dtfl_stream *dtfl_op_builder_output_sparse(dtfl_op_builder *b,
+    const dtfl_type *type, size_t n, const size_t *inputs,
+    const uint64_t *const *summaries);
 /* Frontier interest per input (default: always). */
 typedef enum dtfl_interest {
 	DTFL_NOTIFY_NEVER = 0,

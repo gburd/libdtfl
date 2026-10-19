@@ -196,9 +196,12 @@ dtfl_op_builder_set_notify(dtfl_op_builder *b, size_t input, dtfl_interest inter
 		    (__dtfl_frontier_interest)interest;
 }
 
-static size_t
-builder_input(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact,
-    const uint64_t *const *summaries)
+/*
+ * Allocates input `b->inputs`: its channel, the stream connection and
+ * the per-input state, with no connection to any output yet.
+ */
+static input_slot *
+input_port_new(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact)
 {
 	__dtfl_worker *w = b->scope->worker;
 	size_t channel = __dtfl_worker_new_identifier(w);
@@ -208,8 +211,6 @@ builder_input(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact,
 	__dtfl_location target = { b->slot.index, port, false };
 	input_slot slot;
 	__dtfl_frontier_interest always = DTFL_INTEREST_ALWAYS;
-	size_t o;
-	uint64_t def[DTFL_TIME_MAX + 1];
 
 	memset(&slot, 0, sizeof slot);
 	__dtfl_pact_connect(b->scope, &pact, channel, b->address, b->address_len,
@@ -220,17 +221,28 @@ builder_input(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact,
 	slot.pull = __dtfl_pull_counter_new(puller, &slot.consumed);
 	__dtfl_mantichain_init(&slot.frontier, b->tc);
 	__dtfl_port_conn_init(&slot.summary, b->tc);
-	dtfl_summary_default(b->tc, def);
-	for (o = 0; o < b->outputs; o++) {
-		if (summaries == NULL)
-			__dtfl_port_conn_insert(&slot.summary, o, def);
-		else if (summaries[o] != NULL)
-			__dtfl_port_conn_insert(&slot.summary, o, summaries[o]);
-	}
 	__dtfl_vec_push(&b->inslots, &slot);
 	__dtfl_vec_push(&b->notify, &always);
 	b->inputs++;
-	return port;
+	return DTFL_VEC_AT(&b->inslots, input_slot, port);
+}
+
+static size_t
+builder_input(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact,
+    const uint64_t *const *summaries)
+{
+	input_slot *slot = input_port_new(b, in, pact);
+	size_t o;
+	uint64_t def[DTFL_TIME_MAX + 1];
+
+	dtfl_summary_default(b->tc, def);
+	for (o = 0; o < b->outputs; o++) {
+		if (summaries == NULL)
+			__dtfl_port_conn_insert(&slot->summary, o, def);
+		else if (summaries[o] != NULL)
+			__dtfl_port_conn_insert(&slot->summary, o, summaries[o]);
+	}
+	return b->inputs - 1;
 }
 
 size_t
@@ -246,16 +258,37 @@ dtfl_op_builder_input_connection(dtfl_op_builder *b, dtfl_stream *in,
 	return builder_input(b, in, pact, summaries);
 }
 
-static dtfl_stream *
-builder_output(dtfl_op_builder *b, const dtfl_type *type,
+/*
+ * new_input_connection with upstream's IntoIterator<(usize, Antichain)>:
+ * n (output, summary) pairs; an output may repeat, its summaries merge
+ * by antichain insertion.
+ */
+size_t
+dtfl_op_builder_input_sparse(dtfl_op_builder *b, dtfl_stream *in,
+    dtfl_pact pact, size_t n, const size_t *outputs,
     const uint64_t *const *summaries)
+{
+	input_slot *slot = input_port_new(b, in, pact);
+	size_t k;
+
+	for (k = 0; k < n; k++) {
+		DTFL_ASSERT(outputs[k] < b->outputs);
+		__dtfl_port_conn_insert(&slot->summary, outputs[k], summaries[k]);
+	}
+	return b->inputs - 1;
+}
+
+/*
+ * Allocates output `b->outputs`: its Tee, stream and push counter, with
+ * no connection from any input yet.
+ */
+static dtfl_stream *
+output_port_new(dtfl_op_builder *b, const dtfl_type *type)
 {
 	size_t port = b->outputs;
 	output_slot slot;
 	__dtfl_location source = { b->slot.index, port, true };
 	__dtfl_push *counter;
-	size_t i;
-	uint64_t def[DTFL_TIME_MAX + 1];
 
 	memset(&slot, 0, sizeof slot);
 	slot.tee = __dtfl_tee_new();
@@ -267,6 +300,19 @@ builder_output(dtfl_op_builder *b, const dtfl_type *type,
 	slot.out.port = port;
 	slot.out.tc = b->tc;
 	slot.out.type = type;
+	__dtfl_vec_push(&b->outslots, &slot);
+	b->outputs++;
+	return slot.stream;
+}
+
+static dtfl_stream *
+builder_output(dtfl_op_builder *b, const dtfl_type *type,
+    const uint64_t *const *summaries)
+{
+	size_t port = b->outputs;
+	dtfl_stream *stream = output_port_new(b, type);
+	size_t i;
+	uint64_t def[DTFL_TIME_MAX + 1];
 
 	dtfl_summary_default(b->tc, def);
 	for (i = 0; i < b->inputs; i++) {
@@ -277,9 +323,7 @@ builder_output(dtfl_op_builder *b, const dtfl_type *type,
 		else if (summaries[i] != NULL)
 			__dtfl_port_conn_insert(&in->summary, port, summaries[i]);
 	}
-	__dtfl_vec_push(&b->outslots, &slot);
-	b->outputs++;
-	return slot.stream;
+	return stream;
 }
 
 dtfl_stream *
@@ -293,6 +337,25 @@ dtfl_op_builder_output_connection(dtfl_op_builder *b, const dtfl_type *type,
     const uint64_t *const *summaries)
 {
 	return builder_output(b, type, summaries);
+}
+
+/*
+ * new_output_connection with upstream's IntoIterator<(usize, Antichain)>:
+ * n (input, summary) pairs; an input may repeat.
+ */
+dtfl_stream *
+dtfl_op_builder_output_sparse(dtfl_op_builder *b, const dtfl_type *type,
+    size_t n, const size_t *inputs, const uint64_t *const *summaries)
+{
+	size_t port = b->outputs, k;
+	dtfl_stream *stream = output_port_new(b, type);
+
+	for (k = 0; k < n; k++) {
+		DTFL_ASSERT(inputs[k] < b->inputs);
+		__dtfl_port_conn_insert(&DTFL_VEC_AT(&b->inslots, input_slot,
+		    inputs[k])->summary, port, summaries[k]);
+	}
+	return stream;
 }
 
 void

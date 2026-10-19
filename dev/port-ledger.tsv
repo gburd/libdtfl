@@ -171,7 +171,7 @@ timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	
 timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	done	Worker and Wrapper ported (worker.c engine + execute.c public dtfl_worker facade).  Config.set/get is a typed key-value registry with no in-tree consumer at the pin and is a dtfl_config/base concern, not ported in worker.c
 timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	done	barrier_sync at 1, 2 and 3 workers
 timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	done	
-timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	done	operator_scaling at 1, 10 and 100 operators; 1000 and above stay wip (too slow for CI)
+timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	done	all twelve upstream scales run in make check at upstream's shape (outputs unconnected, input i to output i, through dtfl_op_builder_{input,output}_sparse); operator_scaling 1000/10000/100000 take 0.01/0.12/1.3 s debug vs 0.01/0.04/0.49 s for the pinned timely release build
 timely-dataflow	timely/tests/skeptic.rs	1	-	-	excluded	empty doctest runner; the doc snippet gate replaces it
 differential-dataflow	advent_of_code_2017/src/bin/day_01.rs	47	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/bin/day_02.rs	81	-	-	excluded	not a workspace member upstream
@@ -325,7 +325,7 @@ differential-dataflow	experiments/src/bin/graspan1.rs	97	-	-	deferred	not needed
 differential-dataflow	experiments/src/bin/graspan2.rs	276	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/multitemporal.rs	338	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/ysb.rs	139	-	-	deferred	not needed for the performance table
-differential-dataflow	experiments/src/lib.rs	7	-	-	deferred	benchmark support code
+differential-dataflow	experiments/src/lib.rs	7	-	-	excluded	cargo new template: the file holds only the it_works test, assert_eq!(2 + 2, 4)
 differential-dataflow	interactive/examples/ddir_server.rs	290	tools/dtfl-ddir/server_cmd.c	P13	done	the server subcommand of dtfl-ddir: install/feed/tick/drop/peek/list/exit over the public server API; folded with ddir_vec and dump_explain into one dtfl-ddir binary
 differential-dataflow	interactive/examples/ddir_vec.rs	229	tools/dtfl-ddir/run.c	P13	done	the run subcommand of dtfl-ddir: parse/evaluate/print; rows from a file or stdin, "@N" selects the input (a clearer form of the round-robin EDGES_FILE assignment)
 differential-dataflow	interactive/examples/dump_explain.rs	39	tools/dtfl-ddir/explain_cmd.c	P13	done	the explain subcommand of dtfl-ddir: reports the program and its explanation rewrite by shape (the full scope-tree dump is not on the public API)
@@ -368,7 +368,7 @@ differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	
 differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	done	the DDIR plugin server: registry and lifecycle (install/feed/tick/drop/peek/list), one in-process worker with commands on the calling thread, shared traces across installs, generated/iota/clock sources.  The multi-worker Sequencer and trace compaction are deferred (the public trace handle lacks the compaction setter); see ADR-0012 (2026-10-15)
-differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
+differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	every #[test] but report_demand_excess (a printed metric, no assertion) is ported and passes; the four upstream #[ignore] tests (scc_100, scc_join_partner_time_regression, fuzz, report) run only with DTFL_EXPLAIN_HEAVY set, and the three ported ones pass then (13/13, about 60 s debug)
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	done	manual skeleton and menu
 differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C

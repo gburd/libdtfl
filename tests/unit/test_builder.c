@@ -11,11 +11,14 @@
  * incorrect_capabilities: opening an output session with a capability
  * minted for a different output is a contract violation and panics.
  * correct_capabilities: using each output's own capability does not.
+ * sparse_connections_shape_frontiers checks the (port, summary) builder
+ * calls, which are libdtfl's form of upstream's connection iterators.
  */
 #include "dtfl_test.h"
 
 #include "dtfl/record.h"
 #include "dtfl/timely.h"
+#include "dtfl/timely_ops.h"
 
 /* ------------------------------------------------------------------ */
 
@@ -120,9 +123,118 @@ DTFL_TEST(dataflow_operators_generic_builder_rc__correct_capabilities)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+
+/*
+ * The sparse connection calls.  Outputs 0 and 1 are added unconnected,
+ * then input 0 (from A) names output 1 twice, with +3 and +7, which
+ * merge to the antichain {+3}; input 1 (from B) names nothing; output 2
+ * is then added connected from input 1 by the identity.  The logic
+ * drops its initial capabilities and never sends, so each output's
+ * frontier is exactly its inputs' frontiers through those summaries:
+ * output 0 is done while A and B are open, output 1 is A + 3, output 2
+ * is B.
+ */
+typedef struct sparse_ctx {
+	dtfl_input *a, *b;
+	dtfl_probe *p[3];
+} sparse_ctx;
+
+static bool
+drop_caps_logic(dtfl_op *op, void *ctx)
+{
+	size_t o;
+
+	(void)ctx;
+	for (o = 0; o < dtfl_op_outputs(op); o++)
+		dtfl_cap_drop(dtfl_op_initial_cap(op, o));
+	return false;
+}
+
+static void
+build_sparse(dtfl_scope *scope, void *arg)
+{
+	sparse_ctx *c = arg;
+	dtfl_op_builder *b = dtfl_op_builder_new(scope, "Sparse");
+	uint64_t plus3 = 3, plus7 = 7, ident = 0;
+	const uint64_t *sums[2];
+	size_t ports[2];
+	dtfl_stream *out[3];
+
+	out[0] = dtfl_op_builder_output_sparse(b, dtfl_type_u64(), 0, NULL,
+	    NULL);
+	out[1] = dtfl_op_builder_output_sparse(b, dtfl_type_u64(), 0, NULL,
+	    NULL);
+	ports[0] = ports[1] = 1;
+	sums[0] = &plus3;
+	sums[1] = &plus7;
+	assert_size(dtfl_op_builder_input_sparse(b,
+	    dtfl_input_to_stream(c->a, scope), dtfl_pact_pipeline(), 2, ports,
+	    sums), ==, 0);
+	assert_size(dtfl_op_builder_input_sparse(b,
+	    dtfl_input_to_stream(c->b, scope), dtfl_pact_pipeline(), 0, NULL,
+	    NULL), ==, 1);
+	ports[0] = 1;
+	sums[0] = &ident;
+	out[2] = dtfl_op_builder_output_sparse(b, dtfl_type_u64(), 1, ports,
+	    sums);
+	dtfl_op_builder_build(b, drop_caps_logic, NULL, NULL);
+	(void)dtfl_stream_probe_with(out[0], c->p[0]);
+	(void)dtfl_stream_probe_with(out[1], c->p[1]);
+	(void)dtfl_stream_probe_with(out[2], c->p[2]);
+}
+
+/* The probe's frontier as a single time; asserts it has one element. */
+static uint64_t
+probe_time(const dtfl_probe *p)
+{
+	size_t n;
+	const uint64_t *f = dtfl_probe_frontier(p, &n);
+
+	assert_size(n, ==, 1);
+	return f[0];
+}
+
+DTFL_TEST(sparse_connections_shape_frontiers)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	uint64_t t10 = 10, t4 = 4;
+	sparse_ctx c;
+	int i;
+
+	(void)params; (void)data;
+	c.a = dtfl_input_new(dtfl_type_u64());
+	c.b = dtfl_input_new(dtfl_type_u64());
+	for (i = 0; i < 3; i++)
+		c.p[i] = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "sparse", tc, build_sparse, &c),
+	    ==, 0);
+	dtfl_input_advance_to(c.a, &t10);
+	dtfl_input_advance_to(c.b, &t4);
+	for (i = 0; i < 100; i++)
+		(void)dtfl_worker_step(w);
+	assert_true(dtfl_probe_done(c.p[0]));
+	assert_uint64(probe_time(c.p[1]), ==, 13);
+	assert_uint64(probe_time(c.p[2]), ==, 4);
+
+	dtfl_input_close(c.a);
+	dtfl_input_close(c.b);
+	for (i = 0; i < 100000 && dtfl_worker_step(w); i++)
+		;
+	for (i = 0; i < 3; i++) {
+		assert_true(dtfl_probe_done(c.p[i]));
+		dtfl_probe_free(c.p[i]);
+	}
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(dataflow_operators_generic_builder_rc__incorrect_capabilities),
 	DTFL_T(dataflow_operators_generic_builder_rc__correct_capabilities),
+	DTFL_T(sparse_connections_shape_frontiers),
 	DTFL_T_END
 };
 
