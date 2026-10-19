@@ -1901,9 +1901,9 @@ reduce_logic(dtfl_op *op, void *vctx)
 		 * stream message frees).  The downstream reader must survive the
 		 * shared spine merging and dropping the trace's reference.
 		 */
+		__dtfl_batch_ord_retain(produced[i].batch);
 		__dtfl_trace_writer_insert(&c->out_writer, produced[i].batch,
 		    produced[i].tag);
-		__dtfl_batch_ord_retain(produced[i].batch);
 		dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);
 		memcpy(dst, &produced[i].batch, sizeof produced[i].batch);
 		dtfl_session_close(s);
@@ -2265,9 +2265,9 @@ abk_logic(dtfl_op *op, void *vctx)
 			 * writer takes one reference into the trace and the stream
 			 * record owns a second, released when the message frees.
 			 */
+			__dtfl_batch_ord_retain(batch);
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
-			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
 			__dtfl_session_set_batch_ptr(s);
 			dst = __dtfl_session_reserve(s, DTFL_BATCH_PTR_SIZE);

@@ -98,8 +98,11 @@ install_hooks(void)
  * S_JOIN_CORE: two arrange_by_key -> join_core, both traces inspected.
  * S_REDUCE, S_COUNT, S_JOIN: the collection-level reduce, count_total and
  * join_map, whose arrangements are internal; only live allocations show.
+ * S_UNREAD: arrange -> as_collection with every reader of the trace freed
+ * at build time; the trace must be dropped, as nobody can read it.
  */
-enum shape { S_ARRANGED, S_JOIN_CORE, S_REDUCE, S_COUNT, S_JOIN };
+enum shape { S_ARRANGED, S_JOIN_CORE, S_REDUCE, S_COUNT, S_JOIN,
+	S_UNREAD };
 
 typedef struct lr {
 	dtfl_input_session *in1, *in2;
@@ -108,6 +111,8 @@ typedef struct lr {
 	/* The arrangements' trace boxes, retained for inspection. */
 	__dtfl_trace_box *box[2];
 	size_t nbox;
+	/* S_UNREAD: a weak reference, so the test does not keep it alive. */
+	__dtfl_trace_box *weak;
 } lr;
 
 static void
@@ -227,6 +232,15 @@ build(dtfl_scope *scope, void *arg)
 		out = dtfl_collection_join_map(m, in2, u64, u64, u64, trip,
 		    join_res, DTFL_NOCTX);
 		break;
+	case S_UNREAD: {
+		dtfl_arranged *a = dtfl_collection_arrange(m, "arr");
+
+		c->weak = __dtfl_trace_box_downgrade(
+		    __dtfl_arranged_agent(a)->box);
+		out = dtfl_arranged_as_collection(a, kv, NULL, DTFL_NOCTX);
+		dtfl_arranged_free(a);
+		break;
+	}
 	}
 	p = dtfl_collection_probe_with(out, c->probe);
 	dtfl_collection_free(p);
@@ -304,6 +318,13 @@ run(enum shape shape)
 	munit_logf(MUNIT_LOG_INFO, "live allocations: %ld at epoch %d, %ld "
 	    "at epoch %d", live_warm, WARM, live_end, EPOCHS);
 	assert_long(live_end - live_warm, <=, MAX_LIVE_GROWTH);
+	/*
+	 * With every reader gone the trace is dropped, though the dataflow
+	 * still runs (writer.rs holds the trace as a Weak).  A writer that kept
+	 * it alive would maintain, unread, every update ever arranged.
+	 */
+	if (c.weak != NULL)
+		assert_null(c.weak->trace);
 	for (i = 0; i < c.nbox; i++) {
 		munit_logf(MUNIT_LOG_INFO, "trace %zu: at most %zu batches",
 		    i, most[i]);
@@ -316,6 +337,7 @@ run(enum shape shape)
 		;
 	for (i = 0; i < c.nbox; i++)
 		__dtfl_trace_box_release(c.box[i]);
+	__dtfl_trace_box_release_weak(c.weak);
 	dtfl_probe_free(c.probe);
 	dtfl_worker_free(w);
 	dtfl_time_class_free(tc);
@@ -330,6 +352,12 @@ DTFL_TEST(longrun__arranged_reduce_traces_stay_compact)
 	return run(S_ARRANGED);
 }
 
+DTFL_TEST(longrun__join_core_traces_stay_compact)
+{
+	(void)params; (void)data;
+	return run(S_JOIN_CORE);
+}
+
 DTFL_TEST(longrun__reduce_stays_bounded)
 {
 	(void)params; (void)data;
@@ -342,16 +370,16 @@ DTFL_TEST(longrun__count_total_stays_bounded)
 	return run(S_COUNT);
 }
 
-DTFL_TEST(longrun__join_core_traces_stay_compact)
-{
-	(void)params; (void)data;
-	return run(S_JOIN_CORE);
-}
-
 DTFL_TEST(longrun__join_map_stays_bounded)
 {
 	(void)params; (void)data;
 	return run(S_JOIN);
+}
+
+DTFL_TEST(longrun__unread_arrangement_stays_bounded)
+{
+	(void)params; (void)data;
+	return run(S_UNREAD);
 }
 
 static MunitTest tests[] = {
@@ -360,6 +388,7 @@ static MunitTest tests[] = {
 	DTFL_T(longrun__reduce_stays_bounded),
 	DTFL_T(longrun__count_total_stays_bounded),
 	DTFL_T(longrun__join_map_stays_bounded),
+	DTFL_T(longrun__unread_arrangement_stays_bounded),
 	DTFL_T_END
 };
 

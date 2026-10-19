@@ -15,7 +15,9 @@
  * frontier advance to each listener, prunes listeners whose source has
  * dropped, and appends the batch to the trace.  seal inserts an empty batch
  * to announce progress without data.  The free path seals to the empty
- * frontier (writer.rs Drop), closing the trace.
+ * frontier (writer.rs Drop), closing the trace.  The writer holds the box
+ * weakly: once every reader is gone the trace is freed and batches reach
+ * only the listener queues.
  */
 #include "dd/arrange_int.h"
 
@@ -46,7 +48,7 @@ __dtfl_trace_writer_free(__dtfl_trace_writer *w)
 
 	__dtfl_antichain_free(&w->upper);
 	__dtfl_queue_list_release(w->queues);
-	__dtfl_trace_box_release(w->box);
+	__dtfl_trace_box_release_weak(w->box);
 	w->box = NULL;
 }
 
@@ -84,8 +86,15 @@ __dtfl_trace_writer_insert(__dtfl_trace_writer *w, __dtfl_batch_ord *batch,
 	}
 	w->queues->queues.len = keep;
 
-	/* Append to the trace (takes ownership of the reference). */
-	__dtfl_trace_insert(w->box->trace, batch);
+	/*
+	 * Append to the trace (takes ownership of the reference), if a reader
+	 * still holds it (writer.rs `if let Some(trace) = self.trace.upgrade()`);
+	 * otherwise no one can read the trace and the batch is dropped.
+	 */
+	if (w->box->trace != NULL)
+		__dtfl_trace_insert(w->box->trace, batch);
+	else
+		__dtfl_batch_ord_release(batch);
 }
 
 void

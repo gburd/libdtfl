@@ -226,9 +226,9 @@ arrange_logic(dtfl_op *op, void *vctx)
 			 * when the shared spine merges and drops the trace's own
 			 * reference.
 			 */
+			__dtfl_batch_ord_retain(batch);
 			__dtfl_trace_writer_insert(&c->writer, batch,
 			    dtfl_cap_time(cap));
-			__dtfl_batch_ord_retain(batch);
 			s = dtfl_op_session(op, 0, cap);
 			__dtfl_session_set_batch_ptr(s);
 			{
