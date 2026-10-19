@@ -29,16 +29,6 @@
  * as three u64 fields (node, tag, i) with tag 0 for Target and 1 for
  * Source, which orders as upstream's derived Ord.  Divergence: the
  * elapsed-time column is omitted so the output is deterministic.
- *
- * Known wrong (why this is built but not smoke-tested, and why its
- * port-ledger row is deferred): find_cycles and summarize match the
- * pinned Rust binary, and frontier matches it at times 1 and 2.  At time
- * 3, when the last capability is retracted, Rust retracts all eight
- * frontier rows; here the frontier reduce over the +1 cycle (2.T0 ->
- * 2.S0 -> 3.T1 ...) emits wrong retractions and leaves rows behind, and
- * with -w 2 it counts to infinity.  The defect is in the library's
- * iterate/reduce under Product<u64, u64>, not in this example; see the
- * port-ledger note for the minimal reproducer.
  */
 #include "example_args.h"
 
@@ -66,13 +56,20 @@ put_loc(unsigned char *buf, uint64_t node, uint64_t tag, uint64_t port)
 }
 
 /* Location's derived Debug: "Location { node: 3, port: Target(0) }". */
-static void
-print_loc(const unsigned char *p)
+typedef struct loc_str {
+	char s[96];
+} loc_str;
+
+static loc_str
+fmt_loc(const unsigned char *p)
 {
-	printf("Location { node: %llu, port: %s(%llu) }",
+	loc_str l;
+
+	snprintf(l.s, sizeof l.s, "Location { node: %llu, port: %s(%llu) }",
 	    (unsigned long long)dtfl_get_u64(p),
 	    dtfl_get_u64(p + 8) == TARGET ? "Target" : "Source",
 	    (unsigned long long)dtfl_get_u64(p + 16));
+	return l;
 }
 
 /*
@@ -527,13 +524,17 @@ find_cycles(const types *ty, dtfl_collection *nodes, dtfl_collection *edges)
 /* Output and driver                                                   */
 /* ------------------------------------------------------------------ */
 
-static void
-print_tail(const uint64_t *time, const void *diff)
+/*
+ * Each line is one printf call, which holds the stdout lock for the whole
+ * line, so lines from different workers do not interleave (println!).
+ */
+static int64_t
+diff_of(const void *diff)
 {
 	int64_t d;
 
 	memcpy(&d, diff, sizeof d);
-	printf(", %llu, %lld)\n", (unsigned long long)time[0], (long long)d);
+	return d;
 }
 
 static void
@@ -543,12 +544,9 @@ inspect_cycles(void *ctx, const void *rec, size_t len, const uint64_t *time,
 	const unsigned char *r = rec;
 
 	(void)ctx; (void)len;
-	printf("cycles: ((");
-	print_loc(r);
-	printf(", ");
-	print_loc(r + LOC);
-	printf(")");
-	print_tail(time, diff);
+	printf("cycles: ((%s, %s), %llu, %lld)\n", fmt_loc(r).s,
+	    fmt_loc(r + LOC).s, (unsigned long long)time[0],
+	    (long long)diff_of(diff));
 }
 
 static void
@@ -558,12 +556,9 @@ inspect_summary(void *ctx, const void *rec, size_t len, const uint64_t *time,
 	const unsigned char *r = rec;
 
 	(void)ctx; (void)len;
-	printf("summary: ((");
-	print_loc(r);
-	printf(", (");
-	print_loc(r + LOC);
-	printf(", %llu))", (unsigned long long)dtfl_get_u64(r + 2 * LOC));
-	print_tail(time, diff);
+	printf("summary: ((%s, (%s, %llu)), %llu, %lld)\n", fmt_loc(r).s,
+	    fmt_loc(r + LOC).s, (unsigned long long)dtfl_get_u64(r + 2 * LOC),
+	    (unsigned long long)time[0], (long long)diff_of(diff));
 }
 
 static void
@@ -573,10 +568,9 @@ inspect_frontier(void *ctx, const void *rec, size_t len, const uint64_t *time,
 	const unsigned char *r = rec;
 
 	(void)ctx; (void)len;
-	printf("frontier: ((");
-	print_loc(r);
-	printf(", %llu)", (unsigned long long)dtfl_get_u64(r + LOC));
-	print_tail(time, diff);
+	printf("frontier: ((%s, %llu), %llu, %lld)\n", fmt_loc(r).s,
+	    (unsigned long long)dtfl_get_u64(r + LOC),
+	    (unsigned long long)time[0], (long long)diff_of(diff));
 }
 
 typedef struct worker_ctx {
