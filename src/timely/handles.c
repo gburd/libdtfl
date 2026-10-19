@@ -218,7 +218,7 @@ session_flush(dtfl_session *s)
  * ensure_capacity (container/src/lib.rs): before a push into an empty
  * buffer, reserve the flush threshold's worth of record bytes, as the
  * container builder reserves its preferred capacity.  A session that
- * never pushes allocates nothing.
+ * never pushes reserves no record bytes.
  */
 static inline void
 session_ensure_capacity(dtfl_session *s)

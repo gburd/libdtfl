@@ -384,20 +384,37 @@ abytes_for(const __dtfl_merge_batcher *mb, size_t rows, size_t bytes)
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
     (defined(__GNUC__) || defined(__clang__))
+/* True if the chain's chunks hold 8 arena bytes per row. */
+static bool
+chain_8_per_row(const __dtfl_chain *ch)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++)
+		if (ch->chunks[i]->arena.len != 8 * __dtfl_batch_len(ch->chunks[i]))
+			return false;
+	return true;
+}
+
 /*
  * True when the records are of a memcmp-ordered type whose every value
  * encodes in 8 bytes, with one time word and a 64-bit built-in integer
  * diff: the shape merge_two_t1_8 handles.  An 8-byte record compares by
  * cmp_raw as its big-endian word does.  The width comes from the type:
  * a memcmp-ordered type may vary in length (an Option encodes None in 1
- * byte and Some in 9), and byte totals cannot tell its rows apart.
+ * byte and Some in 9), and byte totals cannot tell its rows apart.  The
+ * byte totals are checked as well, because record lengths are not
+ * validated against the type on input: with them, every 8-byte read
+ * stays inside the arena even for a caller's mis-sized record.
  */
 static bool
-merge_shape_t1_8(const __dtfl_merge_batcher *mb)
+merge_shape_t1_8(const __dtfl_merge_batcher *mb, const __dtfl_chain *a,
+    const __dtfl_chain *b)
 {
 	return mb->tw == 1 && mb->dw == 8 && mb->rt->cmp == NULL &&
 	    __dtfl_type_const_width(mb->rt) == 8 &&
-	    __dtfl_diff_is_int64(mb->dc);
+	    __dtfl_diff_is_int64(mb->dc) && chain_8_per_row(a) &&
+	    chain_8_per_row(b);
 }
 
 /* A chain cursor's current row, read as merge_two_t1_8 compares it. */
@@ -510,7 +527,7 @@ merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
     (defined(__GNUC__) || defined(__clang__))
-	if (merge_shape_t1_8(mb))
+	if (merge_shape_t1_8(mb, &a, &b))
 		return merge_two_t1_8(mb, a, b);
 #endif
 	accum = __dtfl_alloc(DTFL_MAX(mb->dw, 1u));
