@@ -26,9 +26,9 @@ run() {
 
 pass=0
 fail=0
-for name in ivm_view txn_harness; do
+for name in ivm_view txn_harness sqlrow_check; do
 	bin="$bindir/$name"
-	# Both are check_PROGRAMS, so make check always builds them.
+	# All are check_PROGRAMS, so make check always builds them.
 	if [ ! -x "$bin" ]; then
 		echo "[ivm] FAIL: $name not built"
 		fail=$((fail + 1))
@@ -44,7 +44,7 @@ for name in ivm_view txn_harness; do
 			    "self-check)"
 		fi
 		sed 's/^/    /' "$tmp/$name.err" | head -10
-		grep 'MISMATCH\|FAILED' "$tmp/$name.out" | head -10 |
+		grep 'MISMATCH\|FAILED\|FAIL:' "$tmp/$name.out" | head -10 |
 		    sed 's/^/    /'
 		fail=$((fail + 1))
 		continue
