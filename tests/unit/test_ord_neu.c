@@ -199,9 +199,78 @@ DTFL_TEST(ord_neu__upds_seal_unsorted_stash)
 	return MUNIT_OK;
 }
 
+/*
+ * seal skips its sort when the stash is already in time order.  The
+ * check must look at every adjacent pair, including the first: a stash
+ * out of order only at its start, or one that returns to an earlier time,
+ * must still come out strictly increasing with equal times summed.  Also
+ * checked over a two-word Product time.
+ */
+static void
+seal_and_check(const dtfl_time_class *tc, unsigned tw, const uint64_t *t,
+    const int64_t *r, size_t n, const uint64_t *want_t, const int64_t *want_r,
+    size_t want_n)
+{
+	__dtfl_upds_builder b;
+	__dtfl_upds u;
+	size_t i;
+	int64_t d;
+
+	__dtfl_upds_init(&u, tw, 8);
+	__dtfl_upds_builder_init(&b, tc, I64);
+	for (i = 0; i < n; i++)
+		__dtfl_upds_builder_push(&b, t + (size_t)tw * i, &r[i]);
+	assert_true(__dtfl_upds_builder_seal(&b, &u));
+	assert_size(u.nupds, ==, want_n);
+	for (i = 0; i < want_n; i++) {
+		assert_memory_equal((size_t)tw * sizeof(uint64_t),
+		    __dtfl_upds_time(&u, i), want_t + (size_t)tw * i);
+		memcpy(&d, __dtfl_upds_diff(&u, i), 8);
+		assert_int64(d, ==, want_r[i]);
+	}
+	__dtfl_upds_builder_free(&b);
+	__dtfl_upds_free(&u);
+}
+
+DTFL_TEST(ord_neu__upds_seal_checks_every_pair)
+{
+	dtfl_time_class *u64 = dtfl_time_u64();
+	dtfl_time_class *pr = dtfl_time_product(u64, u64);
+
+	(void)params; (void)data;
+	{	/* out of order only at the first pair */
+		const uint64_t t[] = { 5, 3 };
+		const int64_t r[] = { 1, 2 };
+		const uint64_t wt[] = { 3, 5 };
+		const int64_t wr[] = { 2, 1 };
+
+		seal_and_check(u64, 1, t, r, 2, wt, wr, 2);
+	}
+	{	/* returns to an earlier time: 5 appears twice, apart */
+		const uint64_t t[] = { 5, 3, 5 };
+		const int64_t r[] = { 1, 2, 4 };
+		const uint64_t wt[] = { 3, 5 };
+		const int64_t wr[] = { 2, 5 };
+
+		seal_and_check(u64, 1, t, r, 3, wt, wr, 2);
+	}
+	{	/* Product time, out of order at the first pair, a repeat */
+		const uint64_t t[] = { 1, 1,  0, 2,  1, 1 };
+		const int64_t r[] = { 1, 7, 2 };
+		const uint64_t wt[] = { 0, 2,  1, 1 };
+		const int64_t wr[] = { 7, 3 };
+
+		seal_and_check(pr, 2, t, r, 3, wt, wr, 2);
+	}
+	dtfl_time_class_free(pr);
+	dtfl_time_class_free(u64);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
 	DTFL_T(ord_neu__upds_seal_unsorted_stash),
+	DTFL_T(ord_neu__upds_seal_checks_every_pair),
 	DTFL_T(ord_neu__key_batch_single_value),
 	DTFL_T_END
 };

@@ -455,6 +455,65 @@ DTFL_TEST(consolidate_packed_matches_index_sort)
 	return MUNIT_OK;
 }
 
+/*
+ * A memcmp-ordered type whose values vary in length (cmp NULL, a len
+ * callback) must not take the packed sort: packing pads to 8 bytes, so
+ * "\x01" and "\x01\x00" would pack to the same word and merge.  Mixed
+ * lengths in one batch must sort by memcmp then length and keep the two
+ * records distinct, exactly as the index sort does.
+ */
+static size_t
+first_byte_len(const dtfl_type *t, const void *p, size_t avail)
+{
+	(void)t;
+	if (avail == 0)
+		return SIZE_MAX;
+	return 1 + *(const unsigned char *)p % 3;	/* 1, 2 or 3 bytes */
+}
+
+DTFL_TEST(consolidate_packed_rejects_mixed_lengths)
+{
+	dtfl_type var = { 0 };
+	dtfl_type slow;
+	static const unsigned char r1[] = { 0x03 };		/* len 1 */
+	static const unsigned char r2[] = { 0x03, 0x00 };	/* len 1 too */
+	static const unsigned char r3[] = { 0x04, 0x00 };	/* len 2 */
+	static const unsigned char r4[] = { 0x04 };		/* prefix of r3 */
+	const unsigned char *recs[] = { r3, r1, r4, r3, r4 };
+	const size_t lens[] = { 2, 1, 1, 2, 1 };
+	__dtfl_batch *a = __dtfl_batch_new(1, 8), *b;
+	uint64_t t = 0;
+	int64_t one = 1;
+	size_t i, len;
+	const unsigned char *p;
+
+	(void)params; (void)data; (void)r2;
+	var.name = "var";
+	var.len = first_byte_len;
+	slow = var;
+	slow.cmp = user_memcmp;
+	for (i = 0; i < 5; i++)
+		__dtfl_batch_push(a, recs[i], lens[i], &t, &one);
+	b = __dtfl_batch_copy(a);
+	__dtfl_consolidate_batch(a, &var, I64);
+	__dtfl_consolidate_batch(b, &slow, I64);
+	/* {0x03}, {0x04}, {0x04,0x00}: three records, prefix before longer. */
+	assert_size(__dtfl_batch_len(a), ==, 3);
+	assert_size(__dtfl_batch_len(a), ==, __dtfl_batch_len(b));
+	assert_memory_equal(a->offs.len * sizeof(size_t), a->offs.data,
+	    b->offs.data);
+	assert_memory_equal(a->arena.len, a->arena.data, b->arena.data);
+	assert_memory_equal(a->diffs.len, a->diffs.data, b->diffs.data);
+	p = __dtfl_batch_rec(a, 1, &len);
+	assert_size(len, ==, 1);
+	assert_uint8(p[0], ==, 0x04);
+	p = __dtfl_batch_rec(a, 2, &len);
+	assert_size(len, ==, 2);
+	__dtfl_batch_release(a);
+	__dtfl_batch_release(b);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(consolidation__test_consolidate),
 	DTFL_T(consolidation__test_consolidate_updates),
@@ -464,6 +523,7 @@ static MunitTest tests[] = {
 	DTFL_T(consolidation__test_consolidator_duration_vec),
 	DTFL_T(consolidate_then_push),
 	DTFL_T(consolidate_packed_matches_index_sort),
+	DTFL_T(consolidate_packed_rejects_mixed_lengths),
 	DTFL_T(description_basics),
 	DTFL_T_END
 };
