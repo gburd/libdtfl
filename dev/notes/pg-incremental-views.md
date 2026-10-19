@@ -480,7 +480,7 @@ These are open design work, not solved by the substrate:
   side is identical; only the capture and apply points move.
 - **Performance.**  libdtfl is correct but measured about 2.6x slower
   than Rust differential dataflow on `count` throughput and 2.7x on the
-  `arrange` arm, same host (`dev/P15-measurements.md`).  Per-commit cost is
+  `arrange` arm, same host (`bench/experiments/arrange`).  Per-commit cost is
   flat over thousands of commits now that arranged traces compact
   (`tests/unit/test_longrun.c` guards it).  The comparison that matters for
   IVM is maintenance cost versus REFRESH and versus trigger-based IVM at
