@@ -248,14 +248,16 @@ Verification (fidelity against real Rust) -- a release requirement
         kept a reader nothing advanced, so every seek walked every batch.
         With that and its follow-ups fixed (merge 576519e;
         dev/perf-investigation.md), same host, 25 s: count 5.7x and arrange
-        7.3x slower than Rust, at 5 to 8x Rust's instructions per record
-        and the same IPC.  The investigation's prototype reached about
-        3.3x / 4.0x with two inlining changes and estimates 1.5 to 2.5x is
-        reachable keeping D1/D2.  OPEN: the row-at-a-time engineering
-        fixes it ranks (inline comparators, the consolidator's index sort,
-        the merge loop, chunk recycling, diff callbacks), each measured on
-        meh, then a re-measurement.  dev/P15-measurements.md has the
-        numbers.
+        7.3x slower than Rust.  A second optimisation pass
+        (feat/perf-round2: inline pushes and compares, a packed
+        consolidate sort, run copies in the batcher, a one-word
+        advance_by, and a seal that no longer sorts and allocates for
+        already ordered input) brings that to count 2.55x and arrange
+        2.73x slower (257K vs 656K and 1.13M vs 3.07M rec/s on meh), at
+        2.2x / 2.8x Rust's instructions per record.  OPEN: the cursor
+        seek (count) and the consolidate sort and merge loop (arrange)
+        are the next costs; chunk recycling and count's diff callbacks
+        are not done.  dev/P15-measurements.md has the per-commit table.
 
 Deferred-with-reason items that MUST still be finished before 1.0
 ----------------------------------------------------------------

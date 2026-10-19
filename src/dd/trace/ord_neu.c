@@ -53,7 +53,7 @@ last_key_eq(const __dtfl_builder_ord *bld, const void *key, size_t klen)
 	if (n == 0)
 		return false;
 	k = __dtfl_slices_get(&bld->result.keys, n - 1, &len);
-	return dtfl_type_cmp(bld->kt, k, len, key, klen) == 0;
+	return __dtfl_type_cmp(bld->kt, k, len, key, klen) == 0;
 }
 
 static bool
@@ -65,7 +65,7 @@ last_val_eq(const __dtfl_builder_ord *bld, const void *val, size_t vlen)
 	if (n == 0)
 		return false;
 	v = __dtfl_slices_get(&bld->result.vals.vals, n - 1, &len);
-	return dtfl_type_cmp(bld->vt, v, len, val, vlen) == 0;
+	return __dtfl_type_cmp(bld->vt, v, len, val, vlen) == 0;
 }
 
 /*
@@ -267,6 +267,30 @@ stash_updates(__dtfl_merger_ord *m, const __dtfl_ord_storage *src, size_t index)
 	unsigned tw = dtfl_time_depth(m->tc);
 
 	__dtfl_upds_bounds(&src->upds, index, &lo, &hi);
+	if (m->tc->shape == DTFL_SHAPE_TOTAL) {
+		/*
+		 * One totally ordered word: advance_by is the meet (min) over
+		 * the frontier of the join (max) with each element, which is
+		 * what __dtfl_time_advance_by computes for this shape.
+		 */
+		const uint64_t *f = __dtfl_ac_base(since);
+		size_t nf = __dtfl_antichain_len(since), j;
+
+		DTFL_DEBUG_ASSERT(tw == 1);
+		for (i = lo; i < hi; i++) {
+			uint64_t t = __dtfl_upds_time(&src->upds, i)[0], r;
+
+			if (nf != 0) {
+				r = DTFL_MAX(t, f[0]);
+				for (j = 1; j < nf; j++)
+					r = DTFL_MIN(r, DTFL_MAX(t, f[j]));
+				t = r;
+			}
+			__dtfl_upds_builder_push(&m->staging, &t,
+			    __dtfl_upds_diff(&src->upds, i));
+		}
+		return;
+	}
 	for (i = lo; i < hi; i++) {
 		uint64_t t[DTFL_TIME_MAX];
 
@@ -309,7 +333,7 @@ merge_vals(__dtfl_merger_ord *m, const __dtfl_ord_storage *s1, size_t lo1,
 		size_t l1, l2;
 		const void *v1 = __dtfl_slices_get(&s1->vals.vals, lo1, &l1);
 		const void *v2 = __dtfl_slices_get(&s2->vals.vals, lo2, &l2);
-		int r = dtfl_type_cmp(m->vt, v1, l1, v2, l2);
+		int r = __dtfl_type_cmp(m->vt, v1, l1, v2, l2);
 
 		if (r < 0) {
 			stash_updates(m, s1, lo1);
@@ -391,7 +415,7 @@ merge_key(__dtfl_merger_ord *m, const __dtfl_ord_storage *s1,
 	size_t l1, l2;
 	const void *k1 = __dtfl_slices_get(&s1->keys, m->key_cursor1, &l1);
 	const void *k2 = __dtfl_slices_get(&s2->keys, m->key_cursor2, &l2);
-	int r = dtfl_type_cmp(m->kt, k1, l1, k2, l2);
+	int r = __dtfl_type_cmp(m->kt, k1, l1, k2, l2);
 
 	if (r < 0) {
 		if (m->keyed)

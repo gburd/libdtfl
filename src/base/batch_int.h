@@ -31,6 +31,48 @@
  */
 size_t __dtfl_type_const_width(const dtfl_type *t);
 
+/*
+ * The memcmp-ordered default compare (dtfl_type.cmp == NULL): memcmp over
+ * the common prefix, then length, normalised to -1/0/1.  Two 8-byte
+ * values compare as big-endian words, which is the same order as memcmp.
+ */
+static inline int
+__dtfl_cmp_bytes(const void *a, size_t alen, const void *b, size_t blen)
+{
+	size_t m;
+	int c;
+
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    (defined(__GNUC__) || defined(__clang__))
+	if (alen == 8 && blen == 8) {
+		uint64_t x, y;
+
+		memcpy(&x, a, sizeof x);
+		memcpy(&y, b, sizeof y);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+		x = __builtin_bswap64(x);
+		y = __builtin_bswap64(y);
+#endif
+		return (x > y) - (x < y);
+	}
+#endif
+	m = alen < blen ? alen : blen;
+	c = m != 0 ? memcmp(a, b, m) : 0;
+	if (c != 0)
+		return c < 0 ? -1 : 1;
+	return (alen > blen) - (alen < blen);
+}
+
+/* dtfl_type_cmp with the memcmp-ordered case inline, for hot loops. */
+static inline int
+__dtfl_type_cmp(const dtfl_type *t, const void *a, size_t alen,
+    const void *b, size_t blen)
+{
+	if (DTFL_LIKELY(t->cmp == NULL))
+		return __dtfl_cmp_bytes(a, alen, b, blen);
+	return dtfl_type_cmp(t, a, alen, b, blen);
+}
+
 /* ------------------------------------------------------------------ */
 /* Bytes                                                               */
 /* ------------------------------------------------------------------ */
@@ -142,12 +184,52 @@ __dtfl_batch_len(const __dtfl_batch *b)
 }
 
 void __dtfl_batch_clear(__dtfl_batch *b);
+
+/*
+ * Appends a record of len uninitialized bytes and returns them; the
+ * pointer is valid until the next push.  A NULL time or diff stores
+ * zeros.  Inline because it is the per-row cost of every container
+ * fill; the column pushes copy 8-byte times and diffs inline.
+ */
+static inline void *
+__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	size_t start = b->arena.len, end = start + len;
+
+	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	if (DTFL_UNLIKELY(end < start))
+		__dtfl_panic("batch arena overflow");
+	/* The caller fully overwrites these len bytes, so leave them uninit. */
+	__dtfl_vec_push_n_uninit(&b->arena, len);
+	__dtfl_vec_push_size(&b->offs, end);
+	if (b->tw == 1 && time != NULL)
+		__dtfl_vec_push_u64(&b->times, time[0]);
+	else
+		__dtfl_vec_push_n(&b->times, time, b->tw);
+	if (b->dw == sizeof(uint64_t) && diff != NULL) {
+		uint64_t d;
+
+		/* Common case: an 8-byte diff (i64), copied as one word. */
+		memcpy(&d, diff, sizeof d);
+		__dtfl_vec_push_8bytes(&b->diffs, d);
+	} else
+		__dtfl_vec_push_n(&b->diffs, diff, b->dw);
+	return b->arena.data + start;
+}
+
 /* Appends a record; time and diff may be NULL when tw/dw are 0. */
-void __dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
-    const uint64_t *time, const void *diff);
-/* Reserves space and returns a pointer for a record of `len` bytes. */
-void *__dtfl_batch_push_uninit(__dtfl_batch *b, size_t len,
-    const uint64_t *time, const void *diff);
+static inline void
+__dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
+    const uint64_t *time, const void *diff)
+{
+	unsigned char *p = __dtfl_batch_push_uninit(b, len, time, diff);
+
+	if (len == 8)
+		memcpy(p, rec, 8);
+	else if (len != 0)
+		memcpy(p, rec, len);
+}
 /* Reserves room for `rows` more records and `bytes` more arena bytes. */
 void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
 /* Appends record i of src. */

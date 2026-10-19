@@ -42,7 +42,7 @@ minimize_vals(__dtfl_cursor_list *cl)
 			have_min = true;
 			continue;
 		}
-		r = dtfl_type_cmp(cl->vt, val, vlen, min, minlen);
+		r = __dtfl_type_cmp(cl->vt, val, vlen, min, minlen);
 		if (r < 0) {
 			__dtfl_vec_clear(&cl->min_val);
 			__dtfl_vec_push(&cl->min_val, &idx);
@@ -81,7 +81,7 @@ minimize_keys(__dtfl_cursor_list *cl)
 			have_min = true;
 			continue;
 		}
-		r = dtfl_type_cmp(cl->kt, key, klen, min, minlen);
+		r = __dtfl_type_cmp(cl->kt, key, klen, min, minlen);
 		if (r < 0) {
 			__dtfl_vec_clear(&cl->min_key);
 			__dtfl_vec_push(&cl->min_key, &i);

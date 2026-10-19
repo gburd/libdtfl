@@ -172,7 +172,7 @@ row_cmp(const __dtfl_merge_batcher *mb, const __dtfl_batch *b1, size_t i1,
 	size_t l1, l2;
 	const void *r1 = __dtfl_batch_rec(b1, i1, &l1);
 	const void *r2 = __dtfl_batch_rec(b2, i2, &l2);
-	int r = dtfl_type_cmp(mb->rt, r1, l1, r2, l2);
+	int r = __dtfl_type_cmp(mb->rt, r1, l1, r2, l2);
 
 	if (r != 0)
 		return r;
@@ -189,48 +189,68 @@ typedef struct chain_cursor {
 	const __dtfl_chain *chain;
 	size_t chunk;
 	size_t row;
+	const __dtfl_batch *b;	/* chain->chunks[chunk], NULL at the end */
+	size_t len;		/* rows in b */
 } chain_cursor;
+
+/* Moves to the first non-empty chunk at or after c->chunk. */
+static void
+cc_settle(chain_cursor *c)
+{
+	c->row = 0;
+	while (c->chunk < c->chain->n &&
+	    __dtfl_batch_len(c->chain->chunks[c->chunk]) == 0)
+		c->chunk++;
+	if (c->chunk < c->chain->n) {
+		c->b = c->chain->chunks[c->chunk];
+		c->len = __dtfl_batch_len(c->b);
+	} else {
+		c->b = NULL;
+		c->len = 0;
+	}
+}
 
 static void
 cc_init(chain_cursor *c, const __dtfl_chain *chain)
 {
 	c->chain = chain;
 	c->chunk = 0;
-	c->row = 0;
-	while (c->chunk < chain->n &&
-	    __dtfl_batch_len(chain->chunks[c->chunk]) == 0)
-		c->chunk++;
+	cc_settle(c);
 }
 
-static bool
+static inline bool
 cc_valid(const chain_cursor *c)
 {
-	return c->chunk < c->chain->n;
+	return c->b != NULL;
 }
 
-static const __dtfl_batch *
+static inline const __dtfl_batch *
 cc_batch(const chain_cursor *c)
 {
-	return c->chain->chunks[c->chunk];
+	return c->b;
 }
 
-static void
+/* Advances n rows, at most to the end of the current chunk. */
+static inline void
+cc_skip(chain_cursor *c, size_t n)
+{
+	c->row += n;
+	if (c->row >= c->len) {
+		c->chunk++;
+		cc_settle(c);
+	}
+}
+
+static inline void
 cc_step(chain_cursor *c)
 {
-	c->row++;
-	if (c->row >= __dtfl_batch_len(c->chain->chunks[c->chunk])) {
-		c->row = 0;
-		c->chunk++;
-		while (c->chunk < c->chain->n &&
-		    __dtfl_batch_len(c->chain->chunks[c->chunk]) == 0)
-			c->chunk++;
-	}
+	cc_skip(c, 1);
 }
 
 /* Appends one chunk's worth to output, flushing full chunks of `cap` rows. */
 typedef struct chunk_sink {
 	__dtfl_vec chunks;	/* __dtfl_batch *, owned */
-	__dtfl_batch *cur;
+	__dtfl_batch *cur;	/* fewer than cap rows between pushes */
 	unsigned tw;
 	unsigned dw;
 	size_t cap;
@@ -249,15 +269,63 @@ sink_init(chunk_sink *s, unsigned tw, unsigned dw, size_t cap, size_t abytes)
 	__dtfl_batch_reserve(s->cur, cap, abytes);
 }
 
+/* Moves the full current chunk to the output and starts a new one. */
 static void
+sink_flush(chunk_sink *s)
+{
+	__dtfl_vec_push(&s->chunks, &s->cur);
+	s->cur = __dtfl_batch_new(s->tw, s->dw);
+	__dtfl_batch_reserve(s->cur, s->cap, s->abytes);
+}
+
+static inline void
 sink_push(chunk_sink *s, const void *rec, size_t len, const uint64_t *time,
     const void *diff)
 {
 	__dtfl_batch_push(s->cur, rec, len, time, diff);
-	if (__dtfl_batch_len(s->cur) >= s->cap) {
-		__dtfl_vec_push(&s->chunks, &s->cur);
-		s->cur = __dtfl_batch_new(s->tw, s->dw);
-		__dtfl_batch_reserve(s->cur, s->cap, s->abytes);
+	if (__dtfl_batch_len(s->cur) >= s->cap)
+		sink_flush(s);
+}
+
+/* Appends row i of src. */
+static inline void
+sink_push_row(chunk_sink *s, const __dtfl_batch *src, size_t i)
+{
+	size_t len;
+	const void *rec = __dtfl_batch_rec(src, i, &len);
+
+	sink_push(s, rec, len, __dtfl_batch_time(src, i),
+	    __dtfl_batch_diff(src, i));
+}
+
+/*
+ * Appends rows [i, i + n) of src, split at the same chunk boundaries as n
+ * sink_push_row calls, so the output chunks are identical.
+ */
+static void
+sink_push_run(chunk_sink *s, const __dtfl_batch *src, size_t i, size_t n)
+{
+	while (n != 0) {
+		size_t room = s->cap - __dtfl_batch_len(s->cur);
+		size_t k = n < room ? n : room;
+
+		__dtfl_batch_push_run(s->cur, src, i, k);
+		i += k;
+		n -= k;
+		if (__dtfl_batch_len(s->cur) >= s->cap)
+			sink_flush(s);
+	}
+}
+
+/* Appends the rest of the chain under c and exhausts c. */
+static void
+sink_push_rest(chunk_sink *s, chain_cursor *c)
+{
+	while (cc_valid(c)) {
+		size_t k = c->len - c->row;
+
+		sink_push_run(s, c->b, c->row, k);
+		cc_skip(c, k);
 	}
 }
 
@@ -336,20 +404,10 @@ merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
 		    cb.row);
 
 		if (r < 0) {
-			const __dtfl_batch *bb = cc_batch(&ca);
-			size_t len;
-			const void *rec = __dtfl_batch_rec(bb, ca.row, &len);
-
-			sink_push(&sink, rec, len, __dtfl_batch_time(bb, ca.row),
-			    __dtfl_batch_diff(bb, ca.row));
+			sink_push_row(&sink, cc_batch(&ca), ca.row);
 			cc_step(&ca);
 		} else if (r > 0) {
-			const __dtfl_batch *bb = cc_batch(&cb);
-			size_t len;
-			const void *rec = __dtfl_batch_rec(bb, cb.row, &len);
-
-			sink_push(&sink, rec, len, __dtfl_batch_time(bb, cb.row),
-			    __dtfl_batch_diff(bb, cb.row));
+			sink_push_row(&sink, cc_batch(&cb), cb.row);
 			cc_step(&cb);
 		} else {
 			const __dtfl_batch *b1 = cc_batch(&ca);
@@ -369,24 +427,8 @@ merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
 			cc_step(&cb);
 		}
 	}
-	while (cc_valid(&ca)) {
-		const __dtfl_batch *bb = cc_batch(&ca);
-		size_t len;
-		const void *rec = __dtfl_batch_rec(bb, ca.row, &len);
-
-		sink_push(&sink, rec, len, __dtfl_batch_time(bb, ca.row),
-		    __dtfl_batch_diff(bb, ca.row));
-		cc_step(&ca);
-	}
-	while (cc_valid(&cb)) {
-		const __dtfl_batch *bb = cc_batch(&cb);
-		size_t len;
-		const void *rec = __dtfl_batch_rec(bb, cb.row, &len);
-
-		sink_push(&sink, rec, len, __dtfl_batch_time(bb, cb.row),
-		    __dtfl_batch_diff(bb, cb.row));
-		cc_step(&cb);
-	}
+	sink_push_rest(&sink, &ca);
+	sink_push_rest(&sink, &cb);
 	sink_finish(&sink, &out.chunks, &out.n);
 	__dtfl_free(accum);
 	chain_free(&a);
@@ -471,21 +513,28 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 		sink_init(&keep, mb->tw, mb->dw, mb->cap, ab);
 		cc_init(&cc, &merged);
 		while (cc_valid(&cc)) {
+			/*
+			 * The maximal run of rows in this chunk bound for the
+			 * same side; kept times enter the frontier in row order.
+			 */
 			const __dtfl_batch *bb = cc_batch(&cc);
-			size_t len;
-			const void *rec = __dtfl_batch_rec(bb, cc.row, &len);
-			const uint64_t *t = __dtfl_batch_time(bb, cc.row);
-			const void *d = __dtfl_batch_diff(bb, cc.row);
+			size_t end = cc.row;
+			const uint64_t *t = __dtfl_batch_time(bb, end);
+			bool keeps = __dtfl_frontier_less_equal(mb->tc,
+			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper), t);
 
-			if (__dtfl_frontier_less_equal(mb->tc,
-			    __dtfl_ac_base(upper),
-			    __dtfl_antichain_len(upper), t)) {
-				__dtfl_antichain_insert(&mb->frontier, t);
-				sink_push(&keep, rec, len, t, d);
-			} else {
-				sink_push(&ready, rec, len, t, d);
-			}
-			cc_step(&cc);
+			do {
+				if (keeps)
+					__dtfl_antichain_insert(&mb->frontier,
+					    __dtfl_batch_time(bb, end));
+				end++;
+			} while (end < cc.len &&
+			    __dtfl_frontier_less_equal(mb->tc,
+			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper),
+			    __dtfl_batch_time(bb, end)) == keeps);
+			sink_push_run(keeps ? &keep : &ready, bb, cc.row,
+			    end - cc.row);
+			cc_skip(&cc, end - cc.row);
 		}
 		sink_finish(&keep, &kept.chunks, &kept.n);
 	}

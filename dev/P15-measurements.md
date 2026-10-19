@@ -242,3 +242,55 @@ gap was the port bugs.  The investigation's prototype also inlined two
 comparisons and reached about 3.3x on count and 4.0x on arrange; those
 changes are not merged yet, and it estimates that 1.5 to 2.5x of Rust is
 reachable while keeping D1 and D2.
+
+## Second optimisation pass (2026-10-19)
+
+One commit per change on feat/perf-round2, each measured on `meh` the
+same way as above (release `-O2 -g`, `taskset -c 3`, keys = recs =
+100000, rate = 1000, 25 s, median of 4 runs; instructions per record
+from `perf stat -e instructions:u` over the whole run divided by 25 s
+and the throughput).  The Rust column is the same-host baseline above:
+count 655,738 and arrange 3,066,834 rec/s, 4,400 and 810 instructions
+per record.  "C / Rust" is Rust's rec/s over C's.
+
+| commit                          | count rec/s | instr/rec | C / Rust | arrange rec/s | instr/rec | C / Rust |
+|---------------------------------|-------------|-----------|----------|---------------|-----------|----------|
+| build HEAD (135acec)            |     122,513 |    22,928 |    5.35x |       431,707 |     6,434 |    7.10x |
+| E1 inline vec/batch pushes      |     142,875 |    18,368 |    4.59x |       612,957 |     4,281 |    5.00x |
+| E2 inline memcmp-order compare  |     153,932 |    16,390 |    4.26x |       643,475 |     3,765 |    4.77x |
+| R1 packed consolidate sort      |     160,290 |    16,030 |    4.09x |       697,700 |     3,392 |    4.40x |
+| R2 merge_two / extract runs     |     174,167 |    15,732 |    3.76x |       841,154 |     3,104 |    3.65x |
+| R4 one-word advance_by          |     171,411 |    15,080 |    3.83x |       831,591 |     3,105 |    3.69x |
+| seal: no permutation if sorted  |     238,455 |    10,028 |    2.75x |     1,047,268 |     2,348 |    2.93x |
+| seal: inline one-word cells     |     257,275 |     9,672 |    2.55x |     1,125,027 |     2,290 |    2.73x |
+
+Overall: count 2.10x faster, arrange 2.61x.  In instructions per record
+C is now 2.2x Rust on count and 2.8x on arrange.  R4 cut count
+instructions by 4% but its rec/s change is inside the run-to-run spread
+(frequency not pinned).  The two seal commits were not in the
+investigation's ranking.  They came out of re-profiling after R2:
+`UpdsBuilder::seal` allocated, sorted and permuted the stash on every
+call, even for one update (upstream's `consolidate_slice` does not sort
+a slice of one), and it was the top malloc source on both arms.
+
+Every commit kept the output identical.  R1's packed sort has a unit
+test comparing it byte for byte with the index sort.  Checks on floki:
+`--enable-debug --with-hegel make check` 133/133 after every commit;
+at the end, clang 21 `-Werror` build and check (no hegel: 109 pass,
+24 pbt skip), `--enable-asan --enable-ubsan make check`, and
+`DTFL_EXPLAIN_HEAVY=1 explain` 12/12.
+
+What the profiles show next (meh, after the last commit):
+
+- count: `__dtfl_slices_advance` 20% self (the cursor seek's
+  exponential search, a `__dtfl_cmp_bytes` per probe), seal 11%,
+  `stash_updates` plus `merger_ord_work` 9%.  The columnar key column
+  (`--enable-columnar`) targets the first; it was not re-measured on
+  this tree.
+- arrange: `msort_packed` 14% (a recursive merge sort of 24-byte rows;
+  a radix or pdqsort-style sort is the next step; an unstable sort
+  reorders only rows with equal (record, time), whose diffs the fold
+  sums, so it is safe for commutative diff classes but would need
+  care for a user class that is not), `merge_two` plus `sink_push_row`
+  17%, memmove 8%.
+- R3 (chunk recycling) and R5 (count's diff callbacks) are not done.

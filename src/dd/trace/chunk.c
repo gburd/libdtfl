@@ -70,7 +70,7 @@ static int
 cmp_key(const __dtfl_chunk_ctx *x, const void *a, size_t al, const void *b,
     size_t bl)
 {
-	return dtfl_type_cmp(x->kt, a, al, b, bl);
+	return __dtfl_type_cmp(x->kt, a, al, b, bl);
 }
 
 static int
@@ -79,7 +79,7 @@ cmp_val(const __dtfl_chunk_ctx *x, const void *a, size_t al, const void *b,
 {
 	if (x->keyed)
 		return 0;
-	return dtfl_type_cmp(x->vt, a, al, b, bl);
+	return __dtfl_type_cmp(x->vt, a, al, b, bl);
 }
 
 /* ------------------------------------------------------------------ */
@@ -427,7 +427,7 @@ inner_step_val(const __dtfl_chunk_ctx *x, const __dtfl_chunk *ch, size_t vpos)
 	i = vpos;
 	while (i < n) {
 		rc = __dtfl_batch_rec(ch, i, &l);
-		if (dtfl_type_cmp(x->rt, rc, l, rec, rl) != 0)
+		if (__dtfl_type_cmp(x->rt, rc, l, rec, rl) != 0)
 			break;
 		i++;
 	}
@@ -453,7 +453,7 @@ __dtfl_chunk_cursor_map_times(__dtfl_chunk_cursor *c,
 	/* Visit the (key, val)'s updates in this chunk. */
 	for (i = c->vpos; i < __dtfl_batch_len(ch); i++) {
 		rc = __dtfl_batch_rec(ch, i, &l);
-		if (dtfl_type_cmp(&b->ctx.rt[0], rc, l, rec, rl) != 0)
+		if (__dtfl_type_cmp(&b->ctx.rt[0], rc, l, rec, rl) != 0)
 			break;
 		logic(__dtfl_batch_time(ch, i), __dtfl_batch_diff(ch, i), ctx);
 	}
@@ -464,7 +464,7 @@ __dtfl_chunk_cursor_map_times(__dtfl_chunk_cursor *c,
 		ch = batch_chunk(b, cc);
 		for (i = 0; i < __dtfl_batch_len(ch); i++) {
 			rc = __dtfl_batch_rec(ch, i, &l);
-			if (dtfl_type_cmp(b->ctx.rt, rc, l, rec, rl) != 0)
+			if (__dtfl_type_cmp(b->ctx.rt, rc, l, rec, rl) != 0)
 				break;
 			logic(__dtfl_batch_time(ch, i),
 			    __dtfl_batch_diff(ch, i), ctx);

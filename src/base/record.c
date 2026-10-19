@@ -121,12 +121,7 @@ dtfl_get_bytes(const void *buf, size_t *n)
 static int
 cmp_raw(const void *a, size_t alen, const void *b, size_t blen)
 {
-	size_t m = DTFL_MIN(alen, blen);
-	int c = m != 0 ? memcmp(a, b, m) : 0;
-
-	if (c != 0)
-		return c < 0 ? -1 : 1;
-	return (alen > blen) - (alen < blen);
+	return __dtfl_cmp_bytes(a, alen, b, blen);
 }
 
 static int

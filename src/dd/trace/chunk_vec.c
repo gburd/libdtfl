@@ -120,7 +120,7 @@ cmp_row(const __dtfl_chunk_ctx *x, const __dtfl_chunk *c, size_t i,
 
 	a = __dtfl_batch_rec(c, i, &alen);
 	b = __dtfl_batch_rec(c2, j, &blen);
-	r = dtfl_type_cmp(x->rt, a, alen, b, blen);
+	r = __dtfl_type_cmp(x->rt, a, alen, b, blen);
 	if (r != 0)
 		return r;
 	return __dtfl_words_cmp(__dtfl_batch_time(c, i),
@@ -137,7 +137,7 @@ cmp_rec(const __dtfl_chunk_ctx *x, const __dtfl_chunk *c, size_t i,
 
 	a = __dtfl_batch_rec(c, i, &alen);
 	b = __dtfl_batch_rec(c2, j, &blen);
-	return dtfl_type_cmp(x->rt, a, alen, b, blen);
+	return __dtfl_type_cmp(x->rt, a, alen, b, blen);
 }
 
 /*

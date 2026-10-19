@@ -30,7 +30,7 @@ __dtfl_vec_free(__dtfl_vec *v)
 }
 
 void
-__dtfl_vec_reserve(__dtfl_vec *v, size_t additional)
+__dtfl_vec_grow(__dtfl_vec *v, size_t additional)
 {
 	size_t need, ncap;
 
@@ -57,51 +57,6 @@ __dtfl_vec_shrink(__dtfl_vec *v)
 		v->data = __dtfl_realloc(v->data, v->len * v->elem);
 		v->cap = v->len;
 	}
-}
-
-void *
-__dtfl_vec_push(__dtfl_vec *v, const void *elem)
-{
-	void *slot;
-
-	__dtfl_vec_reserve(v, 1);
-	slot = v->data + v->len * v->elem;
-	if (elem != NULL)
-		memcpy(slot, elem, v->elem);
-	else
-		memset(slot, 0, v->elem);
-	v->len++;
-	return slot;
-}
-
-void *
-__dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n)
-{
-	void *slot;
-
-	if (n == 0)
-		return v->data + v->len * v->elem;
-	__dtfl_vec_reserve(v, n);
-	slot = v->data + v->len * v->elem;
-	if (elems != NULL)
-		memcpy(slot, elems, n * v->elem);
-	else
-		memset(slot, 0, n * v->elem);
-	v->len += n;
-	return slot;
-}
-
-void *
-__dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n)
-{
-	void *slot;
-
-	if (n == 0)
-		return v->data + v->len * v->elem;
-	__dtfl_vec_reserve(v, n);
-	slot = v->data + v->len * v->elem;
-	v->len += n;
-	return slot;
 }
 
 void
