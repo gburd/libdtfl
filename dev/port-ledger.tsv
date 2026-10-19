@@ -368,7 +368,7 @@ differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	
 differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
 differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	done	the DDIR plugin server: registry and lifecycle (install/feed/tick/drop/peek/list), one in-process worker with commands on the calling thread, shared traces across installs, generated/iota/clock sources.  The multi-worker Sequencer and trace compaction are deferred (the public trace handle lacks the compaction setter); see ADR-0012 (2026-10-15)
-differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	reach/tc/count/flatmap/collect/demand-subset/clone_identity pass; scc sufficiency deferred on a trace-layer batch use-after-free (spine_fueled free vs ascoll cursor), not an explain bug
+differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	every #[test] but report_demand_excess (a printed metric, no assertion) is ported and passes; the four upstream #[ignore] tests (scc_100, scc_join_partner_time_regression, fuzz, report) run only with DTFL_EXPLAIN_HEAVY set, and the three ported ones pass then (13/13, about 60 s debug)
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
 differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	done	manual skeleton and menu
 differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
