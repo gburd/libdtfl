@@ -26,6 +26,7 @@ __dtfl_slices_init(__dtfl_slices *s)
 	size_t zero = 0;
 
 	s->stride = 0;
+	s->all8 = true;
 	__dtfl_vec_init(&s->arena, 1);
 	__dtfl_vec_init(&s->offs, sizeof(size_t));
 	__dtfl_vec_push(&s->offs, &zero);
@@ -44,6 +45,7 @@ __dtfl_slices_clear(__dtfl_slices *s)
 	size_t zero = 0;
 
 	__dtfl_vec_clear(&s->arena);
+	s->all8 = true;
 	if (s->stride == 0) {
 		__dtfl_vec_clear(&s->offs);
 		__dtfl_vec_push(&s->offs, &zero);
@@ -70,8 +72,11 @@ __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len)
 		/* Common case: an 8-byte key or value, stored as one word. */
 		memcpy(&x, p, sizeof x);
 		__dtfl_vec_push_8bytes(&s->arena, x);
-	} else if (len != 0)
-		__dtfl_vec_push_n(&s->arena, p, len);
+	} else {
+		s->all8 = false;
+		if (len != 0)
+			__dtfl_vec_push_n(&s->arena, p, len);
+	}
 	end = s->arena.len;
 	__dtfl_vec_push_size(&s->offs, end);
 }
@@ -96,6 +101,19 @@ slice_less_raw(const void *a, size_t alen, const void *b, size_t blen)
  * big-endian integer.  An 8-byte value compares as one integer; any other
  * length falls back to cmp_raw (memcmp over the common prefix, then length).
  */
+/* The 8 bytes at p as a big-endian integer. */
+static inline uint64_t
+load_be8(const unsigned char *p)
+{
+	uint64_t x;
+
+	memcpy(&x, p, sizeof x);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	x = __builtin_bswap64(x);
+#endif
+	return x;
+}
+
 static inline bool
 less8(const unsigned char *a, const size_t *o, size_t i, uint64_t kv,
     const void *key)
@@ -263,6 +281,27 @@ slices_advance_raw8(const __dtfl_slices *s, size_t start, size_t end,
 	SLICES_ADVANCE_BODY(LESS8);
 #undef LESS8
 }
+
+/*
+ * slices_advance_raw8 when every value is 8 bytes (all8): value i is at
+ * arena + 8 * i, so a probe is one load, a byte swap and a compare.
+ */
+static size_t
+slices_advance_all8(const __dtfl_slices *s, size_t start, size_t end,
+    const void *key)
+{
+	const unsigned char *a = s->arena.data;
+	uint64_t kv;
+
+	DTFL_ASSERT(s->stride == 0 && s->all8);
+	memcpy(&kv, key, sizeof kv);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	kv = __builtin_bswap64(kv);
+#endif
+#define LESS_ALL8(i) (load_be8(a + 8 * (i)) < kv)
+	SLICES_ADVANCE_BODY(LESS_ALL8);
+#undef LESS_ALL8
+}
 #endif
 
 size_t
@@ -286,6 +325,8 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 	if (t->cmp == NULL) {
 #if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
 		/* stride is 0 here: the columnar path returned above. */
+		if (klen == 8 && s->all8)
+			return slices_advance_all8(s, start, end, key);
 		if (klen == 8)
 			return slices_advance_raw8(s, start, end, key);
 #endif

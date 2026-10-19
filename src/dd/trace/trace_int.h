@@ -90,6 +90,12 @@ typedef struct __dtfl_slices {
 	__dtfl_vec arena;	/* bytes */
 	__dtfl_vec offs;	/* size_t; len == count + 1, offs[0] == 0 */
 	unsigned stride;	/* 0: arena+offs; >0: flat fixed-width column */
+	/*
+	 * True while every value pushed is 8 bytes, so offs[i] == 8 * i and
+	 * value i is at arena + 8 * i.  A cache of the layout, kept by
+	 * init, clear and push; the offsets are still written.
+	 */
+	bool all8;
 } __dtfl_slices;
 
 void __dtfl_slices_init(__dtfl_slices *s);
@@ -156,6 +162,10 @@ __dtfl_slices_get(const __dtfl_slices *s, size_t i, size_t *len)
 	if (s->stride != 0) {
 		*len = s->stride;
 		return s->arena.data + (size_t)s->stride * i;
+	}
+	if (s->all8) {
+		*len = 8;
+		return s->arena.data + 8 * i;
 	}
 	o = (const size_t *)(void *)s->offs.data;
 	*len = o[i + 1] - o[i];

@@ -544,12 +544,79 @@ DTFL_TEST(ord_neu__merge_fast_path_matches_general)
 	return MUNIT_OK;
 }
 
+/*
+ * BatchContainer::advance over slices: the count of values below a key.
+ * The all-8-byte layout (all8) takes its own probe path, so compare it,
+ * position by position, with a linear count; then push one 3-byte value
+ * so the same slice takes the offsets path, and clear it to get all8
+ * back.  Keys are big-endian, so byte order is numeric order.
+ */
+static size_t
+linear_below(const __dtfl_slices *s, size_t start, size_t end, uint64_t k)
+{
+	unsigned char kb[8];
+	size_t i, n = 0;
+
+	dtfl_put_u64(kb, k);
+	for (i = start; i < end; i++) {
+		size_t len;
+		const void *v = __dtfl_slices_get(s, i, &len);
+
+		if (__dtfl_cmp_bytes(v, len, kb, 8) < 0)
+			n++;
+	}
+	return n;
+}
+
+static void
+check_advance(const __dtfl_slices *s, size_t n)
+{
+	size_t start, end;
+	uint64_t k;
+
+	for (start = 0; start <= n; start += 3)
+		for (end = start; end <= n; end += 5)
+			for (k = 0; k < 2 * n + 4; k++) {
+				unsigned char kb[8];
+
+				dtfl_put_u64(kb, k);
+				assert_size(__dtfl_slices_advance(s, dtfl_type_u64(),
+				    start, end, kb, 8), ==,
+				    linear_below(s, start, end, k));
+			}
+}
+
+DTFL_TEST(ord_neu__slices_advance_all8_matches_linear)
+{
+	__dtfl_slices s;
+	unsigned char v[8];
+	size_t i, n = 70;
+
+	(void)params; (void)data;
+	__dtfl_slices_init(&s);
+	assert_true(s.all8);
+	for (i = 0; i < n; i++) {
+		dtfl_put_u64(v, 2 * i + 1);	/* odd keys: probes hit gaps */
+		__dtfl_slices_push(&s, v, 8);
+	}
+	assert_true(s.all8);
+	check_advance(&s, n);
+	__dtfl_slices_push(&s, "\xff\xff\xff", 3);	/* sorts after them all */
+	assert_false(s.all8);
+	check_advance(&s, n + 1);
+	__dtfl_slices_clear(&s);
+	assert_true(s.all8);
+	__dtfl_slices_free(&s);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
 	DTFL_T(ord_neu__merge_fast_path_matches_general),
 	DTFL_T(ord_neu__upds_seal_unsorted_stash),
 	DTFL_T(ord_neu__upds_seal_checks_every_pair),
 	DTFL_T(ord_neu__upds_seal_fast_path_matches_general),
+	DTFL_T(ord_neu__slices_advance_all8_matches_linear),
 	DTFL_T(ord_neu__key_batch_single_value),
 	DTFL_T_END
 };
