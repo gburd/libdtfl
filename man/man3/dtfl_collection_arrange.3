@@ -17,6 +17,7 @@
 .Nm dtfl_arranged_type ,
 .Nm dtfl_arranged_diff ,
 .Nm dtfl_arranged_scope ,
+.Nm dtfl_arranged_stream ,
 .Nm dtfl_arranged_free
 .Nd arrange a collection into a shared, reusable trace
 .Sh LIBRARY
@@ -52,6 +53,8 @@ Timely and differential dataflow library
 .Fn dtfl_arranged_diff "const dtfl_arranged *a"
 .Ft dtfl_scope *
 .Fn dtfl_arranged_scope "const dtfl_arranged *a"
+.Ft dtfl_stream *
+.Fn dtfl_arranged_stream "const dtfl_arranged *a"
 .Ft void
 .Fn dtfl_arranged_free "dtfl_arranged *a"
 .Sh DESCRIPTION
@@ -144,6 +147,15 @@ and
 .Fn dtfl_arranged_scope
 report the record type, the difference class and the scope the arrangement
 belongs to.
+.Pp
+.Fn dtfl_arranged_stream
+returns the arrangement's batch stream, which carries one opaque record per
+sealed batch.
+It is owned by the scope.
+Attach a probe to it with
+.Fn dtfl_stream_probe_with
+.Pq see Xr dtfl_probe_new 3
+to observe the arrangement's progress without reading its records.
 .Sh RETURN VALUES
 .Fn dtfl_collection_arrange ,
 .Fn dtfl_arrange_from_upsert ,

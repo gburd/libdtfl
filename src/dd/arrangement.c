@@ -1124,6 +1124,12 @@ __dtfl_arranged_stream(const dtfl_arranged *a)
 	return a->stream;
 }
 
+dtfl_stream *
+dtfl_arranged_stream(const dtfl_arranged *a)
+{
+	return __dtfl_arranged_stream(a);
+}
+
 __dtfl_trace_agent *
 __dtfl_arranged_agent(const dtfl_arranged *a)
 {

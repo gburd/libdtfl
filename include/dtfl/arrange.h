@@ -187,6 +187,13 @@ DTFL_API dtfl_arranged *dtfl_arranged_leave_region(dtfl_arranged *a);
 DTFL_API const dtfl_type *dtfl_arranged_type(const dtfl_arranged *a);
 DTFL_API const dtfl_diff *dtfl_arranged_diff(const dtfl_arranged *a);
 DTFL_API dtfl_scope *dtfl_arranged_scope(const dtfl_arranged *a);
+/*
+ * The arrangement's batch stream (the Arranged.stream field): one record per
+ * sealed batch.  The records are opaque batch handles, so the stream is for
+ * progress tracking (dtfl_stream_probe_with), not for reading records.  The
+ * stream is owned by the scope.
+ */
+DTFL_API dtfl_stream *dtfl_arranged_stream(const dtfl_arranged *a);
 
 /* Releases the handle; the shared trace lives on until its last reader. */
 DTFL_API void dtfl_arranged_free(dtfl_arranged *a);
