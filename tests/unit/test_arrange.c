@@ -607,6 +607,24 @@ DTFL_TEST(arrange__trace_compaction_holds)
 	assert_size(after.n, <, before.n + 2 * 8);
 	assert_int64(rows_accum(&after, 200, UINT64_MAX), ==, 0);
 
+	/*
+	 * A cut behind the physical hold has no clean cut: the batches below
+	 * it may have merged (spine_fueled.rs batches_through asserts
+	 * physical_frontier <= upper).  A cut at a batch boundary at or
+	 * beyond the hold is clean.
+	 */
+	{
+		trace_rows scratch;
+		uint64_t behind = 5, at = 22;
+
+		memset(&scratch, 0, sizeof scratch);
+		assert_false(dtfl_trace_to_vec_through(compact_trace, &behind,
+		    1, trace_row, DTFL_CTX(&scratch, NULL)));
+		assert_size(scratch.n, ==, 0);
+		assert_true(dtfl_trace_to_vec_through(compact_trace, &at, 1,
+		    trace_row, DTFL_CTX(&scratch, NULL)));
+	}
+
 	dtfl_input_session_close(c.in);
 	while (dtfl_worker_step(w))
 		;
