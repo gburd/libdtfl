@@ -193,6 +193,14 @@ sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
 			__dtfl_free(v);
 			return NULL;
 		}
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (len == 8) {
+			/* The big-endian load of all 8 bytes, as the loop builds. */
+			memcpy(&k, rec, 8);
+			k = __builtin_bswap64(k);
+		} else
+#endif
 		for (j = 0; j < len; j++)
 			k |= (uint64_t)rec[j] << (56 - 8 * j);
 		v[i].k = k;
@@ -220,6 +228,50 @@ push_folded(__dtfl_batch *out, const __dtfl_batch *b, size_t r,
 	__dtfl_batch_push(out, rec, len, __dtfl_batch_time(b, r), accum);
 }
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+/*
+ * The fold of sorted packed rows when every record is 8 bytes, there is
+ * one time word and the diff is a 64-bit built-in integer: the same runs
+ * summed and zeros dropped as the general fold, written straight into
+ * out's columns (reserved for n rows).  The packed word is the record
+ * read big-endian, so storing it back big-endian restores the bytes.
+ */
+static void
+fold_packed_t1_int8(__dtfl_batch *out, const __dtfl_batch *b,
+    const packed_row *v, size_t n)
+{
+	unsigned char *ka = out->arena.data, *da = out->diffs.data;
+	size_t *offs = (size_t *)(void *)out->offs.data;
+	uint64_t *ta = (uint64_t *)(void *)out->times.data;
+	size_t i, k, m = 0;
+
+	DTFL_ASSERT(out->arena.len == 0 && __dtfl_batch_len(out) == 0);
+	for (i = 0; i < n; i = k) {
+		uint64_t acc, x, kb;
+
+		memcpy(&acc, __dtfl_batch_diff(b, v[i].i), 8);
+		for (k = i + 1; k < n && v[k].k == v[i].k && v[k].t == v[i].t;
+		    k++) {
+			memcpy(&x, __dtfl_batch_diff(b, v[k].i), 8);
+			acc += x;
+		}
+		if (acc == 0)
+			continue;
+		kb = __builtin_bswap64(v[i].k);
+		memcpy(ka + 8 * m, &kb, 8);
+		offs[m + 1] = 8 * (m + 1);
+		ta[m] = v[i].t;
+		memcpy(da + 8 * m, &acc, 8);
+		m++;
+	}
+	out->arena.len = 8 * m;
+	out->offs.len = m + 1;
+	out->times.len = m;
+	out->diffs.len = 8 * m;
+}
+#endif
+
 /*
  * consolidate_updates_slice_slow: sort, then accumulate each run of
  * equal (record, time) into its first diff and keep the run only if the
@@ -244,6 +296,14 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 	out = __dtfl_batch_new(b->tw, b->dw);
 	__dtfl_batch_reserve(out, n, b->arena.len);
 	if ((v = sort_packed(b, rt)) != NULL) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (b->tw == 1 && b->arena.len == 8 * n &&
+		    __dtfl_diff_is_int64(dc)) {
+			fold_packed_t1_int8(out, b, v, n);
+			n = 0;	/* folded */
+		}
+#endif
 		for (i = 0; i < n; i = k) {
 			/* accum = sum of the diffs of rows v[i..k), all equal. */
 			if (b->dw != 0)
