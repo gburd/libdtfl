@@ -109,15 +109,14 @@ binding definition of done and `tests/dist/test_completion.sh` enforces it.
 One substantive item is tracked honestly rather than hidden:
 
 * **Performance.** The port is correct but slower than the Rust originals:
-  on the pinned `arrange` benchmark, same host, 25 s runs, about 5.7 times
-  slower on `count` throughput and 7.3 times slower on the `arrange` arm.
-  The C port executes about 5 to 8 times the instructions per record at the
-  same IPC.  An investigation (`dev/perf-investigation.md`) found most of
-  the earlier, larger gap was port bugs, now fixed, and attributes the rest
-  to row-at-a-time engineering a faithful port can improve; a prototype
-  reached about 3.3x on count and 4.0x on arrange, and 1.5 to 2.5x looks
-  reachable without undoing the record and container decisions (ADR-0001,
-  ADR-0002).  See `dev/P15-measurements.md`.
+  on the pinned `arrange` benchmark, same host, 25 s runs, about 2.6 times
+  slower on `count` throughput and 2.7 times slower on the `arrange` arm,
+  executing 2.2 to 2.8 times the instructions per record.  An
+  investigation (`dev/perf-investigation.md`) found most of the earlier,
+  larger gap was port bugs, now fixed, and two optimisation passes took the
+  rest down from 5.7x and 7.3x without changing the record and container
+  design (ADR-0001, ADR-0002).  The next costs are the cursor seek and the
+  consolidate sort and merge loop.  See `dev/P15-measurements.md`.
 
 A `1.0` release requires the 1.5x goal met or relaxed; a `0.y` release ships
 with the gap documented.

@@ -478,8 +478,8 @@ These are open design work, not solved by the substrate:
   apply them in a background transaction.  It removes the commit-time
   serialization and gives up read-your-writes on the view.  The libdtfl
   side is identical; only the capture and apply points move.
-- **Performance.**  libdtfl is correct but measured about 5.7x slower
-  than Rust differential dataflow on `count` throughput and 7.3x on the
+- **Performance.**  libdtfl is correct but measured about 2.6x slower
+  than Rust differential dataflow on `count` throughput and 2.7x on the
   `arrange` arm, same host (`dev/P15-measurements.md`).  Per-commit cost is
   flat over thousands of commits now that arranged traces compact
   (`tests/unit/test_longrun.c` guards it).  The comparison that matters for
