@@ -49,7 +49,7 @@ cluster_initialize(const dtfl_config *cfg, size_t threads,
 	inner = __dtfl_calloc(threads, sizeof *inner);
 	__dtfl_process_builders(threads, inner);
 	rc = __dtfl_tcp_initialize(inner, threads, my_index, processes, fds,
-	    builders, guard);
+	    __dtfl_config_spill(cfg), builders, guard);
 	if (rc != 0)
 		return rc;
 	*nbuilders = threads;
@@ -79,7 +79,8 @@ __dtfl_comm_initialize(const dtfl_config *cfg,
 		break;
 	case DTFL_COMM_PROCESS_BINARY:
 		b = __dtfl_calloc(threads, sizeof *b);
-		__dtfl_process_binary_builders(threads, b);
+		__dtfl_process_binary_builders(threads,
+		    __dtfl_config_spill(cfg), b);
 		break;
 	case DTFL_COMM_SIM:
 		b = __dtfl_calloc(threads, sizeof *b);

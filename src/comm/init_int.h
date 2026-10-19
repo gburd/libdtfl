@@ -54,13 +54,14 @@ int __dtfl_create_sockets(char *const *addresses, size_t processes,
 /*
  * initialize_networking_from_sockets (zero_copy/initialize.rs): wrap the
  * `threads` typed Process builders in TcpBuilders and start the network
- * threads over `fds`.  Takes ownership of `inner` (the array is freed)
+ * threads over `fds`.  `spill` (borrowed, may be NULL) is Hooks::spill:
+ * the builders and send threads retain it for their queues.  Takes ownership of `inner` (the array is freed)
  * and of `fds` (closed by the guard).  On success stores the builders
  * array (threads entries; free it after handing out every builder) and
  * the guard, and returns 0.
  */
 int __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
-    size_t my_index, size_t processes, int *fds,
+    size_t my_index, size_t processes, int *fds, __dtfl_spill_fn *spill,
     __dtfl_allocator_builder ***builders, __dtfl_comms_guard **guard);
 
 /*
@@ -69,6 +70,12 @@ int __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
  * cluster allocator is its only reader.
  */
 bool __dtfl_config_zerocopy(const dtfl_config *cfg);
+
+/*
+ * The spill factory set by dtfl_config_set_spill_file (borrowed), or
+ * NULL.  Allocators that create MergeQueues retain it.
+ */
+__dtfl_spill_fn *__dtfl_config_spill(const dtfl_config *cfg);
 
 /*
  * Log subscriptions recorded on a config (dtfl_config_log_subscribe),

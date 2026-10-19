@@ -370,6 +370,7 @@ typedef struct net_thread_arg {
 	size_t worker_offset;
 	__dtfl_mpsc **queues;	/* owned by the loop: targets or sources */
 	size_t nqueues;
+	__dtfl_spill_fn *spill;	/* send threads: one reference, or NULL */
 } net_thread_arg;
 
 struct __dtfl_comms_guard {
@@ -386,9 +387,11 @@ net_thread_main(void *v)
 {
 	net_thread_arg *a = v;
 
-	if (a->is_send)
-		__dtfl_tcp_send_loop(a->fd, a->queues, a->nqueues);
-	else
+	if (a->is_send) {
+		__dtfl_tcp_send_loop(a->fd, a->queues, a->nqueues, a->spill);
+		__dtfl_spill_fn_release(a->spill);
+		a->spill = NULL;
+	} else
 		__dtfl_tcp_recv_loop(a->fd, a->queues, a->nqueues,
 		    a->worker_offset);
 	return NULL;
@@ -403,7 +406,7 @@ net_thread_main(void *v)
  */
 int
 __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
-    size_t my_index, size_t processes, int *fds,
+    size_t my_index, size_t processes, int *fds, __dtfl_spill_fn *spill,
     __dtfl_allocator_builder ***builders_out, __dtfl_comms_guard **guard_out)
 {
 	size_t nremote = processes - 1;
@@ -422,8 +425,8 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 		net_futures[pr] = __dtfl_calloc(threads, sizeof **net_futures);
 	}
 
-	__dtfl_tcp_builders(inner, threads, my_index, processes, builders,
-	    net_promises, net_futures);
+	__dtfl_tcp_builders(inner, threads, my_index, processes, spill,
+	    builders, net_promises, net_futures);
 	__dtfl_free(inner);
 
 	g->n = nremote;
@@ -452,6 +455,7 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 		sa->is_send = true;
 		sa->queues = net_futures[started];	/* send drains these */
 		sa->nqueues = threads;
+		sa->spill = __dtfl_spill_fn_retain(spill);
 		ra->fd = fds[i];
 		ra->is_send = false;
 		ra->queues = net_promises[started];	/* recv fills these */

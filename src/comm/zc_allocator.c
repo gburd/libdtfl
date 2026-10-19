@@ -348,6 +348,7 @@ typedef struct tcp_builder {
 	size_t nremote;			/* processes - 1 */
 	__dtfl_mpsc **promises;		/* [nremote]; to recv threads */
 	__dtfl_mpsc **futures;		/* [nremote]; from send threads */
+	__dtfl_spill_fn *spill;		/* one reference, or NULL */
 } tcp_builder;
 
 /*
@@ -392,10 +393,12 @@ tcp_builder_build(__dtfl_allocator_builder *bb)
 	 */
 	for (i = 0; i < b->nremote; i++) {
 		__dtfl_merge_queue *writer, *reader;
+		__dtfl_spill_policy *wp, *rp;
 		__dtfl_mq_handoff h;
 
+		__dtfl_spill_fn_make(b->spill, &wp, &rp);
 		__dtfl_merge_queue_new_pair(buzz_parker,
-		    __dtfl_parker_retain(inner->parker), drop_parker, NULL, NULL,
+		    __dtfl_parker_retain(inner->parker), drop_parker, wp, rp,
 		    &writer, &reader);
 		p->recvs[i] = reader;
 		h.queue = writer;
@@ -418,6 +421,7 @@ tcp_builder_build(__dtfl_allocator_builder *bb)
 
 	__dtfl_free(b->promises);
 	__dtfl_free(b->futures);
+	__dtfl_spill_fn_release(b->spill);
 	__dtfl_free(b);
 	return &p->base;
 }
@@ -436,6 +440,7 @@ tcp_builder_destroy(__dtfl_allocator_builder *bb)
 	}
 	__dtfl_free(b->promises);
 	__dtfl_free(b->futures);
+	__dtfl_spill_fn_release(b->spill);
 	__dtfl_free(b);
 }
 
@@ -449,8 +454,9 @@ tcp_builder_destroy(__dtfl_allocator_builder *bb)
  */
 void
 __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
-    size_t my_process, size_t processes, __dtfl_allocator_builder **builders,
-    __dtfl_mpsc ***net_promises, __dtfl_mpsc ***net_futures)
+    size_t my_process, size_t processes, __dtfl_spill_fn *spill,
+    __dtfl_allocator_builder **builders, __dtfl_mpsc ***net_promises,
+    __dtfl_mpsc ***net_futures)
 {
 	size_t nremote = processes - 1;
 	size_t peers = threads * processes;
@@ -483,6 +489,7 @@ __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
 		b->index = my_process * threads + t;
 		b->peers = peers;
 		b->nremote = nremote;
+		b->spill = __dtfl_spill_fn_retain(spill);
 		b->promises = __dtfl_calloc(DTFL_MAX(nremote, 1),
 		    sizeof *b->promises);
 		b->futures = __dtfl_calloc(DTFL_MAX(nremote, 1),
