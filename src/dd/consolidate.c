@@ -33,7 +33,7 @@ cmp_rows(const row_cmp *c, size_t i, size_t j)
 
 	a = __dtfl_batch_rec(c->b, i, &alen);
 	b = __dtfl_batch_rec(c->b, j, &blen);
-	r = dtfl_type_cmp(c->rt, a, alen, b, blen);
+	r = __dtfl_type_cmp(c->rt, a, alen, b, blen);
 	if (r != 0)
 		return r;
 	return __dtfl_words_cmp(__dtfl_batch_time(c->b, i),

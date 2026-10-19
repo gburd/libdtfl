@@ -172,7 +172,7 @@ row_cmp(const __dtfl_merge_batcher *mb, const __dtfl_batch *b1, size_t i1,
 	size_t l1, l2;
 	const void *r1 = __dtfl_batch_rec(b1, i1, &l1);
 	const void *r2 = __dtfl_batch_rec(b2, i2, &l2);
-	int r = dtfl_type_cmp(mb->rt, r1, l1, r2, l2);
+	int r = __dtfl_type_cmp(mb->rt, r1, l1, r2, l2);
 
 	if (r != 0)
 		return r;

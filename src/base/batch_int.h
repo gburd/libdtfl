@@ -31,6 +31,48 @@
  */
 size_t __dtfl_type_const_width(const dtfl_type *t);
 
+/*
+ * The memcmp-ordered default compare (dtfl_type.cmp == NULL): memcmp over
+ * the common prefix, then length, normalised to -1/0/1.  Two 8-byte
+ * values compare as big-endian words, which is the same order as memcmp.
+ */
+static inline int
+__dtfl_cmp_bytes(const void *a, size_t alen, const void *b, size_t blen)
+{
+	size_t m;
+	int c;
+
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    (defined(__GNUC__) || defined(__clang__))
+	if (alen == 8 && blen == 8) {
+		uint64_t x, y;
+
+		memcpy(&x, a, sizeof x);
+		memcpy(&y, b, sizeof y);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+		x = __builtin_bswap64(x);
+		y = __builtin_bswap64(y);
+#endif
+		return (x > y) - (x < y);
+	}
+#endif
+	m = alen < blen ? alen : blen;
+	c = m != 0 ? memcmp(a, b, m) : 0;
+	if (c != 0)
+		return c < 0 ? -1 : 1;
+	return (alen > blen) - (alen < blen);
+}
+
+/* dtfl_type_cmp with the memcmp-ordered case inline, for hot loops. */
+static inline int
+__dtfl_type_cmp(const dtfl_type *t, const void *a, size_t alen,
+    const void *b, size_t blen)
+{
+	if (DTFL_LIKELY(t->cmp == NULL))
+		return __dtfl_cmp_bytes(a, alen, b, blen);
+	return dtfl_type_cmp(t, a, alen, b, blen);
+}
+
 /* ------------------------------------------------------------------ */
 /* Bytes                                                               */
 /* ------------------------------------------------------------------ */
