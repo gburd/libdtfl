@@ -30,9 +30,9 @@ timely-dataflow	timely/tests/gh_523.rs	6	gh_523__gh_523	pass	tests/upstream/time
 timely-dataflow	timely/tests/shape_scaling.rs	6	shape_scaling__operator_scaling_1	pass	tests/upstream/timely/shape_scaling.c	P4	done
 timely-dataflow	timely/tests/shape_scaling.rs	7	shape_scaling__operator_scaling_10	pass	tests/upstream/timely/shape_scaling.c	P4	done
 timely-dataflow	timely/tests/shape_scaling.rs	8	shape_scaling__operator_scaling_100	pass	tests/upstream/timely/shape_scaling.c	P4	done
-timely-dataflow	timely/tests/shape_scaling.rs	9	shape_scaling__operator_scaling_1000	pass	tests/upstream/timely/shape_scaling.c	P4	deferred
-timely-dataflow	timely/tests/shape_scaling.rs	10	shape_scaling__operator_scaling_10000	pass	tests/upstream/timely/shape_scaling.c	P4	deferred
-timely-dataflow	timely/tests/shape_scaling.rs	11	shape_scaling__operator_scaling_100000	pass	tests/upstream/timely/shape_scaling.c	P4	deferred
+timely-dataflow	timely/tests/shape_scaling.rs	9	shape_scaling__operator_scaling_1000	pass	tests/upstream/timely/shape_scaling.c	P4	done
+timely-dataflow	timely/tests/shape_scaling.rs	10	shape_scaling__operator_scaling_10000	pass	tests/upstream/timely/shape_scaling.c	P4	done
+timely-dataflow	timely/tests/shape_scaling.rs	11	shape_scaling__operator_scaling_100000	pass	tests/upstream/timely/shape_scaling.c	P4	done
 timely-dataflow	timely/tests/shape_scaling.rs	50	shape_scaling__subgraph_scaling_1	pass	tests/upstream/timely/shape_scaling.c	P4	done
 timely-dataflow	timely/tests/shape_scaling.rs	51	shape_scaling__subgraph_scaling_10	pass	tests/upstream/timely/shape_scaling.c	P4	done
 timely-dataflow	timely/tests/shape_scaling.rs	52	shape_scaling__subgraph_scaling_100	pass	tests/upstream/timely/shape_scaling.c	P4	done
