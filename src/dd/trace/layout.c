@@ -520,6 +520,93 @@ stash_clear(__dtfl_upds_builder *b)
 }
 
 /*
+ * True for a 64-bit built-in integer diff (i64, u64, Wrapping<i64>): its
+ * plus_equals is a wrapping 64-bit add and its is_zero tests for 0, so
+ * seal_t1_int8 can do both inline.
+ */
+static bool
+diff_is_int8(const __dtfl_diff_class *dc)
+{
+	return dc->width == 8 && (dc->kind == DTFL_DIFF_KIND_SIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_UNSIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_WRAPPING);
+}
+
+/*
+ * __dtfl_upds_builder_seal for one-word times and a 64-bit integer diff:
+ * the same steps (stable sort by time, consolidate equal times, drop
+ * zeros, the singleton optimization, append) on plain uint64_t values,
+ * without the per-update width dispatch and diff-class calls.  Values are
+ * native-endian in both stashes, as in the general path.
+ */
+static bool
+seal_t1_int8(__dtfl_upds_builder *b, __dtfl_upds *u, size_t n)
+{
+	uint64_t *t = (uint64_t *)(void *)b->stash_t.data;
+	unsigned char *d = b->stash_d.data;
+	size_t i, k, out = 0;
+
+	for (i = 1; i < n && t[i - 1] <= t[i]; i++)
+		;
+	if (i < n) {
+		/* Stable insertion sort of (time, diff) pairs by time. */
+		for (i = 1; i < n; i++) {
+			uint64_t tk = t[i], dk;
+			size_t j = i;
+
+			memcpy(&dk, d + 8 * i, 8);
+			for (; j > 0 && t[j - 1] > tk; j--) {
+				t[j] = t[j - 1];
+				memmove(d + 8 * j, d + 8 * (j - 1), 8);
+			}
+			t[j] = tk;
+			memcpy(d + 8 * j, &dk, 8);
+		}
+	}
+
+	/* Consolidate equal-time runs in place, compacting to the front. */
+	for (i = 0; i < n; i = k) {
+		uint64_t acc, x;
+
+		memcpy(&acc, d + 8 * i, 8);
+		for (k = i + 1; k < n && t[k] == t[i]; k++) {
+			memcpy(&x, d + 8 * k, 8);
+			acc += x;
+		}
+		if (acc == 0)
+			continue;
+		t[out] = t[i];
+		memcpy(d + 8 * out, &acc, 8);
+		out++;
+	}
+	b->stash_t.len = 0;
+	b->stash_d.len = 0;
+	if (out == 0)
+		return false;
+
+	/* Singleton optimization: one survivor equal to the last update. */
+	if (out == 1 && u->nupds != 0 &&
+	    __dtfl_upds_time(u, u->nupds - 1)[0] == t[0] &&
+	    memcmp(__dtfl_upds_diff(u, u->nupds - 1), d, 8) == 0) {
+		b->total += 1;
+		__dtfl_vec_push_size(&u->offs.v, u->nupds);
+		return true;
+	}
+
+	/* Conventional: append the survivors. */
+	b->total += out;
+	__dtfl_vec_reserve(&u->times, out);
+	__dtfl_vec_reserve(&u->diffs, out);
+	memcpy(u->times.data + u->times.len * 8, t, out * 8);
+	memcpy(u->diffs.data + u->diffs.len * 8, d, out * 8);
+	u->times.len += out;
+	u->diffs.len += out;
+	u->nupds += out;
+	__dtfl_vec_push_size(&u->offs.v, u->nupds);
+	return true;
+}
+
+/*
  * UpdsBuilder::seal: consolidate the stash by time, drop zero diffs, and
  * push the survivors into `u`.  The singleton optimization: a single
  * survivor equal to the last stored update is encoded by pushing an
@@ -539,6 +626,8 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 
 	if (n == 0)
 		return false;
+	if (b->tw == 1 && u->tw == 1 && u->dw == 8 && diff_is_int8(b->dc))
+		return seal_t1_int8(b, u, n);
 
 	/*
 	 * Sort the stash by time (stable).  consolidate_slice only sorts when

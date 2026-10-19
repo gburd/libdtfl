@@ -267,10 +267,110 @@ DTFL_TEST(ord_neu__upds_seal_checks_every_pair)
 	return MUNIT_OK;
 }
 
+/*
+ * seal takes an inline path for one-word times and a 64-bit built-in
+ * integer diff.  A user class with the same i64 algebra takes the general
+ * path, so sealing the same stashes through both must give the same
+ * updates and the same singleton encoding, run after run.
+ */
+static void
+u_plus(const __dtfl_diff_class *c, void *acc, const void *x)
+{
+	int64_t a, b;
+
+	(void)c;
+	memcpy(&a, acc, 8);
+	memcpy(&b, x, 8);
+	a = (int64_t)((uint64_t)a + (uint64_t)b);
+	memcpy(acc, &a, 8);
+}
+
+static bool
+u_is_zero(const __dtfl_diff_class *c, const void *x)
+{
+	int64_t a;
+
+	(void)c;
+	memcpy(&a, x, 8);
+	return a == 0;
+}
+
+static int
+u_cmp(const __dtfl_diff_class *c, const void *a, const void *b)
+{
+	int64_t x, y;
+
+	(void)c;
+	memcpy(&x, a, 8);
+	memcpy(&y, b, 8);
+	return (x > y) - (x < y);
+}
+
+DTFL_TEST(ord_neu__upds_seal_fast_path_matches_general)
+{
+	__dtfl_diff_class def;
+	const __dtfl_diff_class *user;
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_upds_builder fb, gb;
+	__dtfl_upds fu, gu;
+	uint64_t rng = 0x9e3779b97f4a7c15ULL;
+	int run;
+
+	(void)params; (void)data;
+	memset(&def, 0, sizeof def);
+	def.name = "user-i64";
+	def.width = 8;
+	def.plus_equals = u_plus;
+	def.is_zero = u_is_zero;
+	def.cmp = u_cmp;
+	user = __dtfl_diff_class_new(&def);
+	__dtfl_upds_init(&fu, 1, 8);
+	__dtfl_upds_init(&gu, 1, 8);
+	__dtfl_upds_builder_init(&fb, tc, I64);
+	__dtfl_upds_builder_init(&gb, tc, user);
+	for (run = 0; run < 2000; run++) {
+		size_t n, i;
+		bool fr, gr;
+
+		rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+		n = 1 + rng % 6;
+		for (i = 0; i < n; i++) {
+			uint64_t t;
+			int64_t r;
+
+			rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+			/* Few distinct times and diffs: repeats, zeros, sorts. */
+			t = rng % 4;
+			r = (int64_t)((rng >> 8) % 5) - 2;
+			__dtfl_upds_builder_push(&fb, &t, &r);
+			__dtfl_upds_builder_push(&gb, &t, &r);
+		}
+		fr = __dtfl_upds_builder_seal(&fb, &fu);
+		gr = __dtfl_upds_builder_seal(&gb, &gu);
+		assert_int(fr, ==, gr);
+		assert_size(fb.total, ==, gb.total);
+	}
+	assert_size(fu.nupds, ==, gu.nupds);
+	assert_size(fu.offs.v.len, ==, gu.offs.v.len);
+	assert_memory_equal(fu.offs.v.len * sizeof(size_t), fu.offs.v.data,
+	    gu.offs.v.data);
+	assert_memory_equal(fu.nupds * 8, fu.times.data, gu.times.data);
+	assert_memory_equal(fu.nupds * 8, fu.diffs.data, gu.diffs.data);
+
+	__dtfl_upds_builder_free(&fb);
+	__dtfl_upds_builder_free(&gb);
+	__dtfl_upds_free(&fu);
+	__dtfl_upds_free(&gu);
+	__dtfl_diff_class_free(user);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(ord_neu__merge_consolidates_and_advances),
 	DTFL_T(ord_neu__upds_seal_unsorted_stash),
 	DTFL_T(ord_neu__upds_seal_checks_every_pair),
+	DTFL_T(ord_neu__upds_seal_fast_path_matches_general),
 	DTFL_T(ord_neu__key_batch_single_value),
 	DTFL_T_END
 };
