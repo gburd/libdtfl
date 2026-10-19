@@ -79,17 +79,34 @@ typedef struct arrange_ctx {
 	void *route;			/* arrange_route_ctx * (by-key); owned */
 } arrange_ctx;
 
-/* Finds the capability for time `t` among the held caps, or SIZE_MAX. */
-static size_t
-find_cap(const arrange_ctx *c, const uint64_t *t)
+/*
+ * CapabilitySet::insert: adds `cap` (consumed) to the held set, kept an
+ * antichain.  A cap at or after a held one is dropped; held caps at or
+ * after `cap` are dropped and replaced by it.
+ */
+void
+__dtfl_caps_insert(__dtfl_vec *caps, const dtfl_time_class *tc, dtfl_cap *cap)
 {
-	size_t i;
+	const uint64_t *t = dtfl_cap_time(cap);
+	size_t i, keep;
 
-	for (i = 0; i < c->caps.len; i++)
-		if (__dtfl_words_cmp(dtfl_cap_time(*DTFL_VEC_AT(&c->caps,
-		    dtfl_cap *, i)), t, c->depth) == 0)
-			return i;
-	return SIZE_MAX;
+	for (i = 0; i < caps->len; i++)
+		if (dtfl_time_less_equal(tc, dtfl_cap_time(*DTFL_VEC_AT(caps,
+		    dtfl_cap *, i)), t)) {
+			dtfl_cap_drop(cap);
+			return;
+		}
+	keep = 0;
+	for (i = 0; i < caps->len; i++) {
+		dtfl_cap *held = *DTFL_VEC_AT(caps, dtfl_cap *, i);
+
+		if (dtfl_time_less_equal(tc, t, dtfl_cap_time(held)))
+			dtfl_cap_drop(held);
+		else
+			*DTFL_VEC_AT(caps, dtfl_cap *, keep++) = held;
+	}
+	__dtfl_vec_truncate(caps, keep);
+	__dtfl_vec_push(caps, &cap);
 }
 
 /* Builds one batch from the batcher sealed at `upper` and its description. */
@@ -132,10 +149,7 @@ arrange_logic(dtfl_op *op, void *vctx)
 		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
 		__dtfl_batch *chunk;
 
-		if (find_cap(c, dtfl_cap_time(cap)) == SIZE_MAX)
-			__dtfl_vec_push(&c->caps, &cap);
-		else
-			dtfl_cap_drop(cap);
+		__dtfl_caps_insert(&c->caps, c->tc, cap);
 		for (i = 0; i < k; i++) {
 			size_t len;
 			const void *rec = dtfl_message_record(m, i, &len);
@@ -415,6 +429,10 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 		__dtfl_antichain_insert(&ac->prev_frontier, minimum);
 	}
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
+	/* Acquire a logger for arrange events (batcher, trace, agent). */
+	__dtfl_dd_logging_install(scope, b, trace, &ac->batcher);
+
 	/*
 	 * TraceAgent::new gives the reader and the writer.  The reader moves
 	 * into the Arranged (`*reader_ref = Some(reader_local)`); the operator
@@ -425,7 +443,6 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 	__dtfl_trace_agent_new(trace, keyed, kt, vt, tc, dc, &a->agent,
 	    &ac->writer);
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
 	if (keyed) {
 		pact = dtfl_pact_exchange(NULL, NULL);
 	} else {

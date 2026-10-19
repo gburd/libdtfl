@@ -34,6 +34,7 @@ cluster_initialize(const dtfl_config *cfg, size_t threads,
 	__dtfl_allocator_builder **inner;
 	char **addresses;
 	int *fds = NULL;
+	__dtfl_comm_log_hook hook = { NULL, NULL, NULL };
 	size_t i;
 	int rc;
 
@@ -46,10 +47,25 @@ cluster_initialize(const dtfl_config *cfg, size_t threads,
 	if (rc != 0)
 		return rc;
 
+	/* Hooks.log_fn from a "communication" subscription, if any. */
+	{
+		const __dtfl_log_sub *subs;
+		size_t nsubs = __dtfl_config_log_subs(cfg, &subs);
+
+		for (i = 0; i < nsubs; i++) {
+			if (strcmp(subs[i].stream, "communication") != 0)
+				continue;
+			hook.log_fn = __dtfl_comm_subscriber_log_fn;
+			hook.ctx = __dtfl_alloc(sizeof subs[i]);
+			memcpy(hook.ctx, &subs[i], sizeof subs[i]);
+			hook.ctx_free = __dtfl_free;
+		}
+	}
+
 	inner = __dtfl_calloc(threads, sizeof *inner);
 	__dtfl_process_builders(threads, inner);
 	rc = __dtfl_tcp_initialize(inner, threads, my_index, processes, fds,
-	    builders, guard);
+	    &hook, builders, guard);
 	if (rc != 0)
 		return rc;
 	*nbuilders = threads;

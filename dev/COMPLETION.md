@@ -71,8 +71,8 @@ Not started or partial -- MUST be finished before the project is done
         pagerank, monoid-bfs (on the public dtfl_diff_new user diff),
         dynamic, multitemporal, cursors, scc, ngo, delta_query2.
         delta_query is the last in progress; arrange, graspan and
-        progress are deferred (each needs a public surface that is not a
-        small add, ADR-0012).
+        progress are done on the existing public API (progress was
+        blocked on a trace-layer seal bug, fixed; ADR-0012, 2026-10-18).
 [x] P10 differential capture (1 row).  Exit: capture round trip under
         message duplication and reordering.  DONE (feat/finish-code):
         src/dd/capture.c ports CDC V2 (the Updates/Progress Message
@@ -183,8 +183,7 @@ Examples
         pagerank, monoid-bfs, cursors, dynamic, multitemporal, scc, the
         dogs delta queries delta_query_wcoj/dogsdogsdogs/ngo/
         delta_query2, and the P12 spill benchmarks).  delta_query is the
-        last in progress; arrange, graspan and progress are deferred
-        (ADR-0012).
+        last in progress; arrange, graspan and progress are done.
 [x] experiments/ benchmarks (3): arrange, graphs, graphs-static DONE
         (bench/experiments/*.c, verified on EC2 Debian, ASan-clean).
 
@@ -277,16 +276,31 @@ These are not dropped; each has a precise completion condition.  The
 first three are port-ledger rows the completion gate already counts as
 unfinished (wip/todo); the fourth is tracked here because a property
 test is not an upstream #[test] and so has no ledger row.
-[~] comm logging (communication/src/logging.rs -> src/comm/comm_log.c):
-        the CommunicationEvent encoder and the "communication"
-        subscriber stream exist, round-trip, and the row is done; the
-        DATA-PLANE EMISSION from the network send/recv loops is deferred
-        (ADR-0012: no consumer on the data plane).  Lands when a consumer
-        needs it, by plumbing a log sink into the comm allocators.
-[~] differential logging emission (differential-dataflow/src/logging.rs
-        -> src/dd/dd_log.c): same shape; the encoder and stream exist
-        and the row is done; the spine/batcher emission is deferred
-        (ADR-0012: consumer-side logging, no data-plane consumer).
+[x] comm logging (communication/src/logging.rs -> src/comm/comm_log.c).
+        DONE (feat/logging): Hooks.log_fn is plumbed as at the pin.  A
+        "communication" dtfl_config_log_subscribe becomes a log hook
+        passed to the network threads, and each send/recv thread asks it
+        for its own logger, so no logger is shared across threads.
+        send_loop and recv_loop (zc_tcp.c) log StateEvent at start and
+        end, a MessageEvent per header sent or received, and the final
+        zero-length header.  With no subscription the logger is NULL.
+        Delivery is on the network threads and reports the process index
+        as the worker (documented in dtfl/log.h and the man page).
+        Test: tcp cluster_two_process_comm_logging.
+[x] differential logging emission (differential-dataflow/src/logging.rs
+        -> src/dd/dd_log.c).  DONE (feat/logging): the trace layer now
+        emits at the pin's points.  The spine logs BatchEvent in insert,
+        MergeEvent (complete None) when insert_at begins a merge,
+        MergeEvent (complete Some) when complete_at extracts a two-part
+        merge, and DropEvent per held batch on free.  The agent logs
+        TraceShare +1 on new and clone and -1 on free.  The merge batcher
+        logs BatcherEvent records deltas on every chain push/pop and
+        retracts them on free.  The logger is acquired once per
+        arrange/arrange_by_key/reduce/upsert operator and is NULL with
+        no subscriber, so the disabled cost is one pointer test.
+        MergeShortfall is defined but never logged at the pin, and is not
+        emitted here either.  Test: log_subscribe
+        subscribe__arrange_emits.
 [x] half_join2 (dogsdogsdogs/src/operators/half_join2.rs ->
         src/dogs/half_join.c, done): the general half_join with user
         frontier/comparison closures.  DONE (dtfl_dogs_half_join2):

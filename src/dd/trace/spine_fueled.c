@@ -13,6 +13,13 @@
  * in an empty layer, inserts, and tidies the largest layers.  The fuel
  * constant and the accounting are kept exactly (PLAN D11): a wrong fuel
  * amount shows up as either a never-shrinking spine or a lost update.
+ *
+ * Logging: with a logger installed (__dtfl_trace_set_logger) the spine
+ * emits the upstream events at the upstream points: BatchEvent in
+ * insert, MergeEvent (complete None) in insert_at when a merge begins,
+ * MergeEvent (complete Some) in complete_at when a merge of two parts
+ * is extracted, and DropEvent per held batch in drop_batches on free.
+ * The pin defines MergeShortfall but never logs it, so neither do we.
  */
 #include "dd/trace/trace_int.h"
 
@@ -28,6 +35,9 @@ ms_vacant(__dtfl_merge_state *m)
 	m->batch = NULL;
 	m->in1 = NULL;
 	m->in2 = NULL;
+	m->from_parts = false;
+	m->len1 = 0;
+	m->len2 = 0;
 }
 
 /* Releases any batches a merge state holds and leaves it Vacant. */
@@ -111,6 +121,10 @@ ms_work(__dtfl_merge_state *m, int64_t *fuel)
 	if (*fuel > 0) {
 		__dtfl_batch_ord *done = __dtfl_merger_ord_done(&m->merger);
 
+		/* Complete(Some((done, Some((b1, b2))))): keep the lengths. */
+		m->from_parts = true;
+		m->len1 = __dtfl_batch_ord_len(m->in1);
+		m->len2 = __dtfl_batch_ord_len(m->in2);
 		__dtfl_batch_ord_release(m->in1);
 		__dtfl_batch_ord_release(m->in2);
 		m->in1 = NULL;
@@ -123,15 +137,23 @@ ms_work(__dtfl_merge_state *m, int64_t *fuel)
 
 /*
  * MergeState::complete: finish any merge and return the batch (present via
- * *out_present).  Leaves the state Vacant.
+ * *out_present).  *from_parts is true when the batch was merged from two
+ * inputs of *len1 and *len2 updates (upstream's Some((b1, b2))).  Leaves
+ * the state Vacant.
  */
 static __dtfl_batch_ord *
-ms_complete(__dtfl_merge_state *m, bool *out_present)
+ms_complete(__dtfl_merge_state *m, bool *out_present, bool *from_parts,
+    size_t *len1, size_t *len2)
 {
 	int64_t fuel = INT64_MAX;
 	__dtfl_batch_ord *b = NULL;
 
 	*out_present = false;
+	if (m->kind == DTFL_MERGE_INPROGRESS)
+		ms_work(m, &fuel);
+	*from_parts = m->kind == DTFL_MERGE_COMPLETE && m->from_parts;
+	*len1 = m->len1;
+	*len2 = m->len2;
 	switch (m->kind) {
 	case DTFL_MERGE_SINGLE:
 		b = m->present ? m->batch : NULL;
@@ -144,12 +166,7 @@ ms_complete(__dtfl_merge_state *m, bool *out_present)
 		m->batch = NULL;
 		break;
 	case DTFL_MERGE_INPROGRESS:
-		ms_work(m, &fuel);
-		DTFL_ASSERT(m->kind == DTFL_MERGE_COMPLETE);
-		b = m->present ? m->batch : NULL;
-		*out_present = m->present;
-		m->batch = NULL;
-		break;
+		__dtfl_panic("Failed to complete a merge!");
 	default:
 		break;
 	}
@@ -211,6 +228,47 @@ __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
 	s->vt = vt;
 	s->tc = tc;
 	s->dc = dc;
+	s->logger = NULL;
+	s->operator_id = 0;
+}
+
+/*
+ * drop_batches: logs a DropEvent for every batch the spine holds (Drop
+ * for Spine, to zero out maintained totals).  Only performs work if a
+ * logger exists; the batches are released by the caller.
+ */
+static void
+drop_batches(__dtfl_spine *s)
+{
+	size_t i;
+
+	if (s->logger == NULL)
+		return;
+	for (i = 0; i < s->merging.len; i++) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&s->merging,
+		    __dtfl_merge_state, i);
+
+		switch (m->kind) {
+		case DTFL_MERGE_SINGLE:
+		case DTFL_MERGE_COMPLETE:
+			if (m->present)
+				__dtfl_dd_log_drop(s->logger, s->operator_id,
+				    __dtfl_batch_ord_len(m->batch));
+			break;
+		case DTFL_MERGE_INPROGRESS:
+			__dtfl_dd_log_drop(s->logger, s->operator_id,
+			    __dtfl_batch_ord_len(m->in1));
+			__dtfl_dd_log_drop(s->logger, s->operator_id,
+			    __dtfl_batch_ord_len(m->in2));
+			break;
+		default:
+			break;
+		}
+	}
+	for (i = 0; i < s->pending.len; i++)
+		__dtfl_dd_log_drop(s->logger, s->operator_id,
+		    __dtfl_batch_ord_len(*DTFL_VEC_AT(&s->pending,
+		    __dtfl_batch_ord *, i)));
 }
 
 void
@@ -218,6 +276,9 @@ __dtfl_spine_free(__dtfl_spine *s)
 {
 	size_t i;
 
+	drop_batches(s);
+	__dtfl_logger_release(s->logger);
+	s->logger = NULL;
 	for (i = 0; i < s->merging.len; i++)
 		ms_drop(DTFL_VEC_AT(&s->merging, __dtfl_merge_state, i));
 	__dtfl_vec_free(&s->merging);
@@ -265,6 +326,11 @@ insert_at(__dtfl_spine *s, __dtfl_batch_ord *batch, bool present, size_t index)
 		m->batch = batch;
 		break;
 	case DTFL_MERGE_SINGLE:
+		/* Log the initiation of a merge. */
+		if (s->logger != NULL)
+			__dtfl_dd_log_merge(s->logger, s->operator_id, index,
+			    taken.present ? __dtfl_batch_ord_len(taken.batch) : 0,
+			    present ? __dtfl_batch_ord_len(batch) : 0, false, 0);
 		ms_begin_merge(m, taken.batch, taken.present, batch, present,
 		    &s->logical_frontier);
 		break;
@@ -277,7 +343,16 @@ insert_at(__dtfl_spine *s, __dtfl_batch_ord *batch, bool present, size_t index)
 static __dtfl_batch_ord *
 complete_at(__dtfl_spine *s, size_t index, bool *present)
 {
-	return ms_complete(layer(s, index), present);
+	bool from_parts;
+	size_t len1, len2;
+	__dtfl_batch_ord *merged = ms_complete(layer(s, index), present,
+	    &from_parts, &len1, &len2);
+
+	/* Log the completion of a merge from existing parts. */
+	if (from_parts && s->logger != NULL)
+		__dtfl_dd_log_merge(s->logger, s->operator_id, index, len1, len2,
+		    true, __dtfl_batch_ord_len(merged));
+	return merged;
 }
 
 /*
@@ -443,6 +518,10 @@ consider_merges(__dtfl_spine *s)
 void
 __dtfl_spine_insert(__dtfl_spine *s, __dtfl_batch_ord *batch)
 {
+	/* Log the introduction of a batch. */
+	if (s->logger != NULL)
+		__dtfl_dd_log_batch(s->logger, s->operator_id,
+		    __dtfl_batch_ord_len(batch));
 	DTFL_ASSERT(!__dtfl_antichain_eq(__dtfl_batch_ord_lower(batch),
 	    __dtfl_batch_ord_upper(batch)));
 	DTFL_ASSERT(__dtfl_antichain_eq(__dtfl_batch_ord_lower(batch),

@@ -378,18 +378,8 @@ upsert_logic(dtfl_op *op, void *vctx)
 	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
 		size_t k = dtfl_message_len(m);
 		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
-		bool have = false;
 
-		for (i = 0; i < c->caps.len; i++)
-			if (__dtfl_words_cmp(dtfl_cap_time(*DTFL_VEC_AT(&c->caps,
-			    dtfl_cap *, i)), dtfl_cap_time(cap), c->depth) == 0) {
-				have = true;
-				break;
-			}
-		if (have)
-			dtfl_cap_drop(cap);
-		else
-			__dtfl_vec_push(&c->caps, &cap);
+		__dtfl_caps_insert(&c->caps, c->tc, cap);
 
 		for (i = 0; i < k; i++) {
 			size_t len;
@@ -580,12 +570,14 @@ dtfl_arrange_from_upsert(dtfl_collection *upserts, const dtfl_type *key_type,
 		__dtfl_antichain_insert(&c->prev_frontier, minimum);
 	}
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Upsert");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, trace, NULL);
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &c->reader, &c->writer);
 	/* The Arranged keeps a cloned reader; the operator keeps c->reader. */
 	__dtfl_trace_agent_clone(&c->reader, &a->agent);
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Upsert");
 	/* Exchange upserts by key hash (upsert.rs Exchange on key). */
 	dtfl_op_builder_input(b, upserts->stream,
 	    dtfl_pact_exchange(upsert_route, (void *)key_type));

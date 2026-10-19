@@ -140,7 +140,10 @@ noinst_PROGRAMS += \
 	examples/dd/pagerank \
 	examples/dd/dynamic \
 	examples/dd/cursors \
-	examples/dd/multitemporal
+	examples/dd/multitemporal \
+	examples/dd/arrange \
+	examples/dd/graspan \
+	examples/dd/progress
 
 examples_dd_degrees_SOURCES = examples/dd/degrees.c
 examples_dd_degrees_CFLAGS = $(EXAMPLE_CFLAGS)
@@ -201,6 +204,18 @@ examples_dd_cursors_LDADD = $(EXAMPLE_LDADD)
 examples_dd_multitemporal_SOURCES = examples/dd/multitemporal.c
 examples_dd_multitemporal_CFLAGS = $(EXAMPLE_CFLAGS)
 examples_dd_multitemporal_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_arrange_SOURCES = examples/dd/arrange.c
+examples_dd_arrange_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_arrange_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_graspan_SOURCES = examples/dd/graspan.c
+examples_dd_graspan_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_graspan_LDADD = $(EXAMPLE_LDADD)
+
+examples_dd_progress_SOURCES = examples/dd/progress.c
+examples_dd_progress_CFLAGS = $(EXAMPLE_CFLAGS)
+examples_dd_progress_LDADD = $(EXAMPLE_LDADD)
 
 # ----------------------------------------------------------------------
 # dogsdogsdogs (delta-query) examples (P9).
@@ -265,7 +280,10 @@ check_PROGRAMS += \
 	examples/dd/pagerank \
 	examples/dd/dynamic \
 	examples/dd/cursors \
-	examples/dd/multitemporal
+	examples/dd/multitemporal \
+	examples/dd/arrange \
+	examples/dd/graspan \
+	examples/dd/progress
 dist_check_SCRIPTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 TESTS += tests/dist/test_examples.sh tests/dist/test_examples_dd.sh
 
@@ -298,7 +316,11 @@ EXTRA_DIST += examples/timely/example_args.h \
 	examples/dd/pagerank.expected \
 	examples/dd/dynamic.expected \
 	examples/dd/cursors.expected \
-	examples/dd/multitemporal.expected
+	examples/dd/multitemporal.expected \
+	examples/dd/arrange.expected \
+	examples/dd/graspan.expected \
+	examples/dd/progress.expected \
+	examples/dd/progress-w2.expected
 
 # ----------------------------------------------------------------------
 # Diagnostics examples (P11).  smoke runs the full in-process path
@@ -355,3 +377,23 @@ EXTRA_DIST += \
 	examples/server/reachability.c \
 	examples/server/neighborhood.c \
 	examples/server/random_graph.c
+
+# ----------------------------------------------------------------------
+# Incremental materialized views.  ivm_view maintains a join + GROUP BY
+# view one commit at a time and checks every point-in-time read against
+# a recomputation; txn_harness models PostgreSQL's transactions and
+# transition tables in plain C and applies each committed view delta to
+# a toy view table.  Background: dev/notes/pg-incremental-views.md.
+# ----------------------------------------------------------------------
+noinst_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+examples_ivm_ivm_view_SOURCES = examples/ivm/ivm_view.c
+examples_ivm_ivm_view_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_ivm_ivm_view_LDADD = libdtfl.la
+examples_ivm_txn_harness_SOURCES = examples/ivm/txn_harness.c
+examples_ivm_txn_harness_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_ivm_txn_harness_LDADD = libdtfl.la
+
+check_PROGRAMS += examples/ivm/ivm_view examples/ivm/txn_harness
+dist_check_SCRIPTS += tests/dist/test_examples_ivm.sh
+TESTS += tests/dist/test_examples_ivm.sh
+EXTRA_DIST += examples/ivm/ivm_view.expected examples/ivm/txn_harness.expected

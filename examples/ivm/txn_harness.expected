@@ -1,0 +1,59 @@
+Tload BEGIN
+Tload INSERT -> OLD [] NEW [(1, east, 50)]
+Tload INSERT -> OLD [] NEW [(2, east, 30)]
+Tload INSERT -> OLD [] NEW [(3, west, 70)]
+Tload INSERT -> OLD [] NEW [(4, west, 20)]
+Tload INSERT -> OLD [] NEW [(5, north, 10)]
+Tload COMMIT -> commit 1 (5 statements)
+  mv INSERT (east, 2, 80)
+  mv INSERT (west, 2, 90)
+  mv INSERT (north, 1, 10)
+  mv: (east, 2, 80) (west, 2, 90) (north, 1, 10)  [= recomputed]
+Ta BEGIN
+Ta UPDATE SET amount -> OLD [(2, east, 30)] NEW [(2, east, 35)]
+Ta DELETE -> OLD [(5, north, 10)] NEW []
+Ta COMMIT -> commit 2 (2 statements)
+  mv DELETE (east, 2, 80)
+  mv DELETE (north, 1, 10)
+  mv INSERT (east, 2, 85)
+  mv: (east, 2, 85) (west, 2, 90)  [= recomputed]
+Tb BEGIN
+Tb INSERT -> OLD [] NEW [(6, north, 99)]
+Tb UPDATE SET region -> OLD [(3, west, 70) (4, west, 20)] NEW [(3, east, 70) (4, east, 20)]
+Tb ROLLBACK (2 statements discarded, nothing fed)
+  mv: (east, 2, 85) (west, 2, 90)  [= recomputed]
+T1 BEGIN
+T2 BEGIN
+T1 INSERT -> OLD [] NEW [(7, west, 40)]
+T2 UPDATE SET region -> OLD [(1, east, 50) (2, east, 35)] NEW [(1, west, 50) (2, west, 35)]
+T1 UPDATE SET amount -> OLD [(3, west, 70)] NEW [(3, west, 75)]
+T2 DELETE -> OLD [(2, west, 35)] NEW []
+T2 COMMIT -> commit 3 (2 statements)
+  mv DELETE (east, 2, 85)
+  mv DELETE (west, 2, 90)
+  mv INSERT (west, 3, 140)
+  mv: (west, 3, 140)  [= recomputed]
+T1 COMMIT -> commit 4 (2 statements)
+  mv DELETE (west, 3, 140)
+  mv INSERT (west, 4, 185)
+  mv: (west, 4, 185)  [= recomputed]
+Tc BEGIN
+Tc UPDATE SET region -> OLD [(4, west, 20) (7, west, 40) (1, west, 50) (3, west, 75)] NEW [(4, north, 20) (7, north, 40) (1, north, 50) (3, north, 75)]
+Tc INSERT -> OLD [] NEW [(8, east, 15)]
+Tc COMMIT -> commit 5 (2 statements)
+  mv DELETE (west, 4, 185)
+  mv INSERT (east, 1, 15)
+  mv INSERT (north, 4, 185)
+  mv: (east, 1, 15) (north, 4, 185)  [= recomputed]
+T3 BEGIN
+T4 BEGIN
+T3 UPDATE SET amount -> OLD [(8, east, 15)] NEW [(8, east, 25)]
+T4 DELETE -> OLD [(8, east, 15)] NEW []
+T3 COMMIT -> commit 6 (1 statement)
+  mv DELETE (east, 1, 15)
+  mv INSERT (east, 1, 25)
+  mv: (east, 1, 25) (north, 4, 185)  [= recomputed]
+T4 COMMIT -> ERROR: row 8 was changed by a committed transaction
+T4 ROLLBACK (1 statement discarded, nothing fed)
+  mv: (east, 1, 25) (north, 4, 185)  [= recomputed]
+ok: mv matched recomputation after every commit and rollback

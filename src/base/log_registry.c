@@ -98,6 +98,37 @@ registry_find(const __dtfl_log_registry *r, const char *name)
 	return SIZE_MAX;
 }
 
+/* A logger with one reference, stamping relative to start_ns. */
+static __dtfl_logger *
+logger_new(uint64_t start_ns, __dtfl_clock_fn clock, void *clock_ctx,
+    __dtfl_log_action action, void *ctx, void (*ctx_free)(void *))
+{
+	__dtfl_logger *l = __dtfl_calloc(1, sizeof *l);
+
+	l->refs = 1;
+	l->start_ns = start_ns;
+	l->clock = clock;
+	l->clock_ctx = clock_ctx;
+	l->action = action;
+	l->ctx = ctx;
+	l->ctx_free = ctx_free;
+	__dtfl_vec_init(&l->arena, 1);
+	__dtfl_vec_init(&l->events, sizeof(__dtfl_log_event));
+	return l;
+}
+
+/*
+ * Logger::new(now, ..) outside any registry, on the monotonic clock and
+ * stamping relative to now.  The caller holds the only reference.
+ */
+__dtfl_logger *
+__dtfl_logger_new(__dtfl_log_action action, void *ctx,
+    void (*ctx_free)(void *))
+{
+	return logger_new(default_clock(NULL), default_clock, NULL, action,
+	    ctx, ctx_free);
+}
+
 /*
  * Registry::insert: binds `name` to a new logger, replacing and
  * releasing any previous binding.
@@ -106,18 +137,9 @@ void
 __dtfl_log_registry_insert(__dtfl_log_registry *r, const char *name,
     __dtfl_log_action action, void *ctx, void (*ctx_free)(void *))
 {
-	__dtfl_logger *l = __dtfl_calloc(1, sizeof *l);
+	__dtfl_logger *l = logger_new(r->start_ns, r->clock, r->clock_ctx,
+	    action, ctx, ctx_free);
 	size_t at;
-
-	l->refs = 1;
-	l->start_ns = r->start_ns;
-	l->clock = r->clock;
-	l->clock_ctx = r->clock_ctx;
-	l->action = action;
-	l->ctx = ctx;
-	l->ctx_free = ctx_free;
-	__dtfl_vec_init(&l->arena, 1);
-	__dtfl_vec_init(&l->events, sizeof(__dtfl_log_event));
 
 	at = registry_find(r, name);
 	if (at != SIZE_MAX) {

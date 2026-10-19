@@ -18,20 +18,19 @@
  * log record, distinct from the big-endian 48-byte on-the-wire framing
  * in networking.rs that the data plane uses).
  *
- * Emission scope: the events are logged through the worker's
- * "communication" logger, the same registry path the timely logger
- * uses, so a subscriber receives them.  The data-plane send and receive
- * loops (zc_tcp.c) do NOT call these yet: at the pin a comm log sink is
- * handed to the allocators (Hooks.log_fn), and that plumbing from the
- * worker's registry down to the network threads is not modeled (the
- * zc_tcp.c ledger row records the same gap).  So the "communication"
- * stream exists and is byte-faithful and decodable, but is populated
- * only by whatever calls __dtfl_worker_log_comm_* (today: tests and
- * any caller that logs explicitly); the automatic per-message points
- * land when the allocator log sink is plumbed.
+ * Emission: as at the pin, the network threads log through their own
+ * loggers, which Hooks.log_fn hands each thread at start
+ * (__dtfl_comm_log_hook, zc_initialize.c).  Each logger is owned by and
+ * used on one network thread, so no logger state is shared across
+ * threads.  The send and receive loops (zc_tcp.c) log StateEvent at
+ * start and end and a MessageEvent per header; with no hook the logger
+ * is NULL and each emit point is one pointer test.  The
+ * __dtfl_worker_log_comm_* forms log to a worker's "communication"
+ * logger instead.
  */
 #include "comm/comm_int.h"
 #include "comm/zc_int.h"
+#include "comm/init_int.h"
 
 #include "timely/log_codec_int.h"
 #include "timely/worker_int.h"
@@ -42,39 +41,20 @@ enum comm_event_tag {
 	CE_SETUP = 2
 };
 
-/* Logs the encoded event in `buf` to the "communication" logger, if any. */
+/* Logs the encoded event in `buf` to `l` and frees the buffer. */
 static void
-emit(__dtfl_worker *w, __dtfl_vec *buf)
+emit(__dtfl_logger *l, __dtfl_vec *buf)
 {
-	__dtfl_logger *l = __dtfl_worker_logger(w, "communication");
-
-	if (l != NULL) {
-		__dtfl_logger_log(l, buf->data, buf->len);
-		__dtfl_logger_release(l);
-	}
+	__dtfl_logger_log(l, buf->data, buf->len);
 	__dtfl_vec_free(buf);
 }
 
-static bool
-logging(__dtfl_worker *w)
-{
-	__dtfl_logger *l = __dtfl_worker_logger(w, "communication");
-
-	if (l == NULL)
-		return false;
-	__dtfl_logger_release(l);
-	return true;
-}
-
-/* CommunicationEvent::Message(MessageEvent { is_send, header }). */
 void
-__dtfl_worker_log_comm_message(__dtfl_worker *w, bool is_send,
+__dtfl_comm_log_message(__dtfl_logger *l, bool is_send,
     const __dtfl_message_header *h)
 {
 	__dtfl_vec b;
 
-	if (!logging(w))
-		return;
 	__dtfl_vec_init(&b, 1);
 	__dtfl_bc_u32(&b, CE_MESSAGE);
 	__dtfl_bc_u8(&b, is_send ? 1 : 0);
@@ -84,39 +64,30 @@ __dtfl_worker_log_comm_message(__dtfl_worker *w, bool is_send,
 	__dtfl_bc_u64(&b, h->target_upper);
 	__dtfl_bc_u64(&b, h->length);
 	__dtfl_bc_u64(&b, h->seqno);
-	emit(w, &b);
+	emit(l, &b);
 }
 
-/* CommunicationEvent::State(StateEvent { send, process, remote, start }). */
 void
-__dtfl_worker_log_comm_state(__dtfl_worker *w, bool send, size_t process,
+__dtfl_comm_log_state(__dtfl_logger *l, bool send, size_t process,
     size_t remote, bool start)
 {
 	__dtfl_vec b;
 
-	if (!logging(w))
-		return;
 	__dtfl_vec_init(&b, 1);
 	__dtfl_bc_u32(&b, CE_STATE);
 	__dtfl_bc_u8(&b, send ? 1 : 0);
 	__dtfl_bc_u64(&b, process);
 	__dtfl_bc_u64(&b, remote);
 	__dtfl_bc_u8(&b, start ? 1 : 0);
-	emit(w, &b);
+	emit(l, &b);
 }
 
-/*
- * CommunicationEvent::Setup(CommunicationSetup { sender, process,
- * remote: Option<usize> }).  has_remote false encodes None.
- */
 void
-__dtfl_worker_log_comm_setup(__dtfl_worker *w, bool sender, size_t process,
+__dtfl_comm_log_setup(__dtfl_logger *l, bool sender, size_t process,
     bool has_remote, size_t remote)
 {
 	__dtfl_vec b;
 
-	if (!logging(w))
-		return;
 	__dtfl_vec_init(&b, 1);
 	__dtfl_bc_u32(&b, CE_SETUP);
 	__dtfl_bc_u8(&b, sender ? 1 : 0);
@@ -127,5 +98,60 @@ __dtfl_worker_log_comm_setup(__dtfl_worker *w, bool sender, size_t process,
 	} else {
 		__dtfl_bc_u8(&b, 0);
 	}
-	emit(w, &b);
+	emit(l, &b);
+}
+
+/*
+ * Hooks.log_fn for a "communication" config subscription: a fresh
+ * subscriber logger for this network thread.  The subscription's ctx is
+ * shared by every network and worker thread (dtfl/log.h: the subscriber
+ * synchronizes shared state itself).
+ */
+__dtfl_logger *
+__dtfl_comm_subscriber_log_fn(void *ctx, const __dtfl_comm_setup *setup)
+{
+	const __dtfl_log_sub *sub = ctx;
+
+	return __dtfl_log_subscriber_logger("communication", setup->process,
+	    sub->fn, sub->ctx);
+}
+
+/* ------------------------------------------------------------------ */
+/* Worker forms: log to the worker's "communication" logger, if bound. */
+/* ------------------------------------------------------------------ */
+
+void
+__dtfl_worker_log_comm_message(__dtfl_worker *w, bool is_send,
+    const __dtfl_message_header *h)
+{
+	__dtfl_logger *l = __dtfl_worker_logger(w, "communication");
+
+	if (l != NULL) {
+		__dtfl_comm_log_message(l, is_send, h);
+		__dtfl_logger_release(l);
+	}
+}
+
+void
+__dtfl_worker_log_comm_state(__dtfl_worker *w, bool send, size_t process,
+    size_t remote, bool start)
+{
+	__dtfl_logger *l = __dtfl_worker_logger(w, "communication");
+
+	if (l != NULL) {
+		__dtfl_comm_log_state(l, send, process, remote, start);
+		__dtfl_logger_release(l);
+	}
+}
+
+void
+__dtfl_worker_log_comm_setup(__dtfl_worker *w, bool sender, size_t process,
+    bool has_remote, size_t remote)
+{
+	__dtfl_logger *l = __dtfl_worker_logger(w, "communication");
+
+	if (l != NULL) {
+		__dtfl_comm_log_setup(l, sender, process, has_remote, remote);
+		__dtfl_logger_release(l);
+	}
 }

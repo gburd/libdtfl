@@ -66,6 +66,17 @@ __dtfl_merge_batcher_init(__dtfl_merge_batcher *mb, const dtfl_type *rt,
 	else
 		mb->cap = 1;
 	mb->cap = next_power_of_two(mb->cap);
+	mb->logger = NULL;
+	mb->operator_id = 0;
+}
+
+void
+__dtfl_merge_batcher_set_logger(__dtfl_merge_batcher *mb,
+    __dtfl_logger *logger, size_t operator_id)
+{
+	DTFL_ASSERT(mb->logger == NULL);
+	mb->logger = logger != NULL ? __dtfl_logger_retain(logger) : NULL;
+	mb->operator_id = operator_id;
 }
 
 static void
@@ -80,14 +91,20 @@ chain_free(__dtfl_chain *ch)
 	ch->n = 0;
 }
 
+static __dtfl_chain chain_pop(__dtfl_merge_batcher *mb);
+
 void
 __dtfl_merge_batcher_free(__dtfl_merge_batcher *mb)
 {
-	size_t i;
+	/* Cleanup chain to retract accounting information. */
+	while (mb->chains.len > 0) {
+		__dtfl_chain ch = chain_pop(mb);
 
-	for (i = 0; i < mb->chains.len; i++)
-		chain_free(&DTFL_VEC_AT(&mb->chains, chain_slot, i)->chain);
+		chain_free(&ch);
+	}
 	__dtfl_vec_free(&mb->chains);
+	__dtfl_logger_release(mb->logger);
+	mb->logger = NULL;
 	__dtfl_antichain_free(&mb->lower);
 	__dtfl_antichain_free(&mb->frontier);
 }
@@ -109,6 +126,21 @@ chain_weight(const __dtfl_chain *ch)
 	return w;
 }
 
+/*
+ * account: size changes, only if a logger exists.  `records` is the
+ * chain's summed update count times diff; size, capacity and
+ * allocations come from Merger::allocation, which the pin leaves at its
+ * (0, 0, 0) default for the vector merger, so they are zero here too.
+ */
+static void
+account(const __dtfl_merge_batcher *mb, size_t records, int64_t diff)
+{
+	if (mb->logger != NULL)
+		__dtfl_dd_log_batcher(mb->logger, mb->operator_id,
+		    (int64_t)records * diff, 0, 0, 0);
+}
+
+/* Push a chain and account size changes. */
 static void
 chain_push(__dtfl_merge_batcher *mb, __dtfl_chain chain)
 {
@@ -116,15 +148,18 @@ chain_push(__dtfl_merge_batcher *mb, __dtfl_chain chain)
 
 	slot.weight = chain_weight(&chain);
 	slot.chain = chain;
+	account(mb, slot.weight, 1);
 	__dtfl_vec_push(&mb->chains, &slot);
 }
 
+/* Pop a chain and account size changes. */
 static __dtfl_chain
 chain_pop(__dtfl_merge_batcher *mb)
 {
 	chain_slot *s = DTFL_VEC_AT(&mb->chains, chain_slot, mb->chains.len - 1);
 	__dtfl_chain ch = s->chain;
 
+	account(mb, s->weight, -1);
 	__dtfl_vec_truncate(&mb->chains, mb->chains.len - 1);
 	return ch;
 }

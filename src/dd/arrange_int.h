@@ -272,6 +272,19 @@ bool __dtfl_trace_agent_cursor_through(__dtfl_trace_agent *a,
 __dtfl_replay_queue *__dtfl_trace_agent_new_listener(__dtfl_trace_agent *a,
     dtfl_activator *activator);
 
+/*
+ * Antichain<Capability<T>>::insert / CapabilitySet::insert (timely
+ * frontier.rs, capability.rs): add `cap` to the held set `caps` (a vec of
+ * dtfl_cap *) unless some held capability is <= it, first dropping every
+ * held capability it is <= to; the survivors keep their order and `cap` goes
+ * last.  Capabilities from one operator input share the same internal
+ * counter, so the order is the time order.  Takes ownership of `cap`
+ * (dropped if redundant).  The arrange, reduce and upsert operators hold
+ * their capabilities this way; their batch tiling assumes it.
+ */
+void __dtfl_caps_insert(__dtfl_vec *caps, const dtfl_time_class *tc,
+    dtfl_cap *cap);
+
 /* ------------------------------------------------------------------ */
 /* P8 entry points on an arrangement (join_core, reduce_*).            */
 /* ------------------------------------------------------------------ */
@@ -328,6 +341,16 @@ typedef void (*__dtfl_reduce_logic_fn)(void *ctx, const void *key, size_t klen,
 struct dtfl_arranged *__dtfl_arranged_reduce_core(struct dtfl_arranged *a,
     const char *name, const dtfl_type *ovt, const __dtfl_diff_class *odc,
     __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *));
+/*
+ * __dtfl_arranged_reduce_trace_reference: as reduce_core, but driven by the
+ * model-derived reference tactic (reduce.rs reference::reduce_trace_reference,
+ * doc-hidden upstream).  Intended only for differential testing of the two
+ * tactics against each other.
+ */
+struct dtfl_arranged *__dtfl_arranged_reduce_trace_reference(
+    struct dtfl_arranged *a, const char *name, const dtfl_type *ovt,
+    const __dtfl_diff_class *odc, __dtfl_reduce_logic_fn logic, void *ctx,
+    void (*ctx_free)(void *));
 /*
  * __dtfl_arranged_reduce_abelian: as reduce_core, but wraps `logic` to
  * subtract the prior output (negate and append the tentative output), so the
@@ -390,5 +413,13 @@ dtfl_arranged *__dtfl_collection_arrange_by_key(dtfl_collection *c,
  * dtfl_trace_free.
  */
 dtfl_trace *__dtfl_trace_clone(const dtfl_trace *src);
+
+/*
+ * Installs the worker's "differential/arrange" logger (if a subscriber
+ * is registered) on a new trace and batcher (may be NULL), under the
+ * operator global id of `b` (src/dd/dd_log.c).
+ */
+void __dtfl_dd_logging_install(dtfl_scope *scope, const dtfl_op_builder *b,
+    __dtfl_trace *trace, __dtfl_merge_batcher *batcher);
 
 #endif /* DTFL_ARRANGE_INT_H */

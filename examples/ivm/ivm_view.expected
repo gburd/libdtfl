@@ -1,0 +1,66 @@
+commit 1: load 4 customers, 5 orders
+  delta @1:
+    + (east, 2, 80)
+    + (west, 2, 90)
+    + (north, 1, 10)
+  view @1:
+    (east, 2, 80)
+    (west, 2, 90)
+    (north, 1, 10)
+  holds -> 1
+commit 2: INSERT order 106; DELETE order 105 (last in north)
+  delta @2:
+    - (east, 2, 80)
+    + (east, 3, 120)
+    - (north, 1, 10)
+  view @2:
+    (east, 3, 120)
+    (west, 2, 90)
+  holds -> 2
+commit 3: UPDATE customers SET region = west WHERE id = 1
+  delta @3:
+    - (east, 3, 120)
+    + (east, 2, 70)
+    - (west, 2, 90)
+    + (west, 3, 140)
+  view @3:
+    (east, 2, 70)
+    (west, 3, 140)
+  holds -> 3
+commit 4: UPDATE order 103 amount 70 -> 75; INSERT customer 5 (north), order 107
+  delta @4:
+    - (west, 3, 140)
+    + (west, 3, 145)
+    + (north, 1, 5)
+  view @4:
+    (east, 2, 70)
+    (west, 3, 145)
+    (north, 1, 5)
+  holds -> 4
+commit 5: INSERT order 108 (customer 3, 20), same as order 104
+  delta @5:
+    - (west, 3, 145)
+    + (west, 4, 165)
+  view @5:
+    (east, 2, 70)
+    (west, 4, 165)
+    (north, 1, 5)
+  holds -> 5
+commit 6: DELETE order 104, one of the (customer 3, 20) pair
+  delta @6:
+    - (west, 4, 165)
+    + (west, 3, 145)
+  view @6:
+    (east, 2, 70)
+    (west, 3, 145)
+    (north, 1, 5)
+  holds -> 6
+commit 7: INSERT customer 6 with no orders
+  delta @7:
+    (no change)
+  view @7:
+    (east, 2, 70)
+    (west, 3, 145)
+    (north, 1, 5)
+  holds -> 7
+ok: view matched recomputation at every commit

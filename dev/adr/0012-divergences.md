@@ -72,5 +72,62 @@ has no consumer yet:
   record data (progress).  Deferred with the exact surface named in each
   ledger note.
 
-None yet before this entry.  An amendment adds a dated entry here and
+### 2026-10-16: arrange, graspan done; progress, spill examples re-scoped
+
+- differential-dataflow/examples/arrange.rs and graspan.rs are ported
+  on the existing public API.  The surfaces the 2026-10-15 entry named
+  already existed: a zero-input dtfl_op_builder operator that keeps,
+  downgrades and reactivates its capability is generic::source, and a
+  dtfl_variable_new collection can be arranged and joined before
+  dtfl_variable_set.  Porting arrange exposed and fixed a shared
+  dtfl_probe bug (a handle attached to several streams did not hold
+  the meet of their frontiers).
+- differential-dataflow/examples/progress.rs needs no new surface (a u64
+  summary is a record word applied with dtfl_summary_*), but stays
+  deferred: the library answers it wrongly (frontier reduce under
+  Product<u64, u64>; reproducer in the ledger note).
+- communication/examples/spill_stress.rs joins comm_hello and lgalloc as
+  excluded: it drives MergeQueue and the spill policies directly, the
+  raw communication layer this port keeps internal (D7/D9).
+- differential-dataflow/examples/columnar_spill.rs is subsumed by
+  bench/trace_spill.c: its spill hangs off the columnar spine, which
+  the public arrange does not use (D2).
+- timely/examples/spill_compare.rs stays deferred until dtfl_config
+  grows a spill-policy hook (upstream Hooks::spill).
+
+### 2026-10-18: progress done
+
+- differential-dataflow/examples/progress.rs is done and smoke-tested.
+  The wrong answer was a trace-layer bug, not a reduce or iterate one:
+  UpdsBuilder::seal (src/dd/trace/layout.c) compacted its stash in place
+  while reading it through a sort permutation, so a merge whose
+  advance_by reorders a value's times (any partially ordered time, here
+  Product<u64, u64>) could read a slot it had already overwritten.  The
+  reduce output trace then held a wrong history.  Fixed to sort the
+  stash first, as consolidate_slice does.  The output now matches the
+  pinned binary with 1, 2 and 4 workers.
+
+An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.
+
+### 2026-10-18: differential and communication logging emission implemented
+
+The differential-dataflow/src/logging.rs and communication/src/logging.rs
+deferrals above are closed.  The
+spine, the agent and the merge batcher emit Batch, Merge, Drop,
+TraceShare and Batcher events at the upstream points, through a logger
+the operator acquires at construction (NULL, so free, without a
+subscriber).  MergeShortfall stays unemitted because the pin never logs
+it.
+
+The communication stream follows the pin's Hooks.log_fn: each network
+send and receive thread asks the hook built from a "communication"
+dtfl_config_log_subscribe for its own logger and logs StateEvent and a
+MessageEvent per header.  The subscriber therefore runs on the network
+threads and reports the process index as the worker.  A per-worker
+dtfl_worker_log_subscribe sees no communication events, because no
+worker owns the network threads.
+
+The logging-recv and logging_replay exclusions stand.  The emission adds
+events to the subscriber streams but no public TimelyEvent record type
+that a dataflow could carry.

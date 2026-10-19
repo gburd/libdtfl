@@ -108,7 +108,12 @@ operator and channel creation, scheduling, messages, and parking
 .It Dq differential/arrange
 arrangement batch, merge, drop and trace-sharing events
 .It Dq communication
-message send and receive, and communication-thread state
+message send and receive, and communication-thread state.
+These come from the network send and receive threads of a cluster
+.Pq Dv DTFL_COMM_CLUSTER
+and are delivered only to a subscription made with
+.Fn dtfl_config_log_subscribe ;
+the batch's worker index is the process index.
 .El
 On the wire each stream is the bincode-1 fixint little-endian encoding
 of the corresponding Rust 0.31 event enum;
@@ -225,14 +230,36 @@ dtfl_config_log_subscribe(cfg, "timely", on_batch, graph, NULL);
 dtfl_execute(cfg, worker_main, app, NULL);
 .Ed
 .Sh THREAD SAFETY
-A subscriber runs on the worker thread that logs to it.
-With more than one worker the same
+A subscriber runs on the worker thread that logs to it, except that a
+.Dq communication
+subscriber runs on the cluster's network threads, one call at a time
+per thread but concurrently across them.
+With more than one worker or network thread the same
 .Fa ctx
-is shared across worker threads, as the
+is shared across worker and network threads, as the
 .Fa ctx
 of
 .Xr dtfl_execute 3
 is; a subscriber that writes shared state must synchronize it itself.
+A slow
+.Dq communication
+subscriber delays the network thread that calls it, and so the sends
+or receives that thread serves.
+.Pp
+The configuration and every subscriber
+.Fa ctx
+must stay valid until
+.Xr dtfl_guards_join 3
+returns: when
+.Xr dtfl_execute 3
+returns early with guards, the worker and network threads keep using
+them.
+.Pp
+Each network thread's logger measures event times from when that thread
+started, so
+.Dq communication
+times are comparable within one thread's events but not across threads
+or with the worker streams.
 .Sh SEE ALSO
 .Xr dtfl_execute 3 ,
 .Xr dtfl_set_log_hook 3 ,

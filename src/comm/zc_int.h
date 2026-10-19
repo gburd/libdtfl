@@ -327,9 +327,13 @@ typedef struct __dtfl_mq_handoff {
  * or malformed frame, a zero read, or data after a clean shutdown
  * panics (upstream's tcp_panic).  Takes ownership of the `targets`
  * vector's storage and the mpsc references in it; does not close `fd`.
+ * `logger` (may be NULL; owned, released at the end) receives the
+ * StateEvent start/stop and a MessageEvent per received header.
  */
+struct __dtfl_logger;
 void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
-    size_t worker_offset);
+    size_t worker_offset, size_t process, size_t remote,
+    struct __dtfl_logger *logger);
 
 /*
  * send_loop: drain each local worker's outgoing queue to socket `fd` as
@@ -338,9 +342,11 @@ void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
  * worker); the loop creates a MergeQueue pair per source, posts the
  * writer to the worker, and drains the reader.  A write failure panics.
  * Takes ownership of the `sources` vector's storage and references; does
- * not close `fd`.
+ * not close `fd`.  `logger` (may be NULL; owned, released at the end)
+ * receives the StateEvent start/stop and a MessageEvent per sent header.
  */
-void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources);
+void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
+    size_t process, size_t remote, struct __dtfl_logger *logger);
 
 /* ------------------------------------------------------------------ */
 /* allocator.rs: the TcpAllocator and its builders                     */
