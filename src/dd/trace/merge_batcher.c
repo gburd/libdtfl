@@ -625,6 +625,21 @@ __dtfl_merge_batcher_push(__dtfl_merge_batcher *mb, __dtfl_batch *chunk)
  * already consolidated, a time is kept only if it has a surviving update, so
  * the frontier reflects post-consolidation survivors.
  */
+/*
+ * upper.less_equal(t): some element of upper is <= t.  For a total
+ * one-word time a single-element upper is one compare.
+ */
+static inline bool
+upper_le(const __dtfl_merge_batcher *mb, const __dtfl_antichain *upper,
+    const uint64_t *t)
+{
+	if (mb->tc->shape == DTFL_SHAPE_TOTAL &&
+	    __dtfl_antichain_len(upper) == 1)
+		return __dtfl_ac_base(upper)[0] <= t[0];
+	return __dtfl_frontier_less_equal(mb->tc, __dtfl_ac_base(upper),
+	    __dtfl_antichain_len(upper), t);
+}
+
 static void
 extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
     const __dtfl_antichain *upper, __dtfl_batch ***out, size_t *nout)
@@ -650,8 +665,7 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 			const __dtfl_batch *bb = cc_batch(&cc);
 			size_t end = cc.row;
 			const uint64_t *t = __dtfl_batch_time(bb, end);
-			bool keeps = __dtfl_frontier_less_equal(mb->tc,
-			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper), t);
+			bool keeps = upper_le(mb, upper, t);
 
 			do {
 				if (keeps)
@@ -659,9 +673,8 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 					    __dtfl_batch_time(bb, end));
 				end++;
 			} while (end < cc.len &&
-			    __dtfl_frontier_less_equal(mb->tc,
-			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper),
-			    __dtfl_batch_time(bb, end)) == keeps);
+			    upper_le(mb, upper, __dtfl_batch_time(bb, end)) ==
+			    keeps);
 			sink_push_run(keeps ? &keep : &ready, bb, cc.row,
 			    end - cc.row);
 			cc_skip(&cc, end - cc.row);
