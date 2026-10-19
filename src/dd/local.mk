@@ -189,6 +189,12 @@ tests_unit_test_arrange_by_key_SOURCES = tests/unit/test_arrange_by_key.c
 tests_unit_test_arrange_by_key_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_arrange_by_key_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_longrun
+TESTS += tests/unit/test_longrun
+tests_unit_test_longrun_SOURCES = tests/unit/test_longrun.c
+tests_unit_test_longrun_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_longrun_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_arrange_lifetime
 TESTS += tests/unit/test_arrange_lifetime
 tests_unit_test_arrange_lifetime_SOURCES = tests/unit/test_arrange_lifetime.c

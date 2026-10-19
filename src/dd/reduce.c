@@ -2112,8 +2112,7 @@ typedef struct abk_route {
 typedef struct abk_ctx {
 	__dtfl_merge_batcher batcher;
 	__dtfl_chunker chunker;
-	__dtfl_trace_agent reader;
-	__dtfl_trace_writer writer;
+	__dtfl_trace_writer writer;	/* the reader moves to the Arranged */
 	__dtfl_vec caps;		/* dtfl_cap * */
 	__dtfl_antichain prev_frontier;
 	const dtfl_type *rt;		/* key || val record type */
@@ -2354,7 +2353,6 @@ abk_free(void *vctx)
 	__dtfl_vec_free(&c->caps);
 	__dtfl_antichain_free(&c->prev_frontier);
 	__dtfl_trace_writer_free(&c->writer);
-	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
 	__dtfl_free(c);
@@ -2392,9 +2390,9 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	__dtfl_vec_init(&c->caps, sizeof(dtfl_cap *));
 	__dtfl_antichain_init_elem(&c->prev_frontier, tc, minimum);
 
+	/* As arrange_core: the reader moves to the Arranged, not cloned. */
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
-	    &c->reader, &c->writer);
-	__dtfl_trace_agent_clone(&c->reader, &arr_reader);
+	    &arr_reader, &c->writer);
 
 	c->route.kt = key_type;
 	c->route.depth = depth;

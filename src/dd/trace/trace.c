@@ -168,3 +168,21 @@ __dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout)
 	__dtfl_antichain_free(&empty);
 	return batches;
 }
+
+size_t
+__dtfl_trace_batch_count(const __dtfl_trace *t)
+{
+	const __dtfl_spine *s = &t->spine;
+	size_t i, n = s->pending.len;
+
+	for (i = 0; i < s->merging.len; i++) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&s->merging,
+		    __dtfl_merge_state, i);
+
+		if (m->kind == DTFL_MERGE_INPROGRESS)
+			n += 2;
+		else if (m->kind != DTFL_MERGE_VACANT && m->present)
+			n += 1;
+	}
+	return n;
+}

@@ -574,9 +574,14 @@ DTFL_TEST(arrange__trace_compaction_holds)
 	f = 20;
 	dtfl_trace_set_logical_compaction(compact_trace, &f, 1);
 	dtfl_trace_set_physical_compaction(compact_trace, &f, 1);
-	dtfl_input_session_close(c.in);
-	while (dtfl_worker_step(w))
-		;
+	/*
+	 * Observe compaction while the dataflow is live: the input stays open
+	 * and the arrange operator still runs, so no operator-held reader may
+	 * pin the trace behind the handle's holds.  Two more epochs give the
+	 * spine fuel to finish its merges.
+	 */
+	feed(w, &c, 200, 1, 21);
+	feed(w, &c, 200, -1, 22);
 
 	dtfl_trace_to_vec(compact_trace, trace_row, DTFL_CTX(&after, NULL));
 	/* Accumulations at times beyond the frontier are unchanged. */
@@ -588,19 +593,23 @@ DTFL_TEST(arrange__trace_compaction_holds)
 	 * Compaction happened in the merged history: key 9's two updates
 	 * (t2, t3) are one update advanced to the frontier, and key 7 and
 	 * the early no-op keys cancelled out and are gone.  The spine merges
-	 * with amortized effort, so the newest batches (key 107) need not
-	 * have merged yet; nothing older than them may survive unadvanced.
+	 * with amortized effort, so the newest batches (keys 107 and 200)
+	 * need not have merged yet; nothing older may survive unadvanced.
 	 */
 	for (i = 0; i < after.n; i++) {
 		if (after.key[i] == 9) {
 			assert_uint64(after.time[i], ==, 20);
 			assert_int64(after.diff[i], ==, 2);
 		} else {
-			assert_uint64(after.key[i], ==, 107);
+			assert_true(after.key[i] == 107 || after.key[i] == 200);
 		}
 	}
 	assert_size(after.n, <, before.n + 2 * 8);
+	assert_int64(rows_accum(&after, 200, UINT64_MAX), ==, 0);
 
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
 	dtfl_trace_free(compact_trace);
 	compact_trace = NULL;
 	dtfl_probe_free(c.probe);

@@ -654,5 +654,11 @@ void __dtfl_trace_cursor(__dtfl_trace *t, __dtfl_cursor_list *out);
  * frees the array).  Used by the agent's new_listener to seed a queue.
  */
 __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
+/*
+ * The number of batches the trace holds (pending plus every merge layer's
+ * inputs), for tests that bound spine growth.  A trace whose compaction
+ * holds advance keeps this logarithmic in the number of inserted batches.
+ */
+size_t __dtfl_trace_batch_count(const __dtfl_trace *t);
 
 #endif /* DTFL_TRACE_INT_H */
