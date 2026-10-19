@@ -358,6 +358,9 @@ void __dtfl_allocator_destroy(__dtfl_allocator *a);
  */
 typedef struct __dtfl_allocator_builder __dtfl_allocator_builder;
 
+/* zero_copy/spill.rs SpillPolicyFn; defined in zc_int.h. */
+typedef struct __dtfl_spill_fn __dtfl_spill_fn;
+
 struct __dtfl_allocator_builder {
 	__dtfl_allocator *(*build)(__dtfl_allocator_builder *b);
 	/* Releases an unbuilt builder. */
@@ -375,7 +378,11 @@ __dtfl_allocator_builder *__dtfl_thread_builder(void);
  * caller hands builders[i] to worker thread i.
  */
 void __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders);
-void __dtfl_process_binary_builders(size_t peers,
+/*
+ * `spill` (borrowed; NULL for none) supplies a policy pair for every
+ * MergeQueue the builders create (Hooks::spill).
+ */
+void __dtfl_process_binary_builders(size_t peers, __dtfl_spill_fn *spill,
     __dtfl_allocator_builder **builders);
 
 /*

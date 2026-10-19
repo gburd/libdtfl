@@ -191,6 +191,53 @@ __dtfl_spill_threshold *__dtfl_spill_threshold_new(
 __dtfl_spill_prefetch *__dtfl_spill_prefetch_new(size_t budget);
 void __dtfl_spill_policy_destroy(__dtfl_spill_policy *p);
 
+/*
+ * SpillPolicyFn: Arc<dyn Fn() -> (writer, reader) + Send + Sync>.  A
+ * refcounted factory shared by every builder and network thread of one
+ * configuration; make() runs on whichever thread creates a MergeQueue
+ * pair and returns a fresh policy pair the queue handles then own.
+ * make() and destroy() must be safe to call from any thread.
+ */
+struct __dtfl_spill_fn {
+	__dtfl_arc ref;
+	void (*make)(__dtfl_spill_fn *f, __dtfl_spill_policy **writer,
+	    __dtfl_spill_policy **reader);
+	void (*destroy)(__dtfl_spill_fn *f);
+};
+
+/* NULL-tolerant retain and release. */
+__dtfl_spill_fn *__dtfl_spill_fn_retain(__dtfl_spill_fn *f);
+void __dtfl_spill_fn_release(__dtfl_spill_fn *f);
+/* A policy pair from f, or (NULL, NULL) when f is NULL (no spill). */
+void __dtfl_spill_fn_make(__dtfl_spill_fn *f, __dtfl_spill_policy **writer,
+    __dtfl_spill_policy **reader);
+
+/*
+ * spill_file.c: the file-backed factory (the file_spill module of
+ * timely/examples/spill_compare.rs).  Each pair is a Threshold over a
+ * fresh file strategy writing under `dir`, with the given knobs, and a
+ * PrefetchPolicy whose budget is head_reserve_bytes.  Probes `dir` with
+ * a temporary file; returns DTFL_EIO with detail if that fails, or
+ * DTFL_EINVAL for a NULL dir or a zero head reserve.
+ */
+int __dtfl_spill_file_fn_new(const char *dir, size_t threshold_bytes,
+    size_t head_reserve_bytes, __dtfl_spill_fn **out);
+
+/*
+ * Totals across every queue a file factory served.  Exact once the
+ * threads that ran its policies have been joined.
+ */
+typedef struct __dtfl_spill_file_stats {
+	uint64_t files;		/* spill() calls that wrote a file */
+	uint64_t spilled_chunks;
+	uint64_t spilled_bytes;
+	uint64_t fetched_chunks;
+	uint64_t failed_spills;	/* write errors; the chunks stayed resident */
+} __dtfl_spill_file_stats;
+
+void __dtfl_spill_file_fn_stats(const __dtfl_spill_fn *f,
+    __dtfl_spill_file_stats *out);
+
 /* ------------------------------------------------------------------ */
 /* bytes_exchange.rs: MergeQueue and SendEndpoint                      */
 /* ------------------------------------------------------------------ */
@@ -340,13 +387,16 @@ void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
  * framed messages, then write a final zero-length header and shut down
  * the write half.  `sources` is a vector of __dtfl_mpsc * (one per local
  * worker); the loop creates a MergeQueue pair per source, posts the
- * writer to the worker, and drains the reader.  A write failure panics.
- * Takes ownership of the `sources` vector's storage and references; does
- * not close `fd`.  `logger` (may be NULL; owned, released at the end)
- * receives the StateEvent start/stop and a MessageEvent per sent header.
+ * writer to the worker, and drains the reader.  Each pair's policies
+ * come from `spill` (borrowed for the call; NULL for none).  A write
+ * failure panics.  Takes ownership of the `sources` vector's storage and
+ * references; does not close `fd`.  `logger` (may be NULL; owned,
+ * released at the end) receives the StateEvent start/stop and a
+ * MessageEvent per sent header.
  */
 void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
-    size_t process, size_t remote, struct __dtfl_logger *logger);
+    size_t process, size_t remote, struct __dtfl_logger *logger,
+    __dtfl_spill_fn *spill);
 
 /* ------------------------------------------------------------------ */
 /* allocator.rs: the TcpAllocator and its builders                     */
@@ -359,11 +409,13 @@ void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
  * Fills builders[0 .. threads) and the two [processes-1][threads] grids
  * net_promises (writers to each recv thread) and net_futures (writers
  * from each send thread); the caller owns the grids and the references
- * in them, one per (remote process, local worker).  Requires
+ * in them, one per (remote process, local worker).  Each builder
+ * retains `spill` (may be NULL) for its recv queues.  Requires
  * processes >= 1 and threads >= 1.
  */
 void __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
-    size_t my_process, size_t processes, __dtfl_allocator_builder **builders,
-    __dtfl_mpsc ***net_promises, __dtfl_mpsc ***net_futures);
+    size_t my_process, size_t processes, __dtfl_spill_fn *spill,
+    __dtfl_allocator_builder **builders, __dtfl_mpsc ***net_promises,
+    __dtfl_mpsc ***net_futures);
 
 #endif /* DTFL_ZC_INT_H */

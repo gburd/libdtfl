@@ -261,7 +261,8 @@ drop_parker(void *ctx)
 
 void
 __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
-    size_t process, size_t remote, __dtfl_logger *logger)
+    size_t process, size_t remote, __dtfl_logger *logger,
+    __dtfl_spill_fn *spill)
 {
 	__dtfl_parker *parker = __dtfl_parker_new();
 	__dtfl_merge_queue **readers = __dtfl_calloc(DTFL_MAX(nsources, 1),
@@ -279,15 +280,17 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
 		__dtfl_comm_log_state(logger, true, process, remote, true);
 
 	/*
-	 * Create a MergeQueue pair per worker, post the writer to the
-	 * worker, keep the reader.  No spill policy on the send side.
+	 * Send the policy-bearing queue to the worker (writer); keep a
+	 * reader-side handle for ourselves.
 	 */
 	for (i = 0; i < nsources; i++) {
 		__dtfl_merge_queue *writer, *reader;
+		__dtfl_spill_policy *wp, *rp;
 		__dtfl_mq_handoff h;
 
+		__dtfl_spill_fn_make(spill, &wp, &rp);
 		__dtfl_merge_queue_new_pair(buzz_parker,
-		    __dtfl_parker_retain(parker), drop_parker, NULL, NULL,
+		    __dtfl_parker_retain(parker), drop_parker, wp, rp,
 		    &writer, &reader);
 		readers[i] = reader;
 		h.queue = writer;

@@ -62,6 +62,18 @@ DTFL_API void dtfl_config_set_progress_mode(dtfl_config *cfg,
     dtfl_progress_mode mode);
 /* Seed for the simulation scheduler (DTFL_COMM_SIM only). */
 DTFL_API void dtfl_config_set_seed(dtfl_config *cfg, uint64_t seed);
+/*
+ * Hooks::spill with a file-backed strategy.  Every zero-copy byte queue
+ * (DTFL_COMM_PROCESS_BINARY between workers, DTFL_COMM_CLUSTER between
+ * a worker and its network threads) gets its own policy pair: once more
+ * than head_reserve_bytes + threshold_bytes are queued, the middle of
+ * the queue is written to an unlinked temporary file under `dir`, and
+ * the reader pages it back in head_reserve_bytes at a time.  `dir` is
+ * copied; NULL removes the hook.  Fails with DTFL_EIO if a file cannot
+ * be created under `dir`.
+ */
+DTFL_API int dtfl_config_set_spill_file(dtfl_config *cfg, const char *dir,
+    size_t threshold_bytes, size_t head_reserve_bytes);
 
 DTFL_API dtfl_comm_mode dtfl_config_mode(const dtfl_config *cfg);
 DTFL_API size_t dtfl_config_threads(const dtfl_config *cfg);

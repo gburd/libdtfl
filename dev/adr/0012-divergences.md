@@ -107,6 +107,32 @@ has no consumer yet:
   stash first, as consolidate_slice does.  The output now matches the
   pinned binary with 1, 2 and 4 workers.
 
+### 2026-10-18: spill_compare done
+
+- dtfl_config_set_spill_file(cfg, dir, threshold_bytes,
+  head_reserve_bytes) is the public form of Hooks::spill.  It installs
+  the factory spill_compare.rs builds by hand: per MergeQueue, a
+  Threshold writer over a fresh file strategy and a PrefetchPolicy
+  reader with the head reserve as its budget.  The file strategy is the
+  example's file_spill module moved into the library
+  (src/comm/spill_file.c).  The factory reaches every MergeQueue pair
+  that ProcessBinary, the TcpBuilder and the TCP send loop create, as
+  at the pin.  A general user BytesSpill callback is not exposed: no
+  upstream example or test needs one, and it would put byte-buffer
+  ownership on the public API.
+- The strategy differs from the example module in three ways, all
+  documented in dtfl_config(3): files come from mkstemp under the
+  given directory and are unlinked at once; a handle preads only its
+  own chunk instead of slurping the file on first fetch; a read error
+  panics instead of returning the handle for an endless retry.
+- Porting the example exposed an Exchange pusher divergence, now fixed
+  rather than recorded: the C pusher held a whole epoch per peer, where
+  upstream's CapacityContainerBuilder ships each full container.  With
+  one unbounded message there was nothing for the policy to spill.
+- timely/examples/spill_compare.rs is done.  The upstream example is
+  unchanged, apart from its smaller defaults and the stdout/stderr split
+  the smoke test needs.
+
 An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.
 

@@ -546,7 +546,7 @@ run_process_binary(size_t peers)
 	size_t i;
 
 	alarm(120);
-	__dtfl_process_binary_builders(peers, b);
+	__dtfl_process_binary_builders(peers, NULL, b);
 	for (i = 0; i < peers; i++) {
 		memset(&w[i], 0, sizeof w[i]);
 		w[i].builder = b[i];
@@ -586,7 +586,7 @@ DTFL_TEST(process_binary_single_worker_events_and_bound)
 	uint64_t *m;
 
 	(void)params; (void)data;
-	__dtfl_process_binary_builders(1, &b);
+	__dtfl_process_binary_builders(1, NULL, &b);
 	a = A_BUILD(b);
 	assert_size(a->peers, ==, 1);
 	assert_size(a->index, ==, 0);
@@ -648,7 +648,7 @@ DTFL_TEST(process_binary_early_data_and_dropped_channel)
 
 	(void)params; (void)data;
 	alarm(60);
-	__dtfl_process_binary_builders(2, b);
+	__dtfl_process_binary_builders(2, NULL, b);
 	for (i = 0; i < 2; i++)
 		slot[i].b = b[i];
 	for (i = 0; i < 2; i++)

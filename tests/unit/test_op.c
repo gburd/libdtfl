@@ -360,6 +360,114 @@ DTFL_TEST(exchange__two_process_workers)
 	return MUNIT_OK;
 }
 
+/*
+ * Exchange flushes a peer's buffer once it holds a container's worth of
+ * records, as upstream's CapacityContainerBuilder does, rather than
+ * holding a whole epoch until the time changes.  Every worker sends
+ * NBIG records at time 0 to worker 1; no message reaching worker 1 may
+ * carry much more than DTFL_BUFFER_SIZE_BYTES (8 KiB) of records.
+ */
+#define NBIG 20000
+
+typedef struct big_sink {
+	size_t msgs;
+	size_t recs;
+	size_t max_len;
+} big_sink;
+
+typedef struct big_ctx {
+	big_sink per_worker[MAX_WORKERS];
+} big_ctx;
+
+static uint64_t
+route_to_one(const void *rec, size_t len, void *ctx)
+{
+	(void)rec; (void)len; (void)ctx;
+	return 1;
+}
+
+static bool
+big_feeder_logic(dtfl_op *op, void *vctx)
+{
+	dtfl_cap *cap = dtfl_op_initial_cap(op, 0);
+	dtfl_session *s;
+	size_t i;
+
+	(void)vctx;
+	if (cap == NULL)
+		return false;
+	s = dtfl_op_session(op, 0, cap);
+	for (i = 0; i < NBIG; i++) {
+		unsigned char buf[8];
+
+		dtfl_put_u64(buf, i);
+		dtfl_session_give(s, buf, sizeof buf);
+	}
+	dtfl_session_close(s);
+	dtfl_cap_drop(cap);
+	return false;
+}
+
+static bool
+big_sink_logic(dtfl_op *op, void *vctx)
+{
+	big_sink *c = vctx;
+	dtfl_message *m;
+
+	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		size_t n = dtfl_message_len(m);
+
+		c->msgs++;
+		c->recs += n;
+		if (n > c->max_len)
+			c->max_len = n;
+	}
+	return false;
+}
+
+static void
+build_big_exchange(dtfl_scope *scope, void *arg)
+{
+	big_ctx *e = arg;
+	dtfl_op_builder *b = dtfl_op_builder_new(scope, "Feeder");
+	dtfl_stream *src = dtfl_op_builder_output(b, dtfl_type_u64());
+
+	dtfl_op_builder_build(b, big_feeder_logic, NULL, NULL);
+	b = dtfl_op_builder_new(scope, "Sink");
+	dtfl_op_builder_input(b, src, dtfl_pact_exchange(route_to_one, NULL));
+	dtfl_op_builder_build(b, big_sink_logic,
+	    &e->per_worker[dtfl_scope_index(scope)], NULL);
+}
+
+static void
+big_worker(dtfl_worker *w, void *arg)
+{
+	assert_int(dtfl_worker_dataflow(w, "big", g_shared_tc,
+	    build_big_exchange, arg), ==, 0);
+}
+
+DTFL_TEST(exchange__flushes_at_capacity)
+{
+	dtfl_config *cfg = dtfl_config_new();
+	big_ctx e;
+
+	(void)params; (void)data;
+	memset(&e, 0, sizeof e);
+	g_shared_tc = dtfl_time_u64();
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, 2), ==, 0);
+	assert_int(dtfl_execute(cfg, big_worker, &e, NULL), ==, 0);
+	assert_size(e.per_worker[0].recs, ==, 0);
+	assert_size(e.per_worker[1].recs, ==, 2 * NBIG);
+	/* 8-byte records, 8 KiB containers: about 1024 per message. */
+	assert_size(e.per_worker[1].max_len, <=, 2048);
+	assert_size(e.per_worker[1].msgs, >=, 2 * NBIG / 2048);
+	dtfl_time_class_free(g_shared_tc);
+	dtfl_config_free(cfg);
+	return MUNIT_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /* Test: capability counting                                           */
 /* ------------------------------------------------------------------ */
@@ -494,6 +602,7 @@ static MunitTest tests[] = {
 	DTFL_T(builder__map_pipeline),
 	DTFL_T(tee__fan_out),
 	DTFL_T(exchange__two_process_workers),
+	DTFL_T(exchange__flushes_at_capacity),
 	DTFL_T(capability__counting),
 	DTFL_T(capability__downgrade_backwards_panics),
 	DTFL_T_END
