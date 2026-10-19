@@ -22,8 +22,9 @@ Version 0.1.0 (unreleased)
 
 	Known limitation in this release, tracked in
 	dev/P15-measurements.md: performance behind the Rust originals,
-	about 8 times slower on the arrange benchmark and about 29 times
-	slower on count throughput after a first optimisation pass, the
-	structural cost of the fidelity-first record and container
-	decisions.  Closing it to the 1.5x goal is the main item before a
-	1.0 release.
+	about 5.7 times slower on count throughput and 7.3 times slower on
+	the arrange benchmark (same host, 25 s runs).  Most of the earlier
+	gap was port bugs that kept arranged traces from ever compacting,
+	now fixed; dev/perf-investigation.md estimates 1.5 to 2.5x of Rust
+	is reachable without changing the record or container design.
+	Meeting the 1.5x goal is the main item before a 1.0 release.

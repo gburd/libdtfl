@@ -108,18 +108,19 @@ binding definition of done and `tests/dist/test_completion.sh` enforces it.
 
 One substantive item is tracked honestly rather than hidden:
 
-* **Performance.** The port is correct but not yet performance-competitive.
-  After a first optimisation pass it runs about 8 times slower than the Rust
-  originals on the `arrange` benchmark and about 29 times slower on `count`
-  throughput, measured against the pinned Rust on the same host.  The
-  residual is the structural cost of the fidelity-first record and container
-  decisions (ADR-0001, ADR-0002): byte-span records with separate time and
-  diff columns, and a byte-arena trie rather than inline typed tuples and a
-  columnar trie.  Closing it to the 1.5x goal would require undoing those
-  decisions.  See `dev/P15-measurements.md`.
+* **Performance.** The port is correct but slower than the Rust originals:
+  on the pinned `arrange` benchmark, same host, 25 s runs, about 5.7 times
+  slower on `count` throughput and 7.3 times slower on the `arrange` arm.
+  The C port executes about 5 to 8 times the instructions per record at the
+  same IPC.  An investigation (`dev/perf-investigation.md`) found most of
+  the earlier, larger gap was port bugs, now fixed, and attributes the rest
+  to row-at-a-time engineering a faithful port can improve; a prototype
+  reached about 3.3x on count and 4.0x on arrange, and 1.5 to 2.5x looks
+  reachable without undoing the record and container decisions (ADR-0001,
+  ADR-0002).  See `dev/P15-measurements.md`.
 
-A `1.0` release requires this closed or a decision to relax the goal; a `0.y`
-release ships with it documented.
+A `1.0` release requires the 1.5x goal met or relaxed; a `0.y` release ships
+with the gap documented.
 
 ## Documentation
 

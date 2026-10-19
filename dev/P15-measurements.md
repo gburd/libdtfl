@@ -198,3 +198,47 @@ configure --enable-columnar CFLAGS="-O2 -g"   # columnar, separate build dir
 taskset -c 3 bench/experiments/arrange 100000 100000 1000 count 5
 taskset -c 3 bench/experiments/arrange 100000 100000 1000 arrange 5
 ```
+
+## After the compaction fixes (2026-10-18)
+
+The numbers above were all taken on a build where no arranged trace ever
+merged: `arrange_core` and reduce's `arrange_by_key` kept a reader that
+nothing advanced, so the spine held every batch until shutdown and each
+seek walked all of them (`dev/perf-investigation.md`).  Count throughput
+therefore fell with run length, and the 5 s window hid how far.  The
+fixes (merge `576519e`: the reader moved into the Arranged as upstream
+does, advance_upper in count/threshold/join/reduce, the weak trace
+writer) and the bench now matching upstream (probe the batch stream, run
+25 s) change the picture.
+
+Measured on `meh` (Xeon E5-2697 v2, schedutil, frequency not pinned),
+release `-O2 -g`, `taskset -c 3`, 25 s closed loop, keys = recs = 100000,
+rate = 1000, Rust rebuilt from the pin on the same host; medians:
+
+| arm (25 s)         | C before fixes | C after fixes | Rust      | after: C / Rust |
+|--------------------|----------------|---------------|-----------|-----------------|
+| count THROUGHPUT   |     12,200     |   115,457     |   655,738 | 5.7x slower     |
+| arrange THROUGHPUT |  (not equivalent; see below) | 421,977 | 3,066,834 | 7.3x slower |
+
+Instructions per record (perf stat, user mode, whole run over throughput
+records) agree with the ratios: count 22,900 for C against 4,400 for
+Rust (5.2x); arrange 6,400 against 810 (8.0x), at similar IPC (2.2 for C,
+2.0 to 2.1 for Rust).  So the residual is instruction count, not memory
+behaviour.
+
+"Before" for arrange is not comparable: the old arm probed an
+as_collection re-emit and its trace grew to 3 GB at 25 s.
+
+Peak RSS at 25 s, arrange arm: about 14 MB after the fixes, against 3.0
+GB before (floki).
+
+The same binaries are 4 to 5 times faster on a laptop-class Core Ultra 7
+258V (floki: count about 600K, arrange about 2.2M rec/s), so only
+same-host ratios are meaningful.
+
+What this replaces: the "13 to 24x" and "8x arrange / 29x count" figures
+and the claim that the residual is structural to D1/D2.  Most of that
+gap was the port bugs.  The investigation's prototype also inlined two
+comparisons and reached about 3.3x on count and 4.0x on arrange; those
+changes are not merged yet, and it estimates that 1.5 to 2.5x of Rust is
+reachable while keeping D1 and D2.

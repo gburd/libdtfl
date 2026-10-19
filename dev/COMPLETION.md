@@ -237,41 +237,25 @@ Verification (fidelity against real Rust) -- a release requirement
 [x] differential fuzz oracle (Hegel vs C model, anchored to Rust-seeded
         fixtures)
 [x] every upstream #[test] resolved (test-ledger all done/subsumed/
-        deferred/excluded, 0 todo/wip): 110 done, 23 subsumed (covered by
-        another target), 21 deferred (need a feature not yet ported, each
-        with a reason), 9 excluded (no C analog).
-[~] the P15 fuzz campaign and the performance parity table (measured
-        2026-10-15, re-measured and improved same day, dev/P15-
-        measurements.md).  Fuzz campaign DONE: 24 property suites at
-        10000 cases each (~230000 cases) under ASan, zero violations /
-        crashes / leaks.  Parity: a first optimisation pass (memcmp fast
-        path for memcmp-ordered composite types, bulk batch-build copies,
-        inlined trace seek) cut the gap from the originally reported ~13
-        to 24x to about 8x on arrange and ~29x on count throughput
-        (the earlier figure was partly a benchmark-argument-order
-        mismeasurement, corrected here).  Still outside the 1.5x target.
-        The residual is the STRUCTURAL cost of the D1/D2 fidelity
-        decisions: byte-span records with separate time/diff columns and
-        a byte-arena trie, versus Rust's inline typed tuples and a
-        columnar trie.  The non-fidelity columnar layout was then built
-        and measured (feat/columnar-experiment, merged; --enable-columnar,
-        off by default; dev/columnar-experiment.md): a flat stride column
-        for fixed-width memcmp-ordered keys gives 1.28x on count
-        throughput (gap 22x -> 17x) and nothing on arrange, with
-        byte-identical results.  1.5x is NOT reachable by it, and Amdahl
-        says it cannot be: the key seek is ~74% of count, so even a free
-        seek caps count at ~3.85x (gap -> ~5.8x), and the residual is
-        structural D1/D2 cost spread across the whole pipeline
-        (allocation, copying, cursor/trie walk, output construction), not
-        concentrated where one representation change removes it.  DECISION
-        RECORDED: the 1.5x goal is not achievable for a fidelity-first
-        port without becoming a different library (inline typed records
-        undoing D1, a family of columnar containers undoing D2, and
-        abandoning the literal trace port).  The columnar path stays a
-        flag-gated, default-off experiment that documents the cost with
-        numbers; the shipped library stays the faithful single-container
-        port.  This item is resolved as a recorded decision, not open
-        work.
+        deferred/excluded, 0 todo/wip).  Counts are in the ledger;
+        tests/dist/test_completion.sh prints them.
+[ ] the P15 performance parity goal (within 1.5x of Rust).  Fuzz
+        campaign DONE (24 property suites at 10000 cases each, ~230000
+        cases, ASan, zero violations).  Parity: NOT MET, and the earlier
+        "decision" that it cannot be met while keeping D1/D2 is WITHDRAWN.
+        That conclusion (and the columnar experiment's Amdahl argument)
+        rested on measurements of a trace that never compacted: arrange
+        kept a reader nothing advanced, so every seek walked every batch.
+        With that and its follow-ups fixed (merge 576519e;
+        dev/perf-investigation.md), same host, 25 s: count 5.7x and arrange
+        7.3x slower than Rust, at 5 to 8x Rust's instructions per record
+        and the same IPC.  The investigation's prototype reached about
+        3.3x / 4.0x with two inlining changes and estimates 1.5 to 2.5x is
+        reachable keeping D1/D2.  OPEN: the row-at-a-time engineering
+        fixes it ranks (inline comparators, the consolidator's index sort,
+        the merge loop, chunk recycling, diff callbacks), each measured on
+        meh, then a re-measurement.  dev/P15-measurements.md has the
+        numbers.
 
 Deferred-with-reason items that MUST still be finished before 1.0
 ----------------------------------------------------------------

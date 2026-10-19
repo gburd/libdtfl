@@ -1,5 +1,15 @@
 # Columnar layout experiment: can it reach 1.5x parity?
 
+**Correction (2026-10-18).**  The measurements and the Amdahl argument
+below were taken on a build in which no arranged trace ever merged
+(`arrange_core` kept a reader that nothing advanced; see
+`dev/perf-investigation.md`).  Every key seek therefore walked tens of
+unmerged batches, which is why the seek looked like 74% of count.  With
+that fixed the seek is about a fifth of count, so the columnar key is
+worth roughly 1.15 to 1.2x (an estimate, not re-measured), and the
+conclusion that 1.5x is unreachable without undoing D1/D2 does not hold.
+The flag and its code are unchanged; read the numbers below as history.
+
 Recorded 2026-10-15 on `meh` (Linux x86_64, gcc 14.4.0, 24 cores).
 
 This document answers a specific question: the port is about 8x slower
