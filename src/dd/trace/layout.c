@@ -90,6 +90,29 @@ slice_less_raw(const void *a, size_t alen, const void *b, size_t blen)
 	return __dtfl_cmp_bytes(a, alen, b, blen) < 0;
 }
 
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+/*
+ * value(i) < key for a memcmp-ordered type, `kv` being the 8-byte key as a
+ * big-endian integer.  An 8-byte value compares as one integer; any other
+ * length falls back to cmp_raw (memcmp over the common prefix, then length).
+ */
+static inline bool
+less8(const unsigned char *a, const size_t *o, size_t i, uint64_t kv,
+    const void *key)
+{
+	size_t lo = o[i], len = o[i + 1] - lo;
+	uint64_t x;
+
+	if (DTFL_UNLIKELY(len != 8))
+		return slice_less_raw(a + lo, len, key, 8);
+	memcpy(&x, a + lo, sizeof x);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	x = __builtin_bswap64(x);
+#endif
+	return x < kv;
+}
+#endif
+
 #ifdef DTFL_COLUMNAR
 /*
  * Big-endian loads for the columnar fast path.  Keys are stored big-endian
@@ -176,19 +199,78 @@ slices_advance_col(const __dtfl_slices *s, size_t start, size_t end,
 }
 #endif /* DTFL_COLUMNAR */
 
+/*
+ * The search shape shared by every predicate below: an exponential search
+ * past `small_limit`, else a short linear scan.  The scan stops at the
+ * first false, where upstream's `(start..limit).filter(..).count()` keeps
+ * testing; the count is the same, because the predicate stays false once
+ * false (the property `advance` documents and relies on).
+ */
+#define SLICES_ADVANCE_BODY(LESS)					\
+	do {								\
+		const size_t small_limit = 8;				\
+		size_t index, step;					\
+									\
+		if (end > start + small_limit && LESS(start + small_limit)) { \
+			index = small_limit + 1;			\
+			if (start + index < end && LESS(start + index)) { \
+				step = 1;				\
+				while (start + index + step < end &&	\
+				    LESS(start + index + step)) {	\
+					index += step;			\
+					step <<= 1;			\
+				}					\
+				step >>= 1;				\
+				while (step > 0) {			\
+					if (start + index + step < end && \
+					    LESS(start + index + step))	\
+						index += step;		\
+					step >>= 1;			\
+				}					\
+				index += 1;				\
+			}						\
+			return index;					\
+		} else {						\
+			size_t limit = DTFL_MIN(end, start + small_limit), i; \
+									\
+			for (i = start; i < limit && LESS(i); i++)	\
+				;					\
+			return i - start;				\
+		}							\
+	} while (0)
+
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+/*
+ * advance over arena+offsets values of a memcmp-ordered type for an 8-byte
+ * key: the key is loaded and byte-swapped once, and each probe compares an
+ * 8-byte value by one load.  A value of another length takes the general
+ * memcmp-then-length compare, so the result is cmp_raw's in every case.
+ */
+static size_t
+slices_advance_raw8(const __dtfl_slices *s, size_t start, size_t end,
+    const void *key)
+{
+	const size_t *o = (const size_t *)(void *)s->offs.data;
+	const unsigned char *a = s->arena.data;
+	uint64_t kv;
+
+	DTFL_ASSERT(s->stride == 0);
+	memcpy(&kv, key, sizeof kv);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	kv = __builtin_bswap64(kv);
+#endif
+#define LESS8(i) less8(a, o, (i), kv, key)
+	SLICES_ADVANCE_BODY(LESS8);
+#undef LESS8
+}
+#endif
+
 size_t
 __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
     size_t end, const void *key, size_t klen)
 {
-	const size_t small_limit = 8;
-	size_t index, step, len;
+	size_t len;
 	const void *v;
-	/*
-	 * A memcmp-ordered type (cmp == NULL) compares by cmp_raw: memcmp
-	 * over the common prefix, then by length.  Inline it so the hot seek
-	 * loop skips the dtfl_type_cmp dispatch; the result is identical.
-	 */
-	const bool raw = t->cmp == NULL;
 
 #ifdef DTFL_COLUMNAR
 	if (s->stride != 0) {
@@ -196,41 +278,27 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 		return slices_advance_col(s, start, end, key);
 	}
 #endif
-
-#define LESS(i)								\
-	(v = __dtfl_slices_get(s, (i), &len),				\
-	    raw ? slice_less_raw(v, len, key, klen)			\
-		: __dtfl_type_cmp(t, v, len, key, klen) < 0)
-
-	if (end > start + small_limit && LESS(start + small_limit)) {
-		index = small_limit + 1;
-		if (start + index < end && LESS(start + index)) {
-			step = 1;
-			while (start + index + step < end &&
-			    LESS(start + index + step)) {
-				index += step;
-				step <<= 1;
-			}
-			step >>= 1;
-			while (step > 0) {
-				if (start + index + step < end &&
-				    LESS(start + index + step))
-					index += step;
-				step >>= 1;
-			}
-			index += 1;
-		}
-		return index;
-	} else {
-		size_t limit = DTFL_MIN(end, start + small_limit), i, count = 0;
-
-		for (i = start; i < limit; i++) {
-			if (LESS(i))
-				count++;
-		}
-		return count;
+	/*
+	 * A memcmp-ordered type (cmp == NULL) compares by cmp_raw: memcmp
+	 * over the common prefix, then by length.  The 8-byte key case is
+	 * the hot one (u64 keys); both paths give cmp_raw's answer.
+	 */
+	if (t->cmp == NULL) {
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+		/* stride is 0 here: the columnar path returned above. */
+		if (klen == 8)
+			return slices_advance_raw8(s, start, end, key);
+#endif
+#define LESS_RAW(i)							\
+	(v = __dtfl_slices_get(s, (i), &len), slice_less_raw(v, len, key, klen))
+		SLICES_ADVANCE_BODY(LESS_RAW);
+#undef LESS_RAW
 	}
-#undef LESS
+#define LESS_CMP(i)							\
+	(v = __dtfl_slices_get(s, (i), &len),				\
+	    __dtfl_type_cmp(t, v, len, key, klen) < 0)
+	SLICES_ADVANCE_BODY(LESS_CMP);
+#undef LESS_CMP
 }
 
 /* ------------------------------------------------------------------ */
