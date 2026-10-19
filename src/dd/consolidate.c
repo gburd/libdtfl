@@ -228,13 +228,16 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 
 /*
  * timely container::buffer::default_capacity::<(D, T, R)>(): the rows
- * that fit in BUFFER_SIZE_BYTES.  A variable-length record counts as
- * 24 bytes, the size of the String or Vec that holds it in Rust.
+ * that fit in BUFFER_SIZE_BYTES.  A record of constant width counts as
+ * that width, as size_of does (so (u64, ()) is 8 bytes, the unit adding
+ * nothing); a variable-length record counts as 24 bytes, the size of the
+ * String or Vec that holds it in Rust.
  */
 static size_t
 default_capacity(const dtfl_type *rt, unsigned tw, size_t dw)
 {
-	size_t size = (rt->fixed_size != 0 ? rt->fixed_size : 24) +
+	size_t w = __dtfl_type_const_width(rt);
+	size_t size = (w != SIZE_MAX ? w : 24) +
 	    (size_t)tw * sizeof(uint64_t) + dw;
 
 	if (size == 0)

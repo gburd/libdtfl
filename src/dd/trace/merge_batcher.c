@@ -55,9 +55,11 @@ __dtfl_merge_batcher_init(__dtfl_merge_batcher *mb, const dtfl_type *rt,
 	/*
 	 * VecMerger::target_capacity: default_capacity rounded up to a power
 	 * of two.  default_capacity is the rows that fit in BUFFER_SIZE_BYTES
-	 * (a variable record counts as 24 bytes, as a Rust String or Vec).
+	 * (a constant-width record counts as its width, as size_of does; a
+	 * variable one as 24 bytes, as a Rust String or Vec).
 	 */
-	size = (rt->fixed_size != 0 ? rt->fixed_size : 24) +
+	size = __dtfl_type_const_width(rt);
+	size = (size != SIZE_MAX ? size : 24) +
 	    (size_t)mb->tw * sizeof(uint64_t) + mb->dw;
 	if (size == 0)
 		mb->cap = DTFL_BUFFER_SIZE_BYTES;
