@@ -20,10 +20,7 @@ Version 0.1.0 (unreleased)
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
-	Known limitation in this release: performance behind the Rust
-	originals,
-	about 2.6 times slower on count throughput and 2.7 times slower on
-	the arrange benchmark (same host, 25 s runs).  Most of the earlier
-	gap was port bugs that kept arranged traces from ever compacting,
-	now fixed, and two optimisation passes closed most of the rest.
-	Meeting the 1.5x goal is the main item before a 1.0 release.
+	Performance within 1.5 times of the Rust originals on the pinned
+	arrange benchmark (same host, 25 s runs): 1.41 times slower on
+	count throughput and 1.34 times slower on the arrange arm, at
+	1.48 and 1.46 times the instructions per record.

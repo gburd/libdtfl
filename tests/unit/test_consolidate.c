@@ -396,17 +396,21 @@ user_memcmp(const dtfl_type *t, const void *a, size_t alen, const void *b,
  * bytes, at most one time word) must produce the same batch, byte for
  * byte, as the index sort, which a user cmp of the same order forces.
  * Widths 0, 3 and 8 and tw 0, 1 and 2 (2 takes the index sort in both).
+ * 40 rows take the packed merge sort and 3000 the packed radix sort; the
+ * last rep draws times over all 64 bits, so the radix sort passes over
+ * an even number of bytes there and an odd number elsewhere.
  */
 DTFL_TEST(consolidate_packed_matches_index_sort)
 {
-	static const size_t widths[] = { 0, 3, 8 };
+	static const size_t widths[] = { 0, 3, 8 }, sizes[] = { 40, 3000 };
 	dtfl_type slow = *dtfl_type_u64();
 	uint64_t x = 0x9e3779b97f4a7c15u;
-	size_t wi, i, n = 3000;
+	size_t wi, ni, i, n;
 	unsigned tw, rep;
 
 	(void)params; (void)data;
 	slow.cmp = user_memcmp;
+	for (ni = 0; ni < 2; ni++)
 	for (rep = 0; rep < 4; rep++)
 	for (wi = 0; wi < 3; wi++)
 	for (tw = 0; tw <= 2; tw++) {
@@ -418,6 +422,7 @@ DTFL_TEST(consolidate_packed_matches_index_sort)
 		int64_t r;
 
 		slow.fixed_size = w;
+		n = sizes[ni];
 		for (i = 0; i < n; i++) {
 			size_t j;
 
@@ -427,7 +432,7 @@ DTFL_TEST(consolidate_packed_matches_index_sort)
 				rec[j] = (unsigned char)(x % (rep + 2));
 			}
 			x ^= x << 13, x ^= x >> 7, x ^= x << 17;
-			t[0] = x % 3;
+			t[0] = rep == 3 ? x : x % 3;
 			t[1] = (x >> 8) % 2;
 			r = (int64_t)((x >> 16) % 5) - 2;
 			__dtfl_batch_push(a, rec, w, t, &r);

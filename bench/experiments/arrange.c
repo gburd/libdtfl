@@ -21,8 +21,11 @@
  * so arrange is the lowest arm that exercises the shuffle.)
  *
  * A benchmark, not a test: not run by make check.  It uses the public
- * API and a deterministic xorshift RNG (upstream uses a seeded StdRng),
- * so a run is reproducible given the arguments.  Upstream also has an
+ * API and deterministic xorshift RNGs (upstream uses seeded StdRngs), so
+ * a run is reproducible given the arguments.  As upstream, additions and
+ * deletions draw from two generators seeded alike, so each deletion
+ * removes the oldest live record and the collection stays a window of
+ * `recs` records.  Upstream also has an
  * open-loop mode; this port runs the closed loop for a bounded window,
  * 25 s by default as upstream (override with the 5th positional).
  *
@@ -93,16 +96,19 @@ build(dtfl_scope *scope, void *arg)
 	dtfl_diff_free(i64);
 }
 
-/* A deterministic xorshift64* RNG (upstream seeds a StdRng per worker). */
-static uint64_t rng_state = 0x9e3779b97f4a7c15ULL;
+/*
+ * A deterministic xorshift64* RNG.  Upstream seeds two StdRngs per worker
+ * with the same seed: rng1 for additions, rng2 for deletions.
+ */
+#define RNG_SEED 0x9e3779b97f4a7c15ULL
 
 static uint64_t
-next_key(uint64_t keys)
+next_key(uint64_t *state, uint64_t keys)
 {
-	rng_state ^= rng_state >> 12;
-	rng_state ^= rng_state << 25;
-	rng_state ^= rng_state >> 27;
-	return (rng_state * 0x2545F4914F6CDD1DULL) % keys;
+	*state ^= *state >> 12;
+	*state ^= *state << 25;
+	*state ^= *state >> 27;
+	return (*state * 0x2545F4914F6CDD1DULL) % keys;
 }
 
 static double
@@ -130,7 +136,7 @@ worker(dtfl_worker *w, void *arg)
 	    dtfl_type_unit());
 	bench_ctx c;
 	struct timespec t0;
-	uint64_t i, t, wave;
+	uint64_t i, t, wave, rng1 = RNG_SEED, rng2 = RNG_SEED;
 	double load_s, run_s;
 
 	c.input = dtfl_input_session_new(rec, i64);
@@ -143,7 +149,7 @@ worker(dtfl_worker *w, void *arg)
 	for (i = 0; i < cfg->recs; i++) {
 		unsigned char buf[8];
 
-		dtfl_put_u64(buf, next_key(cfg->keys));
+		dtfl_put_u64(buf, next_key(&rng1, cfg->keys));
 		dtfl_input_session_insert(c.input, buf, sizeof buf);
 	}
 	t = 1;
@@ -166,10 +172,10 @@ worker(dtfl_worker *w, void *arg)
 
 				t = wave * cfg->rate + round;
 				dtfl_input_session_advance_to(c.input, &t);
-				dtfl_put_u64(buf, next_key(cfg->keys));
+				dtfl_put_u64(buf, next_key(&rng1, cfg->keys));
 				dtfl_input_session_insert(c.input, buf,
 				    sizeof buf);
-				dtfl_put_u64(buf, next_key(cfg->keys));
+				dtfl_put_u64(buf, next_key(&rng2, cfg->keys));
 				dtfl_input_session_remove(c.input, buf,
 				    sizeof buf);
 			}

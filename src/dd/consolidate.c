@@ -110,6 +110,60 @@ msort_packed(packed_row *v, packed_row *tmp, size_t n)
 }
 
 /*
+ * Stable LSD radix sort of v[0..n) by (k, t), using tmp[0..n) as scratch.
+ * Stability gives the order msort_packed gives: by (k, t), ties in input
+ * order.  Only the bytes that differ between some two rows are passed
+ * over, least significant first (t's bytes, then k's), so a buffer whose
+ * keys and times span a few low bytes sorts in a few passes.  n must fit
+ * the 32-bit bucket counts.
+ */
+static void
+radix_packed(packed_row *v, packed_row *tmp, size_t n)
+{
+	packed_row *src = v, *dst = tmp, *sw;
+	uint64_t dk = 0, dt = 0;
+	uint32_t count[256];
+	unsigned pass;
+	size_t i;
+
+	DTFL_ASSERT(n <= UINT32_MAX);
+	for (i = 1; i < n; i++) {
+		dk |= v[i].k ^ v[0].k;
+		dt |= v[i].t ^ v[0].t;
+	}
+	for (pass = 0; pass < 16; pass++) {
+		bool on_t = pass < 8;
+		unsigned shift = 8 * (pass & 7), bkt;
+		uint32_t sum = 0, c;
+
+		if ((((on_t ? dt : dk) >> shift) & 0xff) == 0)
+			continue;
+		memset(count, 0, sizeof count);
+		for (i = 0; i < n; i++)
+			count[((on_t ? src[i].t : src[i].k) >> shift) & 0xff]++;
+		for (bkt = 0; bkt < 256; bkt++) {
+			c = count[bkt];
+			count[bkt] = sum;
+			sum += c;
+		}
+		for (i = 0; i < n; i++)
+			dst[count[((on_t ? src[i].t : src[i].k) >> shift) &
+			    0xff]++] = src[i];
+		sw = src;
+		src = dst;
+		dst = sw;
+	}
+	if (src != v)
+		memcpy(v, src, n * sizeof *v);
+}
+
+/*
+ * Below this many rows the merge sort beats the radix sort's fixed cost
+ * (a 256-bucket count per pass).
+ */
+#define RADIX_MIN_ROWS 64
+
+/*
  * The packed rows of b, sorted, when b admits the packed sort: a
  * memcmp-ordered record type, every record the same length of at most 8
  * bytes, and at most one time word.  A record left-aligned in a
@@ -139,13 +193,24 @@ sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
 			__dtfl_free(v);
 			return NULL;
 		}
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (len == 8) {
+			/* The big-endian load of all 8 bytes, as the loop builds. */
+			memcpy(&k, rec, 8);
+			k = __builtin_bswap64(k);
+		} else
+#endif
 		for (j = 0; j < len; j++)
 			k |= (uint64_t)rec[j] << (56 - 8 * j);
 		v[i].k = k;
 		v[i].t = b->tw != 0 ? __dtfl_batch_time(b, i)[0] : 0;
 		v[i].i = i;
 	}
-	msort_packed(v, v + n, n);
+	if (n >= RADIX_MIN_ROWS && n <= UINT32_MAX)
+		radix_packed(v, v + n, n);
+	else
+		msort_packed(v, v + n, n);
 	return v;
 }
 
@@ -162,6 +227,50 @@ push_folded(__dtfl_batch *out, const __dtfl_batch *b, size_t r,
 	rec = __dtfl_batch_rec(b, r, &len);
 	__dtfl_batch_push(out, rec, len, __dtfl_batch_time(b, r), accum);
 }
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+/*
+ * The fold of sorted packed rows when every record is 8 bytes, there is
+ * one time word and the diff is a 64-bit built-in integer: the same runs
+ * summed and zeros dropped as the general fold, written straight into
+ * out's columns (reserved for n rows).  The packed word is the record
+ * read big-endian, so storing it back big-endian restores the bytes.
+ */
+static void
+fold_packed_t1_int8(__dtfl_batch *out, const __dtfl_batch *b,
+    const packed_row *v, size_t n)
+{
+	unsigned char *ka = out->arena.data, *da = out->diffs.data;
+	size_t *offs = (size_t *)(void *)out->offs.data;
+	uint64_t *ta = (uint64_t *)(void *)out->times.data;
+	size_t i, k, m = 0;
+
+	DTFL_ASSERT(out->arena.len == 0 && __dtfl_batch_len(out) == 0);
+	for (i = 0; i < n; i = k) {
+		uint64_t acc, x, kb;
+
+		memcpy(&acc, __dtfl_batch_diff(b, v[i].i), 8);
+		for (k = i + 1; k < n && v[k].k == v[i].k && v[k].t == v[i].t;
+		    k++) {
+			memcpy(&x, __dtfl_batch_diff(b, v[k].i), 8);
+			acc += x;
+		}
+		if (acc == 0)
+			continue;
+		kb = __builtin_bswap64(v[i].k);
+		memcpy(ka + 8 * m, &kb, 8);
+		offs[m + 1] = 8 * (m + 1);
+		ta[m] = v[i].t;
+		memcpy(da + 8 * m, &acc, 8);
+		m++;
+	}
+	out->arena.len = 8 * m;
+	out->offs.len = m + 1;
+	out->times.len = m;
+	out->diffs.len = 8 * m;
+}
+#endif
 
 /*
  * consolidate_updates_slice_slow: sort, then accumulate each run of
@@ -187,6 +296,14 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 	out = __dtfl_batch_new(b->tw, b->dw);
 	__dtfl_batch_reserve(out, n, b->arena.len);
 	if ((v = sort_packed(b, rt)) != NULL) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (b->tw == 1 && b->arena.len == 8 * n &&
+		    __dtfl_diff_is_int64(dc)) {
+			fold_packed_t1_int8(out, b, v, n);
+			n = 0;	/* folded */
+		}
+#endif
 		for (i = 0; i < n; i = k) {
 			/* accum = sum of the diffs of rows v[i..k), all equal. */
 			if (b->dw != 0)
@@ -228,13 +345,18 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 
 /*
  * timely container::buffer::default_capacity::<(D, T, R)>(): the rows
- * that fit in BUFFER_SIZE_BYTES.  A variable-length record counts as
- * 24 bytes, the size of the String or Vec that holds it in Rust.
+ * that fit in BUFFER_SIZE_BYTES.  A record of constant width counts as
+ * that width, which is size_of for the unpadded tuples of the common
+ * cases (so (u64, ()) is 8 bytes, the unit adding nothing; Rust would pad
+ * (u32, u64) to 16 where this counts 12); a variable-length record
+ * counts as 24 bytes, the size of the String or Vec that holds it in
+ * Rust.
  */
 static size_t
 default_capacity(const dtfl_type *rt, unsigned tw, size_t dw)
 {
-	size_t size = (rt->fixed_size != 0 ? rt->fixed_size : 24) +
+	size_t w = __dtfl_type_const_width(rt);
+	size_t size = (w != SIZE_MAX ? w : 24) +
 	    (size_t)tw * sizeof(uint64_t) + dw;
 
 	if (size == 0)
@@ -254,6 +376,12 @@ __dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
 	c->current = __dtfl_batch_new(tw, (unsigned)dc->width);
 	__dtfl_vec_init(&c->outbound, sizeof(__dtfl_batch *));
 	c->cap = default_capacity(rt, tw, dc->width);
+	{
+		size_t w = __dtfl_type_const_width(rt);
+
+		__dtfl_batch_reserve(c->current, 2 * c->cap,
+		    w == SIZE_MAX ? 0 : 2 * c->cap * w);
+	}
 }
 
 /*
@@ -286,8 +414,12 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 		}
 		if (end == 0)
 			return;
+		/*
+		 * push_into keeps current's capacity at 2 * preferred, so the
+		 * buffer refills without growing.
+		 */
 		rest = __dtfl_batch_new(cur->tw, cur->dw);
-		__dtfl_batch_reserve(rest, n - end, (n - end) * avg);
+		__dtfl_batch_reserve(rest, 2 * c->cap, 2 * c->cap * avg);
 		__dtfl_batch_push_run(rest, cur, end, n - end);
 		replace_storage(cur, rest);
 	}

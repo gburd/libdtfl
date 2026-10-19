@@ -272,13 +272,22 @@ stash_updates(__dtfl_merger_ord *m, const __dtfl_ord_storage *src, size_t index)
 		 * One totally ordered word: advance_by is the meet (min) over
 		 * the frontier of the join (max) with each element, which is
 		 * what __dtfl_time_advance_by computes for this shape.
+		 *
+		 * The pushes of the whole run are staged at once: the times
+		 * are advanced into stash_t, and the diffs, contiguous in the
+		 * source, copied into stash_d as the per-update push would.
 		 */
 		const uint64_t *f = __dtfl_ac_base(since);
-		size_t nf = __dtfl_antichain_len(since), j;
+		const uint64_t *st = __dtfl_upds_time(&src->upds, lo);
+		size_t nf = __dtfl_antichain_len(since), j, n = hi - lo;
+		unsigned dw = m->staging.dw;
+		uint64_t *dt;
+		unsigned char *dd;
 
-		DTFL_DEBUG_ASSERT(tw == 1);
-		for (i = lo; i < hi; i++) {
-			uint64_t t = __dtfl_upds_time(&src->upds, i)[0], r;
+		DTFL_DEBUG_ASSERT(tw == 1 && m->staging.tw == 1);
+		dt = __dtfl_vec_push_n_uninit(&m->staging.stash_t, n);
+		for (i = 0; i < n; i++) {
+			uint64_t t = st[i], r;
 
 			if (nf != 0) {
 				r = DTFL_MAX(t, f[0]);
@@ -286,8 +295,21 @@ stash_updates(__dtfl_merger_ord *m, const __dtfl_ord_storage *src, size_t index)
 					r = DTFL_MIN(r, DTFL_MAX(t, f[j]));
 				t = r;
 			}
-			__dtfl_upds_builder_push(&m->staging, &t,
-			    __dtfl_upds_diff(&src->upds, i));
+			dt[i] = t;
+		}
+		if (dw == sizeof(uint64_t)) {
+			const unsigned char *sd = __dtfl_upds_diff(&src->upds,
+			    lo);
+
+			dd = __dtfl_vec_push_n_uninit(&m->staging.stash_d, n);
+			for (i = 0; i < n; i++)
+				memcpy(dd + 8 * i, sd + 8 * i, 8);
+		} else if (dw != 0) {
+			__dtfl_vec_push_n(&m->staging.stash_d,
+			    __dtfl_upds_diff(&src->upds, lo), n);
+		} else {
+			/* Width 0: one zero byte per update, as push stages. */
+			__dtfl_vec_push_n(&m->staging.stash_d, NULL, n);
 		}
 		return;
 	}

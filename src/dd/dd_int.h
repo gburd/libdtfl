@@ -115,6 +115,19 @@ struct __dtfl_diff_class {
  */
 const __dtfl_diff_class *__dtfl_diff_class_retain(const __dtfl_diff_class *c);
 
+/*
+ * True for a 64-bit built-in integer class (i64, u64, Wrapping<i64>),
+ * whose plus_equals is a wrapping 64-bit add and whose is_zero tests for
+ * 0, so a hot loop may do both inline on native uint64_t values.
+ */
+static inline bool
+__dtfl_diff_is_int64(const __dtfl_diff_class *dc)
+{
+	return dc->width == 8 && (dc->kind == DTFL_DIFF_KIND_SIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_UNSIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_WRAPPING);
+}
+
 /* A static built-in class; never freed. */
 const __dtfl_diff_class *__dtfl_diff_builtin(__dtfl_diff_id id);
 

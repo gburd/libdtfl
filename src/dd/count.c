@@ -84,6 +84,18 @@ acc_add(count_acc *a, const void *diff)
 {
 	if (a->idc->width == 0)
 		return;
+	if (__dtfl_diff_is_int64(a->idc)) {
+		/* plus_equals of a 64-bit built-in: a wrapping add. */
+		uint64_t x, y = 0;
+
+		memcpy(&x, diff, 8);
+		if (a->some)
+			memcpy(&y, a->val, 8);
+		x += y;
+		memcpy(a->val, &x, 8);
+		a->some = true;
+		return;
+	}
 	if (!a->some) {
 		memcpy(a->val, diff, a->idc->width);
 		a->some = true;
@@ -133,6 +145,14 @@ emit_count(count_scan *w, const uint64_t *time, bool positive)
 			c->odc->negate(c->odc, one);
 	}
 	dst = __dtfl_session_reserve(w->s, w->klen + vlen + tw + odw);
+	if (w->klen == 8 && vlen == 8 && tw == 8 && odw == 8) {
+		/* (u64 key, i64 count, u64 time, i64 diff): fixed copies. */
+		memcpy(dst, w->key, 8);
+		memcpy(dst + 8, valbuf, 8);
+		memcpy(dst + 16, time, 8);
+		memcpy(dst + 24, one, 8);
+		return;
+	}
 	memcpy(dst, w->key, w->klen);
 	memcpy(dst + w->klen, valbuf, vlen);
 	if (tw != 0)

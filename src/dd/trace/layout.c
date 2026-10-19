@@ -26,6 +26,7 @@ __dtfl_slices_init(__dtfl_slices *s)
 	size_t zero = 0;
 
 	s->stride = 0;
+	s->all8 = true;
 	__dtfl_vec_init(&s->arena, 1);
 	__dtfl_vec_init(&s->offs, sizeof(size_t));
 	__dtfl_vec_push(&s->offs, &zero);
@@ -44,6 +45,7 @@ __dtfl_slices_clear(__dtfl_slices *s)
 	size_t zero = 0;
 
 	__dtfl_vec_clear(&s->arena);
+	s->all8 = true;
 	if (s->stride == 0) {
 		__dtfl_vec_clear(&s->offs);
 		__dtfl_vec_push(&s->offs, &zero);
@@ -70,8 +72,11 @@ __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len)
 		/* Common case: an 8-byte key or value, stored as one word. */
 		memcpy(&x, p, sizeof x);
 		__dtfl_vec_push_8bytes(&s->arena, x);
-	} else if (len != 0)
-		__dtfl_vec_push_n(&s->arena, p, len);
+	} else {
+		s->all8 = false;
+		if (len != 0)
+			__dtfl_vec_push_n(&s->arena, p, len);
+	}
 	end = s->arena.len;
 	__dtfl_vec_push_size(&s->offs, end);
 }
@@ -89,6 +94,42 @@ slice_less_raw(const void *a, size_t alen, const void *b, size_t blen)
 {
 	return __dtfl_cmp_bytes(a, alen, b, blen) < 0;
 }
+
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+/*
+ * value(i) < key for a memcmp-ordered type, `kv` being the 8-byte key as a
+ * big-endian integer.  An 8-byte value compares as one integer; any other
+ * length falls back to cmp_raw (memcmp over the common prefix, then length).
+ */
+/* The 8 bytes at p as a big-endian integer. */
+static inline uint64_t
+load_be8(const unsigned char *p)
+{
+	uint64_t x;
+
+	memcpy(&x, p, sizeof x);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	x = __builtin_bswap64(x);
+#endif
+	return x;
+}
+
+static inline bool
+less8(const unsigned char *a, const size_t *o, size_t i, uint64_t kv,
+    const void *key)
+{
+	size_t lo = o[i], len = o[i + 1] - lo;
+	uint64_t x;
+
+	if (DTFL_UNLIKELY(len != 8))
+		return slice_less_raw(a + lo, len, key, 8);
+	memcpy(&x, a + lo, sizeof x);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	x = __builtin_bswap64(x);
+#endif
+	return x < kv;
+}
+#endif
 
 #ifdef DTFL_COLUMNAR
 /*
@@ -176,19 +217,101 @@ slices_advance_col(const __dtfl_slices *s, size_t start, size_t end,
 }
 #endif /* DTFL_COLUMNAR */
 
+/*
+ * The search shape shared by every predicate below: an exponential search
+ * past `small_limit`, else a short linear scan.  The scan stops at the
+ * first false, where upstream's `(start..limit).filter(..).count()` keeps
+ * testing; the count is the same, because the predicate stays false once
+ * false (the property `advance` documents and relies on).  A user cmp
+ * inconsistent with the stored order breaks that contract either way;
+ * the two counts may then differ.
+ */
+#define SLICES_ADVANCE_BODY(LESS)					\
+	do {								\
+		const size_t small_limit = 8;				\
+		size_t index, step;					\
+									\
+		if (end > start + small_limit && LESS(start + small_limit)) { \
+			index = small_limit + 1;			\
+			if (start + index < end && LESS(start + index)) { \
+				step = 1;				\
+				while (start + index + step < end &&	\
+				    LESS(start + index + step)) {	\
+					index += step;			\
+					step <<= 1;			\
+				}					\
+				step >>= 1;				\
+				while (step > 0) {			\
+					if (start + index + step < end && \
+					    LESS(start + index + step))	\
+						index += step;		\
+					step >>= 1;			\
+				}					\
+				index += 1;				\
+			}						\
+			return index;					\
+		} else {						\
+			size_t limit = DTFL_MIN(end, start + small_limit), i; \
+									\
+			for (i = start; i < limit && LESS(i); i++)	\
+				;					\
+			return i - start;				\
+		}							\
+	} while (0)
+
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+/*
+ * advance over arena+offsets values of a memcmp-ordered type for an 8-byte
+ * key: the key is loaded and byte-swapped once, and each probe compares an
+ * 8-byte value by one load.  A value of another length takes the general
+ * memcmp-then-length compare, so the result is cmp_raw's in every case.
+ */
+static size_t
+slices_advance_raw8(const __dtfl_slices *s, size_t start, size_t end,
+    const void *key)
+{
+	const size_t *o = (const size_t *)(void *)s->offs.data;
+	const unsigned char *a = s->arena.data;
+	uint64_t kv;
+
+	DTFL_ASSERT(s->stride == 0);
+	memcpy(&kv, key, sizeof kv);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	kv = __builtin_bswap64(kv);
+#endif
+#define LESS8(i) less8(a, o, (i), kv, key)
+	SLICES_ADVANCE_BODY(LESS8);
+#undef LESS8
+}
+
+/*
+ * slices_advance_raw8 when every value is 8 bytes (all8): value i is at
+ * arena + 8 * i, so a probe is one load, a byte swap and a compare.
+ */
+static size_t
+slices_advance_all8(const __dtfl_slices *s, size_t start, size_t end,
+    const void *key)
+{
+	const unsigned char *a = s->arena.data;
+	uint64_t kv;
+
+	DTFL_ASSERT(s->stride == 0 && s->all8);
+	memcpy(&kv, key, sizeof kv);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	kv = __builtin_bswap64(kv);
+#endif
+#define LESS_ALL8(i) (load_be8(a + 8 * (i)) < kv)
+	SLICES_ADVANCE_BODY(LESS_ALL8);
+#undef LESS_ALL8
+}
+#endif
+
 size_t
 __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
     size_t end, const void *key, size_t klen)
 {
-	const size_t small_limit = 8;
-	size_t index, step, len;
+	size_t len;
 	const void *v;
-	/*
-	 * A memcmp-ordered type (cmp == NULL) compares by cmp_raw: memcmp
-	 * over the common prefix, then by length.  Inline it so the hot seek
-	 * loop skips the dtfl_type_cmp dispatch; the result is identical.
-	 */
-	const bool raw = t->cmp == NULL;
 
 #ifdef DTFL_COLUMNAR
 	if (s->stride != 0) {
@@ -196,41 +319,29 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 		return slices_advance_col(s, start, end, key);
 	}
 #endif
-
-#define LESS(i)								\
-	(v = __dtfl_slices_get(s, (i), &len),				\
-	    raw ? slice_less_raw(v, len, key, klen)			\
-		: __dtfl_type_cmp(t, v, len, key, klen) < 0)
-
-	if (end > start + small_limit && LESS(start + small_limit)) {
-		index = small_limit + 1;
-		if (start + index < end && LESS(start + index)) {
-			step = 1;
-			while (start + index + step < end &&
-			    LESS(start + index + step)) {
-				index += step;
-				step <<= 1;
-			}
-			step >>= 1;
-			while (step > 0) {
-				if (start + index + step < end &&
-				    LESS(start + index + step))
-					index += step;
-				step >>= 1;
-			}
-			index += 1;
-		}
-		return index;
-	} else {
-		size_t limit = DTFL_MIN(end, start + small_limit), i, count = 0;
-
-		for (i = start; i < limit; i++) {
-			if (LESS(i))
-				count++;
-		}
-		return count;
+	/*
+	 * A memcmp-ordered type (cmp == NULL) compares by cmp_raw: memcmp
+	 * over the common prefix, then by length.  The 8-byte key case is
+	 * the hot one (u64 keys); both paths give cmp_raw's answer.
+	 */
+	if (t->cmp == NULL) {
+#if defined(__BYTE_ORDER__) && (defined(__GNUC__) || defined(__clang__))
+		/* stride is 0 here: the columnar path returned above. */
+		if (klen == 8 && s->all8)
+			return slices_advance_all8(s, start, end, key);
+		if (klen == 8)
+			return slices_advance_raw8(s, start, end, key);
+#endif
+#define LESS_RAW(i)							\
+	(v = __dtfl_slices_get(s, (i), &len), slice_less_raw(v, len, key, klen))
+		SLICES_ADVANCE_BODY(LESS_RAW);
+#undef LESS_RAW
 	}
-#undef LESS
+#define LESS_CMP(i)							\
+	(v = __dtfl_slices_get(s, (i), &len),				\
+	    __dtfl_type_cmp(t, v, len, key, klen) < 0)
+	SLICES_ADVANCE_BODY(LESS_CMP);
+#undef LESS_CMP
 }
 
 /* ------------------------------------------------------------------ */
@@ -311,25 +422,6 @@ __dtfl_upds_free(__dtfl_upds *u)
 	__dtfl_vec_free(&u->diffs);
 }
 
-/*
- * Upds::bounds: equal lower and upper encodes "singleton; just before
- * here", so return (lower - 1, upper) in that case.  lower must then be
- * greater than zero, as upstream asserts.
- */
-void
-__dtfl_upds_bounds(const __dtfl_upds *u, size_t index, size_t *lo, size_t *hi)
-{
-	size_t lower = __dtfl_offsets_at(&u->offs, index);
-	size_t upper = __dtfl_offsets_at(&u->offs, index + 1);
-
-	if (lower == upper) {
-		DTFL_ASSERT(lower > 0);
-		lower -= 1;
-	}
-	*lo = lower;
-	*hi = upper;
-}
-
 /* The last stored update time, for the singleton comparison. */
 static const uint64_t *
 upds_last_time(const __dtfl_upds *u)
@@ -401,6 +493,14 @@ __dtfl_upds_builder_push(__dtfl_upds_builder *b, const uint64_t *time,
 		if (b->tw != 0)
 			memcpy(slot, time, (size_t)b->tw * sizeof(uint64_t));
 	}
+	if (b->dw == sizeof(uint64_t)) {
+		uint64_t x;
+
+		memcpy(&x, diff, sizeof x);
+		__dtfl_vec_push_u64(&b->stash_d, x);
+		return;
+	}
+	/* Width 0 stages one zero byte (the stash's minimum element). */
 	slot = __dtfl_vec_push(&b->stash_d, NULL);
 	cell_copy(slot, diff, b->dw);
 }
@@ -452,6 +552,99 @@ stash_clear(__dtfl_upds_builder *b)
 }
 
 /*
+ * True for a 64-bit built-in integer diff (i64, u64, Wrapping<i64>): its
+ * plus_equals is a wrapping 64-bit add and its is_zero tests for 0, so
+ * seal_t1_int8 can do both inline.
+ */
+static bool
+diff_is_int8(const __dtfl_diff_class *dc)
+{
+	return dc->width == 8 && (dc->kind == DTFL_DIFF_KIND_SIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_UNSIGNED ||
+	    dc->kind == DTFL_DIFF_KIND_WRAPPING);
+}
+
+/*
+ * __dtfl_upds_builder_seal for one-word times and a 64-bit integer diff:
+ * the same steps (stable sort by time, consolidate equal times, drop
+ * zeros, the singleton optimization, append) on plain uint64_t values,
+ * without the per-update width dispatch and diff-class calls.  Values are
+ * native-endian in both stashes, as in the general path.
+ */
+static bool
+seal_t1_int8(__dtfl_upds_builder *b, __dtfl_upds *u, size_t n)
+{
+	uint64_t *t = (uint64_t *)(void *)b->stash_t.data;
+	unsigned char *d = b->stash_d.data;
+	size_t i, k, out = 0;
+
+	for (i = 1; i < n && t[i - 1] <= t[i]; i++)
+		;
+	if (i < n) {
+		/* Stable insertion sort of (time, diff) pairs by time. */
+		for (i = 1; i < n; i++) {
+			uint64_t tk = t[i], dk;
+			size_t j = i;
+
+			memcpy(&dk, d + 8 * i, 8);
+			for (; j > 0 && t[j - 1] > tk; j--) {
+				t[j] = t[j - 1];
+				memmove(d + 8 * j, d + 8 * (j - 1), 8);
+			}
+			t[j] = tk;
+			memcpy(d + 8 * j, &dk, 8);
+		}
+	}
+
+	/* Consolidate equal-time runs in place, compacting to the front. */
+	for (i = 0; i < n; i = k) {
+		uint64_t acc, x;
+
+		memcpy(&acc, d + 8 * i, 8);
+		for (k = i + 1; k < n && t[k] == t[i]; k++) {
+			memcpy(&x, d + 8 * k, 8);
+			acc += x;
+		}
+		if (acc == 0)
+			continue;
+		t[out] = t[i];
+		memcpy(d + 8 * out, &acc, 8);
+		out++;
+	}
+	b->stash_t.len = 0;
+	b->stash_d.len = 0;
+	if (out == 0)
+		return false;
+
+	/* Singleton optimization: one survivor equal to the last update. */
+	if (out == 1 && u->nupds != 0 &&
+	    __dtfl_upds_time(u, u->nupds - 1)[0] == t[0] &&
+	    memcmp(__dtfl_upds_diff(u, u->nupds - 1), d, 8) == 0) {
+		b->total += 1;
+		__dtfl_vec_push_size(&u->offs.v, u->nupds);
+		return true;
+	}
+
+	/* Conventional: append the survivors. */
+	b->total += out;
+	__dtfl_vec_reserve(&u->times, out);
+	__dtfl_vec_reserve(&u->diffs, out);
+	if (out == 1) {
+		/* The usual single survivor: two fixed 8-byte stores. */
+		memcpy(u->times.data + u->times.len * 8, t, 8);
+		memcpy(u->diffs.data + u->diffs.len * 8, d, 8);
+	} else {
+		memcpy(u->times.data + u->times.len * 8, t, out * 8);
+		memcpy(u->diffs.data + u->diffs.len * 8, d, out * 8);
+	}
+	u->times.len += out;
+	u->diffs.len += out;
+	u->nupds += out;
+	__dtfl_vec_push_size(&u->offs.v, u->nupds);
+	return true;
+}
+
+/*
  * UpdsBuilder::seal: consolidate the stash by time, drop zero diffs, and
  * push the survivors into `u`.  The singleton optimization: a single
  * survivor equal to the last stored update is encoded by pushing an
@@ -471,6 +664,8 @@ __dtfl_upds_builder_seal(__dtfl_upds_builder *b, __dtfl_upds *u)
 
 	if (n == 0)
 		return false;
+	if (b->tw == 1 && u->tw == 1 && u->dw == 8 && diff_is_int8(b->dc))
+		return seal_t1_int8(b, u, n);
 
 	/*
 	 * Sort the stash by time (stable).  consolidate_slice only sorts when

@@ -132,24 +132,11 @@ __dtfl_cursor_init(__dtfl_cursor *c, const __dtfl_batch_ord *b)
 }
 
 bool
-__dtfl_cursor_key_valid(const __dtfl_cursor *c, const __dtfl_batch_ord *b)
-{
-	return c->key_cursor < __dtfl_slices_len(&b->storage.keys);
-}
-
-bool
 __dtfl_cursor_val_valid(const __dtfl_cursor *c, const __dtfl_batch_ord *b)
 {
 	if (b->storage.keyed)
 		return !c->val_stepped;
 	return c->val_cursor < val_upper(c, b);
-}
-
-const void *
-__dtfl_cursor_key(const __dtfl_cursor *c, const __dtfl_batch_ord *b, size_t *len)
-{
-	DTFL_ASSERT(__dtfl_cursor_key_valid(c, b));
-	return __dtfl_slices_get(&b->storage.keys, c->key_cursor, len);
 }
 
 const void *

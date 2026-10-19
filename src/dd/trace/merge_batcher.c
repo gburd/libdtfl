@@ -55,9 +55,12 @@ __dtfl_merge_batcher_init(__dtfl_merge_batcher *mb, const dtfl_type *rt,
 	/*
 	 * VecMerger::target_capacity: default_capacity rounded up to a power
 	 * of two.  default_capacity is the rows that fit in BUFFER_SIZE_BYTES
-	 * (a variable record counts as 24 bytes, as a Rust String or Vec).
+	 * (a constant-width record counts as its width, which is size_of
+	 * without Rust's padding; a variable one as 24 bytes, as a Rust
+	 * String or Vec).
 	 */
-	size = (rt->fixed_size != 0 ? rt->fixed_size : 24) +
+	size = __dtfl_type_const_width(rt);
+	size = (size != SIZE_MAX ? size : 24) +
 	    (size_t)mb->tw * sizeof(uint64_t) + mb->dw;
 	if (size == 0)
 		mb->cap = DTFL_BUFFER_SIZE_BYTES;
@@ -379,6 +382,135 @@ abytes_for(const __dtfl_merge_batcher *mb, size_t rows, size_t bytes)
 	return mb->cap * avg;
 }
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+/* True if the chain's chunks hold 8 arena bytes per row. */
+static bool
+chain_8_per_row(const __dtfl_chain *ch)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++)
+		if (ch->chunks[i]->arena.len != 8 * __dtfl_batch_len(ch->chunks[i]))
+			return false;
+	return true;
+}
+
+/*
+ * True when the records are of a memcmp-ordered type whose every value
+ * encodes in 8 bytes, with one time word and a 64-bit built-in integer
+ * diff: the shape merge_two_t1_8 handles.  An 8-byte record compares by
+ * cmp_raw as its big-endian word does.  The width comes from the type:
+ * a memcmp-ordered type may vary in length (an Option encodes None in 1
+ * byte and Some in 9), and byte totals cannot tell its rows apart.  The
+ * byte totals are checked as well, because record lengths are not
+ * validated against the type on input: with them, every 8-byte read
+ * stays inside the arena even for a caller's mis-sized record.
+ */
+static bool
+merge_shape_t1_8(const __dtfl_merge_batcher *mb, const __dtfl_chain *a,
+    const __dtfl_chain *b)
+{
+	return mb->tw == 1 && mb->dw == 8 && mb->rt->cmp == NULL &&
+	    __dtfl_type_const_width(mb->rt) == 8 &&
+	    __dtfl_diff_is_int64(mb->dc) && chain_8_per_row(a) &&
+	    chain_8_per_row(b);
+}
+
+/* A chain cursor's current row, read as merge_two_t1_8 compares it. */
+static inline uint64_t
+cc_key8(const chain_cursor *c)
+{
+	uint64_t k;
+
+	memcpy(&k, c->b->arena.data + 8 * c->row, 8);
+	return __builtin_bswap64(k);
+}
+
+static inline uint64_t
+cc_time1(const chain_cursor *c)
+{
+	return __dtfl_batch_time(c->b, c->row)[0];
+}
+
+/*
+ * sink_push for an 8-byte record, one time word and an 8-byte diff,
+ * written straight into the current chunk's columns.
+ */
+static inline void
+sink_push8(chunk_sink *s, const void *rec, uint64_t t, const void *diff)
+{
+	__dtfl_batch *c = s->cur;
+	size_t n = c->offs.len - 1, end = c->arena.len + 8;
+
+	if (DTFL_UNLIKELY(c->offs.cap < n + 2 || c->arena.cap < end ||
+	    c->times.cap < n + 1 || c->diffs.cap < 8 * (n + 1)))
+		__dtfl_batch_reserve(c, 1, 8);
+	memcpy(c->arena.data + c->arena.len, rec, 8);
+	((size_t *)(void *)c->offs.data)[n + 1] = end;
+	((uint64_t *)(void *)c->times.data)[n] = t;
+	memcpy(c->diffs.data + 8 * n, diff, 8);
+	c->arena.len = end;
+	c->offs.len++;
+	c->times.len++;
+	c->diffs.len += 8;
+	if (n + 1 >= s->cap)
+		sink_flush(s);
+}
+
+/*
+ * merge_two for the merge_shape_t1_8 shape: the same merge, ties summed
+ * as uint64_t and zeros dropped, the same output chunk boundaries, with
+ * the rows compared and copied inline.
+ */
+static __dtfl_chain
+merge_two_t1_8(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
+{
+	chain_cursor ca, cb;
+	chunk_sink sink;
+	__dtfl_chain out;
+	size_t rows = 0, bytes = 0;
+
+	chain_totals(&a, &rows, &bytes);
+	chain_totals(&b, &rows, &bytes);
+	cc_init(&ca, &a);
+	cc_init(&cb, &b);
+	sink_init(&sink, mb->tw, mb->dw, mb->cap, abytes_for(mb, rows, bytes));
+
+	while (cc_valid(&ca) && cc_valid(&cb)) {
+		uint64_t k1 = cc_key8(&ca), k2 = cc_key8(&cb);
+		uint64_t t1 = cc_time1(&ca), t2 = cc_time1(&cb);
+
+		if (k1 < k2 || (k1 == k2 && t1 < t2)) {
+			sink_push8(&sink, ca.b->arena.data + 8 * ca.row, t1,
+			    __dtfl_batch_diff(ca.b, ca.row));
+			cc_step(&ca);
+		} else if (k1 > k2 || t1 > t2) {
+			sink_push8(&sink, cb.b->arena.data + 8 * cb.row, t2,
+			    __dtfl_batch_diff(cb.b, cb.row));
+			cc_step(&cb);
+		} else {
+			uint64_t r1, r2;
+
+			memcpy(&r1, __dtfl_batch_diff(ca.b, ca.row), 8);
+			memcpy(&r2, __dtfl_batch_diff(cb.b, cb.row), 8);
+			r1 += r2;
+			if (r1 != 0)
+				sink_push8(&sink, ca.b->arena.data + 8 * ca.row,
+				    t1, &r1);
+			cc_step(&ca);
+			cc_step(&cb);
+		}
+	}
+	sink_push_rest(&sink, &ca);
+	sink_push_rest(&sink, &cb);
+	sink_finish(&sink, &out.chunks, &out.n);
+	chain_free(&a);
+	chain_free(&b);
+	return out;
+}
+#endif
+
 /*
  * VecMerger::merge: merge two chains into one, consolidating equal
  * (record, time) rows and dropping zero diffs.  The output is a single
@@ -390,9 +522,15 @@ merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
 	chain_cursor ca, cb;
 	chunk_sink sink;
 	__dtfl_chain out;
-	unsigned char *accum = __dtfl_alloc(DTFL_MAX(mb->dw, 1u));
+	unsigned char *accum;
 	size_t rows = 0, bytes = 0;
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+	if (merge_shape_t1_8(mb, &a, &b))
+		return merge_two_t1_8(mb, a, b);
+#endif
+	accum = __dtfl_alloc(DTFL_MAX(mb->dw, 1u));
 	chain_totals(&a, &rows, &bytes);
 	chain_totals(&b, &rows, &bytes);
 	cc_init(&ca, &a);
@@ -495,6 +633,21 @@ __dtfl_merge_batcher_push(__dtfl_merge_batcher *mb, __dtfl_batch *chunk)
  * already consolidated, a time is kept only if it has a surviving update, so
  * the frontier reflects post-consolidation survivors.
  */
+/*
+ * upper.less_equal(t): some element of upper is <= t.  For a total
+ * one-word time a single-element upper is one compare.
+ */
+static inline bool
+upper_le(const __dtfl_merge_batcher *mb, const __dtfl_antichain *upper,
+    const uint64_t *t)
+{
+	if (mb->tc->shape == DTFL_SHAPE_TOTAL &&
+	    __dtfl_antichain_len(upper) == 1)
+		return __dtfl_ac_base(upper)[0] <= t[0];
+	return __dtfl_frontier_less_equal(mb->tc, __dtfl_ac_base(upper),
+	    __dtfl_antichain_len(upper), t);
+}
+
 static void
 extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
     const __dtfl_antichain *upper, __dtfl_batch ***out, size_t *nout)
@@ -520,8 +673,7 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 			const __dtfl_batch *bb = cc_batch(&cc);
 			size_t end = cc.row;
 			const uint64_t *t = __dtfl_batch_time(bb, end);
-			bool keeps = __dtfl_frontier_less_equal(mb->tc,
-			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper), t);
+			bool keeps = upper_le(mb, upper, t);
 
 			do {
 				if (keeps)
@@ -529,9 +681,8 @@ extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
 					    __dtfl_batch_time(bb, end));
 				end++;
 			} while (end < cc.len &&
-			    __dtfl_frontier_less_equal(mb->tc,
-			    __dtfl_ac_base(upper), __dtfl_antichain_len(upper),
-			    __dtfl_batch_time(bb, end)) == keeps);
+			    upper_le(mb, upper, __dtfl_batch_time(bb, end)) ==
+			    keeps);
 			sink_push_run(keeps ? &keep : &ready, bb, cc.row,
 			    end - cc.row);
 			cc_skip(&cc, end - cc.row);

@@ -214,9 +214,23 @@ session_flush(dtfl_session *s)
 		    s->elem_retain);
 }
 
+/*
+ * ensure_capacity (container/src/lib.rs): before a push into an empty
+ * buffer, reserve the flush threshold's worth of record bytes, as the
+ * container builder reserves its preferred capacity.  A session that
+ * never pushes reserves no record bytes.
+ */
+static inline void
+session_ensure_capacity(dtfl_session *s)
+{
+	if (s->buffer->arena.cap == 0)
+		__dtfl_batch_reserve(s->buffer, 0, s->cap_bytes);
+}
+
 void
 dtfl_session_give(dtfl_session *s, const void *rec, size_t len)
 {
+	session_ensure_capacity(s);
 	__dtfl_batch_push(s->buffer, rec, len, NULL, NULL);
 	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
 		session_flush(s);
@@ -228,6 +242,7 @@ __dtfl_session_reserve(dtfl_session *s, size_t len)
 	/* Flush first so the returned record stays in a stable buffer. */
 	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
 		session_flush(s);
+	session_ensure_capacity(s);
 	return __dtfl_batch_push_uninit(s->buffer, len, NULL, NULL);
 }
 

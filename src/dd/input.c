@@ -15,12 +15,19 @@
  * registers the input in a scope and wraps the resulting stream as a
  * collection (input.rs new_collection / to_collection).
  *
- * The buffered updates are rows of a __dtfl_batch laid out exactly like
- * the update records the collection operators consume (collection_int.h:
- * record bytes, time words, diff bytes), so flush sends each row
- * verbatim and no reserialization is needed.
+ * The buffer is a __dtfl_batch of update records laid out exactly as the
+ * collection operators consume them (collection_int.h: record bytes, time
+ * words, diff bytes), so it ships to the timely input as one message
+ * (Handle::send_batch) with no per-row copy.
  */
 #include "dd/collection_int.h"
+#include "timely/timely_int.h"
+
+/*
+ * InputSession::update reserves 1024 more updates whenever its buffer is
+ * full, after shipping it, so the session sends 1024 updates at a time.
+ */
+#define SESSION_BATCH 1024
 
 struct dtfl_input_session {
 	const dtfl_type *type;		/* record type; retained */
@@ -32,8 +39,30 @@ struct dtfl_input_session {
 	size_t dw;
 	uint64_t epoch[DTFL_TIME_MAX];	/* current logical time */
 	bool have_epoch;
-	__dtfl_batch *buffer;		/* buffered update rows; owned */
+	__dtfl_batch *buffer;		/* buffered update records; owned */
 };
+
+/* A fresh buffer with room for SESSION_BATCH update records. */
+static __dtfl_batch *
+session_buffer(const dtfl_input_session *s)
+{
+	__dtfl_batch *b = __dtfl_batch_new(0, 0);
+	size_t w = __dtfl_type_const_width(s->type);
+
+	__dtfl_batch_reserve(b, SESSION_BATCH, w == SIZE_MAX ? 0 :
+	    SESSION_BATCH * (w + (size_t)s->depth * sizeof(uint64_t) + s->dw));
+	return b;
+}
+
+/* Handle::send_batch of the buffer; leaves a fresh, empty buffer. */
+static void
+session_send(dtfl_input_session *s)
+{
+	if (__dtfl_batch_len(s->buffer) == 0)
+		return;
+	__dtfl_input_send_batch(s->input, s->buffer);
+	s->buffer = session_buffer(s);
+}
 
 dtfl_input_session *
 dtfl_input_session_new(const dtfl_type *type, const dtfl_diff *diff)
@@ -62,7 +91,7 @@ dtfl_input_session_to_collection(dtfl_input_session *s, dtfl_scope *scope)
 	s->depth = dtfl_time_depth(tc);
 	s->update_type = __dtfl_update_type(s->type, s->depth, s->dw);
 	s->input = dtfl_input_new(s->update_type);
-	s->buffer = __dtfl_batch_new(s->depth, (unsigned)s->dw);
+	s->buffer = session_buffer(s);
 	dtfl_time_minimum(tc, s->epoch);
 	s->have_epoch = true;
 
@@ -71,16 +100,36 @@ dtfl_input_session_to_collection(dtfl_input_session *s, dtfl_scope *scope)
 	    s->depth);
 }
 
-/* push_into: buffer one (record, time, diff) update row. */
+/*
+ * update / update_at: ship the buffer if it is full, then append one
+ * (record, time, diff) update record.
+ */
 static void
 buffer_update(dtfl_input_session *s, const void *record, size_t len,
     const uint64_t *time, const void *change)
 {
+	size_t tw = (size_t)s->depth * sizeof(uint64_t);
+	unsigned char *p;
+
 	if (!s->have_epoch)
 		__dtfl_panic("dtfl_input_session: no collection yet; call "
 		    "dtfl_input_session_to_collection first");
-	__dtfl_batch_push(s->buffer, record, len, time,
-	    s->dw != 0 ? change : NULL);
+	if (__dtfl_batch_len(s->buffer) >= SESSION_BATCH)
+		session_send(s);
+	p = __dtfl_batch_push_uninit(s->buffer, len + tw + s->dw, NULL, NULL);
+	if (len == 8 && tw == 8 && s->dw == 8) {
+		/* (u64 record, u64 time, i64 diff): three fixed copies. */
+		memcpy(p, record, 8);
+		memcpy(p + 8, time, 8);
+		memcpy(p + 16, change, 8);
+		return;
+	}
+	if (len != 0)
+		memcpy(p, record, len);
+	if (tw != 0)
+		memcpy(p + len, time, tw);
+	if (s->dw != 0)
+		memcpy(p + len + tw, change, s->dw);
 }
 
 void
@@ -145,43 +194,16 @@ dtfl_input_session_advance_to(dtfl_input_session *s, const uint64_t *t)
 }
 
 /*
- * flush: send every buffered update row into the timely input, then
- * advance the input frontier to the session epoch (input.rs flush: the
- * handle sends under its current capability and advances if behind).
+ * flush: ship the buffered updates into the timely input as one message,
+ * then advance the input frontier to the session epoch (input.rs flush:
+ * the handle sends under its current capability and advances if behind).
  */
 void
 dtfl_input_session_flush(dtfl_input_session *s)
 {
-	size_t i, n, scratch_cap = 0;
-	unsigned char *scratch = NULL;
-
 	if (!s->have_epoch)
 		return;
-	n = __dtfl_batch_len(s->buffer);
-	for (i = 0; i < n; i++) {
-		size_t rlen;
-		const void *rec = __dtfl_batch_rec(s->buffer, i, &rlen);
-		size_t tw = (size_t)s->depth * sizeof(uint64_t);
-		size_t total = rlen + tw + s->dw;
-
-		/* Rebuild the flat update record from the batch columns. */
-		if (total > scratch_cap) {
-			scratch = __dtfl_realloc(scratch, total);
-			scratch_cap = total;
-		}
-		if (rlen != 0)
-			memcpy(scratch, rec, rlen);
-		if (tw != 0)
-			memcpy(scratch + rlen, __dtfl_batch_time(s->buffer, i),
-			    tw);
-		if (s->dw != 0)
-			memcpy(scratch + rlen + tw,
-			    __dtfl_batch_diff(s->buffer, i), s->dw);
-		dtfl_input_send(s->input, scratch, total);
-	}
-	__dtfl_free(scratch);
-	__dtfl_batch_clear(s->buffer);
-	dtfl_input_flush(s->input);
+	session_send(s);
 	if (dtfl_time_less_than(s->tc, dtfl_input_time(s->input), s->epoch))
 		dtfl_input_advance_to(s->input, s->epoch);
 }

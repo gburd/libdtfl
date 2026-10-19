@@ -303,6 +303,13 @@ struct dtfl_op {
 	size_t address_len;
 };
 
+/*
+ * Handle::send_batch (operators/core/input.rs): flushes the handle's
+ * buffered records, then ships `b` (consumed) as one message at the
+ * handle's epoch.  `b` holds records only (no time or diff columns).
+ */
+void __dtfl_input_send_batch(dtfl_input *in, __dtfl_batch *b);
+
 /* OperatorInfo::global_id of the operator being built (builder.c). */
 size_t __dtfl_op_builder_global_id(const dtfl_op_builder *b);
 

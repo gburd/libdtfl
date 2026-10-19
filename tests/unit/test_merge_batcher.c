@@ -142,9 +142,210 @@ DTFL_TEST(trace_implementations_merge_batcher_test__frontier_survivor_minimum)
 	return MUNIT_OK;
 }
 
+/*
+ * merge_two takes an inline path for 8-byte memcmp-ordered records, one
+ * time word and a 64-bit integer diff.  A user class with the same i64
+ * algebra takes the general path, so the same chunks pushed through both
+ * batchers must seal to the same chunks, byte for byte, with the same
+ * kept frontier.  Chains of several chunks, ties that cancel, and chunks
+ * that straddle the output capacity are all drawn.
+ */
+static void
+u_plus(const __dtfl_diff_class *c, void *acc, const void *x)
+{
+	uint64_t a, b;
+
+	(void)c;
+	memcpy(&a, acc, 8);
+	memcpy(&b, x, 8);
+	a += b;
+	memcpy(acc, &a, 8);
+}
+
+static bool
+u_is_zero(const __dtfl_diff_class *c, const void *x)
+{
+	uint64_t a;
+
+	(void)c;
+	memcpy(&a, x, 8);
+	return a == 0;
+}
+
+static int
+u_cmp(const __dtfl_diff_class *c, const void *a, const void *b)
+{
+	int64_t x, y;
+
+	(void)c;
+	memcpy(&x, a, 8);
+	memcpy(&y, b, 8);
+	return (x > y) - (x < y);
+}
+
+/* A sorted, consolidated chunk of n random updates (keys < 64, t < 8). */
+static __dtfl_batch *
+random_chunk(uint64_t *rng, size_t n, const __dtfl_diff_class *dc)
+{
+	__dtfl_batch *b = __dtfl_batch_new(1, 8);
+	unsigned char rec[8];
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		uint64_t d, t;
+		int64_t r;
+
+		*rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17;
+		d = *rng % 64;
+		t = (*rng >> 8) % 8;
+		r = (int64_t)((*rng >> 16) % 5) - 2;
+		dtfl_put_u64(rec, d);
+		__dtfl_batch_push(b, rec, 8, &t, &r);
+	}
+	__dtfl_consolidate_batch(b, dtfl_type_u64(), dc);
+	return b;
+}
+
+DTFL_TEST(merge_batcher__fast_merge_matches_general)
+{
+	__dtfl_diff_class def;
+	const __dtfl_diff_class *user;
+	dtfl_time_class *tc = dtfl_time_u64();
+	uint64_t rng = 0x2545f4914f6cdd1dULL, four = 4;
+	int round;
+
+	(void)params; (void)data;
+	memset(&def, 0, sizeof def);
+	def.name = "user-i64";
+	def.width = 8;
+	def.plus_equals = u_plus;
+	def.is_zero = u_is_zero;
+	def.cmp = u_cmp;
+	user = __dtfl_diff_class_new(&def);
+	for (round = 0; round < 40; round++) {
+		__dtfl_merge_batcher fm, gm;
+		__dtfl_antichain upper;
+		__dtfl_description fd, gd;
+		__dtfl_batch **fo, **go;
+		size_t fn, gn, i, pushes = 2 + (size_t)round % 7;
+
+		__dtfl_merge_batcher_init(&fm, dtfl_type_u64(), tc, I64);
+		__dtfl_merge_batcher_init(&gm, dtfl_type_u64(), tc, user);
+		for (i = 0; i < pushes; i++) {
+			/* Up to 2.5 output chunks, so merges cross chunk ends. */
+			size_t n = 1 + (size_t)(rng % (5 * fm.cap / 2));
+			__dtfl_batch *c = random_chunk(&rng, n, I64);
+
+			__dtfl_merge_batcher_push(&fm, __dtfl_batch_copy(c));
+			__dtfl_merge_batcher_push(&gm, c);
+		}
+		__dtfl_antichain_init_elem(&upper, tc, &four);
+		__dtfl_merge_batcher_seal(&fm, &upper, &fo, &fn, &fd);
+		__dtfl_merge_batcher_seal(&gm, &upper, &go, &gn, &gd);
+		assert_size(fn, ==, gn);
+		for (i = 0; i < fn; i++) {
+			assert_size(__dtfl_batch_len(fo[i]), ==,
+			    __dtfl_batch_len(go[i]));
+			assert_memory_equal(fo[i]->arena.len, fo[i]->arena.data,
+			    go[i]->arena.data);
+			assert_memory_equal(fo[i]->offs.len * sizeof(size_t),
+			    fo[i]->offs.data, go[i]->offs.data);
+			assert_memory_equal(fo[i]->times.len * 8,
+			    fo[i]->times.data, go[i]->times.data);
+			assert_memory_equal(fo[i]->diffs.len, fo[i]->diffs.data,
+			    go[i]->diffs.data);
+		}
+		assert_true(__dtfl_antichain_eq(__dtfl_merge_batcher_frontier(&fm),
+		    __dtfl_merge_batcher_frontier(&gm)));
+		release_chunks(fo, fn);
+		release_chunks(go, gn);
+		__dtfl_description_free(&fd);
+		__dtfl_description_free(&gd);
+		__dtfl_antichain_free(&upper);
+		__dtfl_merge_batcher_free(&fm);
+		__dtfl_merge_batcher_free(&gm);
+	}
+	__dtfl_diff_class_free(user);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
+/*
+ * The inline merge requires every record to be 8 bytes.  An Option<u64>
+ * is memcmp-ordered but encodes None in 1 byte and Some in 9, so a chunk
+ * of one None and seven Somes is 64 bytes over 8 rows, which an
+ * arena-size test mistakes for eight 8-byte records.  Such chunks must
+ * merge as the general path merges them.
+ */
+DTFL_TEST(merge_batcher__fast_merge_rejects_variable_records)
+{
+	__dtfl_diff_class def;
+	const __dtfl_diff_class *user;
+	const dtfl_type *opt = dtfl_type_option(dtfl_type_u64());
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_merge_batcher fm, gm;
+	__dtfl_antichain upper;
+	__dtfl_description fd, gd;
+	__dtfl_batch **fo, **go;
+	size_t fn, gn, i, c;
+	uint64_t ten = 10;
+
+	(void)params; (void)data;
+	memset(&def, 0, sizeof def);
+	def.name = "user-i64";
+	def.width = 8;
+	def.plus_equals = u_plus;
+	def.is_zero = u_is_zero;
+	def.cmp = u_cmp;
+	user = __dtfl_diff_class_new(&def);
+	__dtfl_merge_batcher_init(&fm, opt, tc, I64);
+	__dtfl_merge_batcher_init(&gm, opt, tc, user);
+	for (c = 0; c < 2; c++) {
+		__dtfl_batch *b = __dtfl_batch_new(1, 8);
+		unsigned char rec[9];
+		uint64_t t = 1 + c;
+		int64_t r = 1;
+
+		rec[0] = 0;			/* None */
+		__dtfl_batch_push(b, rec, 1, &t, &r);
+		for (i = 1; i <= 7; i++) {	/* Some(i) */
+			rec[0] = 1;
+			dtfl_put_u64(rec + 1, i);
+			__dtfl_batch_push(b, rec, 9, &t, &r);
+		}
+		assert_size(b->arena.len, ==, 8 * __dtfl_batch_len(b));
+		__dtfl_merge_batcher_push(&fm, __dtfl_batch_copy(b));
+		__dtfl_merge_batcher_push(&gm, b);
+	}
+	__dtfl_antichain_init_elem(&upper, tc, &ten);
+	__dtfl_merge_batcher_seal(&fm, &upper, &fo, &fn, &fd);
+	__dtfl_merge_batcher_seal(&gm, &upper, &go, &gn, &gd);
+	assert_size(fn, ==, gn);
+	for (i = 0; i < fn; i++) {
+		assert_size(__dtfl_batch_len(fo[i]), ==, __dtfl_batch_len(go[i]));
+		assert_memory_equal(fo[i]->offs.len * sizeof(size_t),
+		    fo[i]->offs.data, go[i]->offs.data);
+		assert_memory_equal(fo[i]->arena.len, fo[i]->arena.data,
+		    go[i]->arena.data);
+	}
+	release_chunks(fo, fn);
+	release_chunks(go, gn);
+	__dtfl_description_free(&fd);
+	__dtfl_description_free(&gd);
+	__dtfl_antichain_free(&upper);
+	__dtfl_merge_batcher_free(&fm);
+	__dtfl_merge_batcher_free(&gm);
+	__dtfl_diff_class_free(user);
+	dtfl_type_free(opt);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(trace_implementations_merge_batcher_test__frontier_is_post_consolidation),
 	DTFL_T(trace_implementations_merge_batcher_test__frontier_survivor_minimum),
+	DTFL_T(merge_batcher__fast_merge_matches_general),
+	DTFL_T(merge_batcher__fast_merge_rejects_variable_records),
 	DTFL_T_END
 };
 
