@@ -20,8 +20,8 @@ Version 0.1.0 (unreleased)
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
-	Known limitation in this release, tracked in
-	dev/P15-measurements.md: performance behind the Rust originals,
+	Known limitation in this release: performance behind the Rust
+	originals,
 	about 2.6 times slower on count throughput and 2.7 times slower on
 	the arrange benchmark (same host, 25 s runs).  Most of the earlier
 	gap was port bugs that kept arranged traces from ever compacting,

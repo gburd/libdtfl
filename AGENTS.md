@@ -130,10 +130,17 @@ out and a comment naming what it synchronizes with.  A change to
   generates them, and they ship only in the `make dist` tarball.
 - Core dumps, secrets, and private keys (generate test certificates at
   run time).
-- Agent working notes.  They live in `.agent/`, which is gitignored.
-  Never `git add -f` anything under it.  `dev/` holds the plan, the
-  ADRs and the ledgers, all of which are maintained documents.  It is
-  not a scratchpad.
+- Agent working files.  Status trackers and checklists, investigation
+  and measurement reports, experiment write-ups, benchmark result
+  tables, review notes, handoff notes: all of them live in `.agent/`,
+  which is gitignored.  Never `git add -f` anything under it, and never
+  put such a file in `dev/`, `doc/` or the top level instead.  The
+  project's checklist of non-ledger work is `.agent/dev/COMPLETION.md`;
+  `tests/dist/test_completion.sh` reads it when it is present.  `dev/`
+  holds only the plan, the ADRs, the ledgers, their scripts, and design
+  notes meant for other developers.  If a finding matters to users, put
+  the finding itself in the README, NEWS, a man page or the manual, not
+  a pointer to an agent file.
 
 ## 9. Git
 

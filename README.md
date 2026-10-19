@@ -97,12 +97,13 @@ or excluded with a reason:
 | DDIR compiler + dtfl-ddir + server | complete                                |
 | examples (timely, dd, dogs, diag)  | complete                                |
 | manual + 73 man pages              | complete, gate-enforced                 |
-| port ledger / test ledger          | 356 files, 110 tests, 0 outstanding     |
+| port ledger / test ledger          | 365 files, 130 tests, 0 outstanding     |
 
 Validated on Linux x86_64 (gcc 14, all six build configurations: default,
 ASan, UBSan, TSan, hegel, distcheck), FreeBSD (clang 19), and Linux riscv64
-(gcc 15, a strict-alignment architecture).  `dev/COMPLETION.md` is the
-binding definition of done and `tests/dist/test_completion.sh` enforces it.
+(gcc 15, a strict-alignment architecture).  The port and test ledgers in
+`dev/` are the definition of done, and `tests/dist/test_completion.sh`
+enforces them.
 
 ### Known gaps before 1.0
 
@@ -111,12 +112,13 @@ One substantive item is tracked honestly rather than hidden:
 * **Performance.** The port is correct but slower than the Rust originals:
   on the pinned `arrange` benchmark, same host, 25 s runs, about 2.6 times
   slower on `count` throughput and 2.7 times slower on the `arrange` arm,
-  executing 2.2 to 2.8 times the instructions per record.  An
-  investigation (`dev/perf-investigation.md`) found most of the earlier,
-  larger gap was port bugs, now fixed, and two optimisation passes took the
-  rest down from 5.7x and 7.3x without changing the record and container
-  design (ADR-0001, ADR-0002).  The next costs are the cursor seek and the
-  consolidate sort and merge loop.  See `dev/P15-measurements.md`.
+  executing 2.2 to 2.8 times the instructions per record.  Most of an
+  earlier, larger gap was port bugs that kept arranged traces from ever
+  compacting, now fixed, and two optimisation passes took the rest down
+  from 5.7x and 7.3x without changing the record and container design
+  (ADR-0001, ADR-0002).  The next costs are the cursor seek and the
+  consolidate sort and merge loop.  `bench/experiments/arrange` reproduces
+  the measurement.
 
 A `1.0` release requires the 1.5x goal met or relaxed; a `0.y` release ships
 with the gap documented.
