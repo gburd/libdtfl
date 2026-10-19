@@ -172,23 +172,22 @@ dtfl_input_new(const dtfl_type *type)
 	return in;
 }
 
-/* Flush buffered records into every registration's output at now_at. */
+/*
+ * send_container: ship `data` (consumed) at now_at to every registration,
+ * sharing the batch with all but the last, which takes it.
+ */
 static void
-input_flush(dtfl_input *in)
+input_send_container(dtfl_input *in, __dtfl_batch *data)
 {
-	size_t r, n;
+	size_t r, n = in->regs.len;
 
-	if (!in->have_time || __dtfl_batch_len(in->buffer) == 0)
-		return;
-	n = in->regs.len;
 	for (r = 0; r < n; r++) {
 		input_reg *reg = DTFL_VEC_AT(&in->regs, input_reg, r);
-		__dtfl_batch *data;
+		__dtfl_batch *d;
 		void *bundle;
 
-		/* Share the batch for all but the last; the last takes it. */
-		data = (r + 1 < n) ? __dtfl_batch_retain(in->buffer) : in->buffer;
-		bundle = __dtfl_message_new(in->tc, in->now_at, data);
+		d = (r + 1 < n) ? __dtfl_batch_retain(data) : data;
+		bundle = __dtfl_message_new(in->tc, in->now_at, d);
 		__dtfl_push_push(reg->pusher, &bundle);
 		if (bundle != NULL) {	/* no pusher recycles a data message */
 			dtfl_message *m = bundle;
@@ -198,7 +197,16 @@ input_flush(dtfl_input *in)
 		}
 	}
 	if (n == 0)
-		__dtfl_batch_release(in->buffer);
+		__dtfl_batch_release(data);
+}
+
+/* Flush buffered records into every registration's output at now_at. */
+static void
+input_flush(dtfl_input *in)
+{
+	if (!in->have_time || __dtfl_batch_len(in->buffer) == 0)
+		return;
+	input_send_container(in, in->buffer);
 	in->buffer = __dtfl_batch_new(0, 0);
 }
 
@@ -209,6 +217,25 @@ dtfl_input_send(dtfl_input *in, const void *rec, size_t len)
 	/* Bound the buffer; a full buffer flushes to the current pushers. */
 	if (__dtfl_batch_bytes(in->buffer) >= DTFL_BUFFER_SIZE_BYTES)
 		input_flush(in);
+}
+
+/*
+ * Handle::send_batch: flush the buffered records (local FIFO), then ship
+ * `b` (consumed; a batch of records with no time or diff columns) as one
+ * message at the current epoch.  An empty batch is released unsent.
+ */
+void
+__dtfl_input_send_batch(dtfl_input *in, __dtfl_batch *b)
+{
+	if (__dtfl_batch_len(b) == 0) {
+		__dtfl_batch_release(b);
+		return;
+	}
+	if (!in->have_time)
+		__dtfl_panic("dtfl_input send_batch before any stream is created");
+	DTFL_ASSERT(b->tw == 0 && b->dw == 0);
+	input_flush(in);
+	input_send_container(in, b);
 }
 
 void
