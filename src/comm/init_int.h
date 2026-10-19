@@ -19,6 +19,7 @@
 #define DTFL_INIT_INT_H
 
 #include "comm/comm_int.h"
+#include "base/log_int.h"
 #include "dtfl/config.h"
 #include "dtfl/log.h"
 
@@ -58,10 +59,15 @@ int __dtfl_create_sockets(char *const *addresses, size_t processes,
  * the builders and send threads retain it for their queues.  Takes ownership of `inner` (the array is freed)
  * and of `fds` (closed by the guard).  On success stores the builders
  * array (threads entries; free it after handing out every builder) and
- * the guard, and returns 0.
+ * the guard, and returns 0.  `log_hook` (may be NULL) is Hooks.log_fn:
+ * each network thread calls it once, on itself, for its own
+ * "communication" logger.  The guard takes the hook by value and runs
+ * its ctx_free after joining the network threads.
  */
+struct __dtfl_comm_log_hook;
 int __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
     size_t my_index, size_t processes, int *fds, __dtfl_spill_fn *spill,
+    const struct __dtfl_comm_log_hook *log_hook,
     __dtfl_allocator_builder ***builders, __dtfl_comms_guard **guard);
 
 /*
@@ -91,5 +97,52 @@ typedef struct __dtfl_log_sub {
 
 size_t __dtfl_config_log_subs(const dtfl_config *cfg,
     const __dtfl_log_sub **subs);
+
+/*
+ * CommunicationSetup (communication/src/logging.rs): which network
+ * thread a logger is for.
+ */
+typedef struct __dtfl_comm_setup {
+	bool sender;		/* a send thread (else the receive thread) */
+	size_t process;		/* this process */
+	size_t remote;		/* the remote process */
+} __dtfl_comm_setup;
+
+/*
+ * Hooks.log_fn: returns a new logger for one network thread (owned by
+ * and used only on that thread, which releases it when its loop ends),
+ * or NULL for none.  Called on the network thread itself.
+ */
+typedef struct __dtfl_comm_log_hook {
+	__dtfl_logger *(*log_fn)(void *ctx, const __dtfl_comm_setup *setup);
+	void *ctx;
+	void (*ctx_free)(void *);	/* may be NULL; run at guard join */
+} __dtfl_comm_log_hook;
+
+/*
+ * The log_fn installed from a "communication" config subscription: ctx
+ * is a __dtfl_calloc'd copy of the subscription (__dtfl_log_sub *, freed
+ * with __dtfl_free); the logger decodes for its subscriber, reporting
+ * this process's index as the batch worker.
+ */
+__dtfl_logger *__dtfl_comm_subscriber_log_fn(void *ctx,
+    const __dtfl_comm_setup *setup);
+
+/* CommunicationEvent encoders (src/comm/comm_log.c), logging to `l`. */
+struct __dtfl_message_header;
+void __dtfl_comm_log_message(__dtfl_logger *l, bool is_send,
+    const struct __dtfl_message_header *h);
+void __dtfl_comm_log_state(__dtfl_logger *l, bool send, size_t process,
+    size_t remote, bool start);
+void __dtfl_comm_log_setup(__dtfl_logger *l, bool sender, size_t process,
+    bool has_remote, size_t remote);
+
+/*
+ * A standalone logger decoding `stream` records for subscriber fn with
+ * shared ctx (not freed), reporting `worker` as the batch's worker
+ * index (src/timely/log.c).  Owned by the calling thread.
+ */
+__dtfl_logger *__dtfl_log_subscriber_logger(const char *stream, size_t worker,
+    dtfl_log_subscriber_fn fn, void *ctx);
 
 #endif /* DTFL_INIT_INT_H */

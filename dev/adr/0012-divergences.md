@@ -95,6 +95,18 @@ has no consumer yet:
 - timely/examples/spill_compare.rs stays deferred until dtfl_config
   grows a spill-policy hook (upstream Hooks::spill).
 
+### 2026-10-18: progress done
+
+- differential-dataflow/examples/progress.rs is done and smoke-tested.
+  The wrong answer was a trace-layer bug, not a reduce or iterate one:
+  UpdsBuilder::seal (src/dd/trace/layout.c) compacted its stash in place
+  while reading it through a sort permutation, so a merge whose
+  advance_by reorders a value's times (any partially ordered time, here
+  Product<u64, u64>) could read a slot it had already overwritten.  The
+  reduce output trace then held a wrong history.  Fixed to sort the
+  stash first, as consolidate_slice does.  The output now matches the
+  pinned binary with 1, 2 and 4 workers.
+
 ### 2026-10-18: spill_compare done
 
 - dtfl_config_set_spill_file(cfg, dir, threshold_bytes,
@@ -123,3 +135,25 @@ has no consumer yet:
 
 An amendment adds a dated entry here and
 edits PLAN D12 in the same commit.
+
+### 2026-10-18: differential and communication logging emission implemented
+
+The differential-dataflow/src/logging.rs and communication/src/logging.rs
+deferrals above are closed.  The
+spine, the agent and the merge batcher emit Batch, Merge, Drop,
+TraceShare and Batcher events at the upstream points, through a logger
+the operator acquires at construction (NULL, so free, without a
+subscriber).  MergeShortfall stays unemitted because the pin never logs
+it.
+
+The communication stream follows the pin's Hooks.log_fn: each network
+send and receive thread asks the hook built from a "communication"
+dtfl_config_log_subscribe for its own logger and logs StateEvent and a
+MessageEvent per header.  The subscriber therefore runs on the network
+threads and reports the process index as the worker.  A per-worker
+dtfl_worker_log_subscribe sees no communication events, because no
+worker owns the network threads.
+
+The logging-recv and logging_replay exclusions stand.  The emission adds
+events to the subscriber streams but no public TimelyEvent record type
+that a dataflow could carry.

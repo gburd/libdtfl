@@ -83,6 +83,9 @@ run dd cursors cursors.expected cat
 run dd multitemporal multitemporal.expected cat
 run dd arrange arrange.expected sort
 run dd graspan graspan.expected sort
+run dd progress progress.expected sort
+# Two workers each print "finished"; this run once counted to infinity.
+run dd progress progress-w2.expected sort -w 2
 run dogs delta_query_wcoj delta_query_wcoj.expected sort
 run dogs delta_query delta_query.expected sort
 run dogs delta_query2 delta_query2.expected sort

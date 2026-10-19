@@ -21,7 +21,11 @@
  * the history replayer: it walks the input, output and new-batch histories in
  * time order, discovering the interesting times (joins of input/output/seed
  * times, bounded by advancing to running meets) and evaluating the logic at
- * each, exactly as reduce.rs CursorTactic / HistoryReplayer do.
+ * each, exactly as reduce.rs CursorTactic / HistoryReplayer do.  The
+ * per-interval work goes through a ReduceTactic seam (rd_tactic_ops): the
+ * cursor tactic is the default, and the model-derived reference tactic
+ * (reduce.rs mod reference, ReferenceThinker) is the second engine, reached
+ * only through __dtfl_arranged_reduce_trace_reference for differential tests.
  *
  * The batch/capability driver that arranges the input by key is private to
  * this file (arrange_by_key): it exchanges updates by key, batches each
@@ -1266,6 +1270,521 @@ reduce_compute(replayer *r, const void *key, size_t klen, const timevec *times,
 }
 
 /* ================================================================== */
+/* The reference tactic's per-key engine (reference::ReferenceThinker). */
+/* ================================================================== */
+
+/*
+ * TimeReplay (operators/mod.rs): a time-only, non-destructive walk over an
+ * already-built value_history.  It reads hist_time / hist_meet from the end
+ * (the least time) through its own position, leaving the history and its
+ * value walk position untouched, and accumulates only times into `buffer`,
+ * which the caller owns.
+ */
+typedef struct time_replay {
+	const value_history *h;	/* borrowed */
+	size_t pos;		/* entries consumed from the end */
+	timevec *buffer;	/* accumulated (and compacted) times */
+} time_replay;
+
+/* ValueHistory::replay_times: a fresh time-only walk, clearing `buffer`. */
+static void
+tr_init(time_replay *tr, const value_history *h, timevec *buffer)
+{
+	tr->h = h;
+	tr->pos = 0;
+	tr->buffer = buffer;
+	tv_clear(buffer);
+}
+
+static const uint64_t *
+tr_time(const time_replay *tr)
+{
+	size_t n = vh_hist_len(tr->h);
+
+	if (tr->pos >= n)
+		return NULL;
+	return tv_at(&tr->h->hist_time, n - 1 - tr->pos);
+}
+
+static const uint64_t *
+tr_meet(const time_replay *tr)
+{
+	size_t n = vh_hist_len(tr->h);
+
+	if (tr->pos >= n)
+		return NULL;
+	return tv_at(&tr->h->hist_meet, n - 1 - tr->pos);
+}
+
+static void
+tr_step(time_replay *tr)
+{
+	tv_push(tr->buffer, tr_time(tr));
+	tr->pos++;
+}
+
+static bool
+tr_step_while_time_is(time_replay *tr, const uint64_t *time)
+{
+	bool found = false;
+	const uint64_t *t;
+
+	while ((t = tr_time(tr)) != NULL &&
+	    __dtfl_words_cmp(t, time, tr->h->tw) == 0) {
+		found = true;
+		tr_step(tr);
+	}
+	return found;
+}
+
+/* Join buffered times with `meet`, then sort and dedup (time-only consolidate). */
+static void
+tr_advance_buffer_by(time_replay *tr, const uint64_t *meet)
+{
+	size_t i, n = tv_len(tr->buffer);
+
+	if (tr->h->tw != 0)
+		for (i = 0; i < n; i++) {
+			uint64_t *t = tv_at(tr->buffer, i);
+
+			dtfl_time_join(tr->h->tc, t, meet, t);
+		}
+	tv_sort_dedup(tr->buffer);
+}
+
+/* ValueHistory::walk: a fresh value walk over the intact, built history. */
+static void
+vh_walk(value_history *h)
+{
+	vtd_clear(&h->buffer);
+	h->pos = 0;
+}
+
+/* Push t join next for every t in `src` not <= next (the temporary extends). */
+static void
+ref_extend_joins(replayer *r, timevec *dst, const timevec *src,
+    const uint64_t *next_time)
+{
+	size_t i, n = tv_len(src);
+
+	for (i = 0; i < n; i++) {
+		const uint64_t *t = tv_at(src, i);
+
+		if (!dtfl_time_less_equal(r->tc, t, next_time)) {
+			uint64_t j[DTFL_TIME_MAX];
+
+			if (r->tw != 0)
+				dtfl_time_join(r->tc, t, next_time, j);
+			tv_push(dst, j);
+		}
+	}
+}
+
+/* Suffix meets: meets[i] = meet(src[i..]). */
+static void
+ref_suffix_meets(replayer *r, timevec *meets, const timevec *src)
+{
+	size_t n = tv_len(src), i;
+
+	tv_clear(meets);
+	for (i = 0; i < n; i++)
+		tv_push(meets, tv_at(src, i));
+	if (r->tw != 0)
+		for (i = n; i-- > 1;) {
+			uint64_t *a = tv_at(meets, i - 1);
+
+			dtfl_time_meet(r->tc, a, tv_at(meets, i), a);
+		}
+}
+
+/*
+ * ReferenceThinker::compute: the two-phase per-key engine.
+ *
+ * Phase 1 (determination) reads the input/output/seed *times* and closes them
+ * into `active` (the interesting times) and the pended set (new_interesting),
+ * the model's `Reached`, directly.  Phase 2 (application) walks the same,
+ * still-loaded histories for *values* and emits corrections.  The three
+ * histories were loaded with replay_key(.., None) by the retire driver, as
+ * upstream's compute does first thing.  Same signature as reduce_compute so
+ * the shared retire body can drive either engine.
+ */
+static void
+reference_compute(replayer *r, const void *key, size_t klen,
+    const timevec *times, engine_logic *lg, const uint64_t *upper,
+    size_t nupper, out_buffer *outputs, size_t noutputs,
+    timevec *new_interesting)
+{
+	value_history *ih = &r->input_history;
+	value_history *oh = &r->output_history;
+	value_history *bh = &r->batch_history;
+	timevec batch_times, input_times, output_times, active;
+	size_t i, n;
+
+	tv_init(&batch_times, r->tc, r->tw);
+	tv_init(&input_times, r->tc, r->tw);
+	tv_init(&output_times, r->tc, r->tw);
+	tv_init(&active, r->tc, r->tw);
+
+	/*
+	 * PHASE 1: DETERMINATION (`Reached`, compacted).  Walk the input,
+	 * output and seed times in increasing order; a time is *reached* only
+	 * via a seed (a batch update, a due pending time, or a synthetic join of
+	 * earlier reached times); a reached in-band time joins against the live
+	 * partners to spawn more reached times, and a join beyond `upper` is
+	 * pended.  The live partner sets are kept an antichain by
+	 * advance_buffer_by(meet).  Time-only: the time_replay walks read the
+	 * histories without stepping them, so phase 2 can walk them.
+	 */
+	{
+		time_replay batch_replay, input_replay, output_replay;
+		size_t times_pos = 0;	/* times_slice and meets_slice */
+		uint64_t meet[DTFL_TIME_MAX];
+		bool has_meet = false;
+
+		/* Suffix-meets of the supplied (due pending) times. */
+		ref_suffix_meets(r, &r->meets, times);
+
+		tr_init(&batch_replay, bh, &batch_times);
+		tr_init(&input_replay, ih, &input_times);
+		tr_init(&output_replay, oh, &output_times);
+
+		tv_clear(&r->synth_times);
+		tv_clear(&r->times_current);
+		tv_clear(&r->temporary);
+		tv_clear(&active);
+
+		for (;;) {
+			uint64_t next_time[DTFL_TIME_MAX];
+			const uint64_t *cand[5];
+			bool have_next = false, interesting;
+			size_t c;
+
+			cand[0] = tr_time(&batch_replay);
+			cand[1] = times_pos < tv_len(times) ?
+			    tv_at(times, times_pos) : NULL;
+			cand[2] = tr_time(&input_replay);
+			cand[3] = tr_time(&output_replay);
+			cand[4] = tv_len(&r->synth_times) > 0 ?
+			    tv_at(&r->synth_times,
+			    tv_len(&r->synth_times) - 1) : NULL;
+			for (c = 0; c < 5; c++)
+				if (cand[c] != NULL && (!have_next ||
+				    __dtfl_words_cmp(cand[c], next_time,
+				    r->tw) < 0)) {
+					if (r->tw != 0)
+						memcpy(next_time, cand[c],
+						    (size_t)r->tw * 8);
+					have_next = true;
+				}
+			if (!have_next)
+				break;
+
+			tr_step_while_time_is(&input_replay, next_time);
+			tr_step_while_time_is(&output_replay, next_time);
+
+			/*
+			 * Reached via a seed: a batch update, a due pending
+			 * time, or a synthetic join.  (Input/output times alone
+			 * are not reached; they are only join partners.)
+			 */
+			interesting = tr_step_while_time_is(&batch_replay,
+			    next_time);
+			if (interesting && has_meet)
+				tr_advance_buffer_by(&batch_replay, meet);
+			while (tv_len(&r->synth_times) > 0 &&
+			    __dtfl_words_cmp(tv_at(&r->synth_times,
+			    tv_len(&r->synth_times) - 1), next_time,
+			    r->tw) == 0) {
+				tv_push(&r->times_current,
+				    tv_at(&r->synth_times,
+				    tv_len(&r->synth_times) - 1));
+				tv_truncate(&r->synth_times,
+				    tv_len(&r->synth_times) - 1);
+				interesting = true;
+			}
+			while (times_pos < tv_len(times) &&
+			    __dtfl_words_cmp(tv_at(times, times_pos),
+			    next_time, r->tw) == 0) {
+				tv_push(&r->times_current, next_time);
+				times_pos++;
+				interesting = true;
+			}
+			/* Absorb: a time at or above a reached time is reached. */
+			for (i = 0; !interesting &&
+			    i < tv_len(batch_replay.buffer); i++)
+				if (dtfl_time_less_equal(r->tc,
+				    tv_at(batch_replay.buffer, i), next_time))
+					interesting = true;
+			for (i = 0; !interesting &&
+			    i < tv_len(&r->times_current); i++)
+				if (dtfl_time_less_equal(r->tc,
+				    tv_at(&r->times_current, i), next_time))
+					interesting = true;
+
+			if (!__dtfl_frontier_less_equal(r->tc, upper, nupper,
+			    next_time)) {
+				size_t synth_len;
+
+				/*
+				 * A reached in-band time is `active`; join it
+				 * against the live partners, input/output
+				 * (joinBase) and reached-so-far (joinActive),
+				 * for new times.
+				 */
+				if (interesting) {
+					tv_push(&active, next_time);
+					if (has_meet) {
+						tr_advance_buffer_by(
+						    &input_replay, meet);
+						tr_advance_buffer_by(
+						    &output_replay, meet);
+					}
+					ref_extend_joins(r, &r->temporary,
+					    input_replay.buffer, next_time);
+					ref_extend_joins(r, &r->temporary,
+					    output_replay.buffer, next_time);
+				}
+				ref_extend_joins(r, &r->temporary,
+				    batch_replay.buffer, next_time);
+				ref_extend_joins(r, &r->temporary,
+				    &r->times_current, next_time);
+				tv_sort_dedup(&r->temporary);
+
+				synth_len = tv_len(&r->synth_times);
+				n = tv_len(&r->temporary);
+				for (i = 0; i < n; i++) {
+					const uint64_t *t = tv_at(
+					    &r->temporary, i);
+
+					if (__dtfl_frontier_less_equal(r->tc,
+					    upper, nupper, t))
+						tv_push(new_interesting, t);	/* pended */
+					else
+						tv_push(&r->synth_times, t);	/* reached, later */
+				}
+				tv_clear(&r->temporary);
+				if (tv_len(&r->synth_times) > synth_len) {
+					/* sort descending (last() least), dedup. */
+					size_t lo, hi;
+					uint64_t tmp[DTFL_TIME_MAX];
+
+					tv_sort_dedup(&r->synth_times);
+					hi = tv_len(&r->synth_times);
+					for (lo = 0; r->tw != 0 && lo < hi / 2;
+					    lo++) {
+						uint64_t *a = tv_at(
+						    &r->synth_times, lo);
+						uint64_t *b = tv_at(
+						    &r->synth_times,
+						    hi - 1 - lo);
+
+						memcpy(tmp, a,
+						    (size_t)r->tw * 8);
+						memcpy(a, b,
+						    (size_t)r->tw * 8);
+						memcpy(b, tmp,
+						    (size_t)r->tw * 8);
+					}
+				}
+			} else if (interesting) {
+				tv_push(new_interesting, next_time);
+			}
+
+			/*
+			 * Running meet (a lower bound on every time still to
+			 * visit); compact the reached partners times_current.
+			 */
+			has_meet = false;
+			update_meet(r, meet, &has_meet, tr_meet(&batch_replay));
+			update_meet(r, meet, &has_meet, tr_meet(&input_replay));
+			update_meet(r, meet, &has_meet,
+			    tr_meet(&output_replay));
+			for (i = 0; i < tv_len(&r->synth_times); i++)
+				update_meet(r, meet, &has_meet,
+				    tv_at(&r->synth_times, i));
+			update_meet(r, meet, &has_meet,
+			    times_pos < tv_len(&r->meets) ?
+			    tv_at(&r->meets, times_pos) : NULL);
+			if (has_meet && r->tw != 0)
+				for (i = 0; i < tv_len(&r->times_current);
+				    i++) {
+					uint64_t *t = tv_at(&r->times_current,
+					    i);
+
+					dtfl_time_join(r->tc, t, meet, t);
+				}
+			tv_sort_dedup(&r->times_current);
+		}
+
+		tv_sort_dedup(&active);
+	}
+
+	/*
+	 * PHASE 2: APPLICATION (emit_correct).  Walk `active` in order over the
+	 * SAME per-key edits (a fresh value walk, no cursor), keep the
+	 * input/output accumulations tight by advancing to the meet of the times
+	 * still to be produced, apply `logic`, and emit corrections.
+	 */
+	{
+		size_t index;
+
+		ref_suffix_meets(r, &r->meets, &active);
+
+		vh_walk(bh);
+		vh_walk(ih);
+		vh_walk(oh);
+
+		vtd_clear(&r->output_produced);
+
+		for (index = 0; index < tv_len(&active); index++) {
+			uint64_t next_time[DTFL_TIME_MAX];
+			uint64_t meet[DTFL_TIME_MAX];
+			const uint64_t *t;
+
+			if (r->tw != 0) {
+				memcpy(next_time, tv_at(&active, index),
+				    (size_t)r->tw * 8);
+				memcpy(meet, tv_at(&r->meets, index),
+				    (size_t)r->tw * 8);
+			}
+
+			/*
+			 * Phase 2 visits only the active times, so at each we
+			 * must catch up the histories to include every edit that
+			 * will contribute to the accumulation at `next_time`
+			 * (edits at non-active times count too).  history is
+			 * sorted by the total Ord and step pops the least, so we
+			 * step the Ord-prefix `t <= next_time`, NOT the partial
+			 * `t.less_equal(next_time)`: the partial order
+			 * interleaves with the sort, so an Ord-earlier time
+			 * incomparable to `next_time` would halt a less_equal
+			 * walk early and strand later edits that *are*
+			 * less_equal(next_time).  Stepping the Ord-prefix takes a
+			 * superset; the less_equal filter below then selects the
+			 * true `<= next_time` edits.
+			 */
+			while ((t = vh_time(ih)) != NULL &&
+			    __dtfl_words_cmp(t, next_time, r->tw) <= 0)
+				vh_step(ih);
+			while ((t = vh_time(bh)) != NULL &&
+			    __dtfl_words_cmp(t, next_time, r->tw) <= 0)
+				vh_step(bh);
+			while ((t = vh_time(oh)) != NULL &&
+			    __dtfl_words_cmp(t, next_time, r->tw) <= 0)
+				vh_step(oh);
+			vh_advance_buffer_by(ih, meet);
+			vh_advance_buffer_by(bh, meet);
+			vh_advance_buffer_by(oh, meet);
+
+			vtd_clear(&r->input_buffer);
+			vtd_clear(&r->output_buffer);
+			n = vtd_len(vh_buffer(ih));
+			for (i = 0; i < n; i++)
+				if (dtfl_time_less_equal(r->tc,
+				    vtd_time(vh_buffer(ih), i), next_time))
+					vtd_push(&r->input_buffer,
+					    vtd_val(vh_buffer(ih), i), next_time,
+					    r->idc->width ?
+					    vtd_diff(vh_buffer(ih), i) : NULL);
+			n = vtd_len(vh_buffer(bh));
+			for (i = 0; i < n; i++)
+				if (dtfl_time_less_equal(r->tc,
+				    vtd_time(vh_buffer(bh), i), next_time))
+					vtd_push(&r->input_buffer,
+					    vtd_val(vh_buffer(bh), i), next_time,
+					    r->idc->width ?
+					    vtd_diff(vh_buffer(bh), i) : NULL);
+			vtd_consolidate(&r->input_buffer);
+
+			n = vtd_len(vh_buffer(oh));
+			for (i = 0; i < n; i++)
+				if (dtfl_time_less_equal(r->tc,
+				    vtd_time(vh_buffer(oh), i), next_time))
+					vtd_push(&r->output_buffer,
+					    vtd_val(vh_buffer(oh), i), next_time,
+					    r->odc->width ?
+					    vtd_diff(vh_buffer(oh), i) : NULL);
+			n = vtd_len(&r->output_produced);
+			for (i = 0; i < n; i++)
+				if (dtfl_time_less_equal(r->tc,
+				    vtd_time(&r->output_produced, i),
+				    next_time))
+					vtd_push(&r->output_buffer,
+					    vtd_val(&r->output_produced, i),
+					    next_time, r->odc->width ?
+					    vtd_diff(&r->output_produced, i) :
+					    NULL);
+			vtd_consolidate(&r->output_buffer);
+
+			if (vtd_len(&r->input_buffer) == 0 &&
+			    vtd_len(&r->output_buffer) == 0)
+				continue;
+			vtd_clear(&r->update_buffer);
+			run_logic(r, lg, key, klen, next_time);
+			vtd_consolidate(&r->update_buffer);
+			if (vtd_len(&r->update_buffer) != 0) {
+				size_t idx = SIZE_MAX, u;
+
+				for (u = noutputs; u-- > 0;)
+					if (dtfl_time_less_equal(r->tc,
+					    outputs[u].tag, next_time)) {
+						idx = u;
+						break;
+					}
+				if (idx == SIZE_MAX)
+					__dtfl_panic("reduce reference: "
+					    "failed to find index");
+				n = vtd_len(&r->update_buffer);
+				for (i = 0; i < n; i++) {
+					size_t vi = vtd_val(&r->update_buffer,
+					    i);
+					const void *d = r->odc->width ?
+					    vtd_diff(&r->update_buffer, i) :
+					    NULL;
+					size_t ovl;
+					const void *ov = valtab_get(r->out_tab,
+					    vi, &ovl);
+					char z[1] = { 0 };
+					size_t rl = klen + ovl;
+					unsigned char *rec = __dtfl_alloc(
+					    rl != 0 ? rl : 1);
+
+					vtd_push(&r->output_produced, vi,
+					    next_time, d);
+					if (klen != 0)
+						memcpy(rec, key, klen);
+					if (ovl != 0)
+						memcpy(rec + klen, ov, ovl);
+					__dtfl_slices_push(&outputs[idx].recs,
+					    rec, rl);
+					__dtfl_free(rec);
+					tv_push(&outputs[idx].times,
+					    next_time);
+					__dtfl_vec_push(&outputs[idx].diffs,
+					    r->odc->width ? d : z);
+				}
+				n = vtd_len(&r->output_produced);
+				if (r->tw != 0)
+					for (i = 0; i < n; i++) {
+						uint64_t *ot = tv_at(
+						    &r->output_produced.times,
+						    i);
+
+						dtfl_time_join(r->tc, ot, meet,
+						    ot);
+					}
+				vtd_consolidate(&r->output_produced);
+			}
+		}
+	}
+
+	tv_free(&batch_times);
+	tv_free(&input_times);
+	tv_free(&output_times);
+	tv_free(&active);
+}
+
+/* ================================================================== */
 /* The interval driver (CursorTactic::retire) and reduce operator.    */
 /* ================================================================== */
 
@@ -1341,7 +1860,37 @@ typedef struct reduce_op_ctx {
 	const __dtfl_diff_class *odc;
 	bool abelian_wrap;		/* reduce_abelian: wrap the logic */
 	__dtfl_vec batch_storage;	/* __dtfl_batch_ord * (new input batches) */
+	const struct rd_tactic_ops *tactic;	/* ReduceTactic vtable */
+	void *tactic_state;		/* owned; freed by tactic->free */
 } reduce_op_ctx;
+
+/*
+ * A produced output batch, tagged with the held time to ship it at (the
+ * (time, batch) pairs a ReduceTactic returns).  The batch reference is owned
+ * by this struct until the operator ships and commits it.
+ */
+typedef struct produced_batch {
+	uint64_t tag[DTFL_TIME_MAX];
+	__dtfl_batch_ord *batch;	/* owned */
+} produced_batch;
+
+/*
+ * The ReduceTactic seam (reduce.rs ReduceTactic::retire): the driver
+ * (reduce_logic, reduce_with_tactic) hands the tactic the interval
+ * [c->lower_limit, upper) and reads back the output batches, each tagged with
+ * a held time, plus the new frontier of interesting times to hold.  The
+ * tactic reads the pre-existing input (c->source), output (c->out_reader)
+ * and new batches (c->batch_storage) from the operator state, and `held` is
+ * the capability set c->caps.  produced has room for one batch per held
+ * time.  The contract is upstream's: ordered output tiling [lower, upper),
+ * shipped at held times, and an empty frontier when nothing is withheld.
+ */
+typedef struct rd_tactic_ops {
+	void (*retire)(reduce_op_ctx *c, const uint64_t *upper, size_t nupper,
+	    produced_batch *produced, size_t *nproduced,
+	    __dtfl_antichain *new_frontier);
+	void (*free)(void *state);
+} rd_tactic_ops;
 
 /* The abelian wrapper: run inner logic (if input non-empty), then subtract
  * the tentative output (negate and append), consolidate.  The engine already
@@ -1383,16 +1932,6 @@ abelian_logic_fn(void *vctx, const void *key, size_t klen, size_t n,
 		__dtfl_free(neg);
 	/* The engine consolidates ch via update_buffer after we return. */
 }
-
-/*
- * A produced output batch, tagged with the held time to ship it at (the
- * (time, batch) pairs CursorTactic returns).  The batch reference is owned
- * by this struct until the operator ships and commits it.
- */
-typedef struct produced_batch {
-	uint64_t tag[DTFL_TIME_MAX];
-	__dtfl_batch_ord *batch;	/* owned */
-} produced_batch;
 
 /* Find the capability for `t` among caps, or SIZE_MAX. */
 static size_t
@@ -1537,10 +2076,19 @@ rd_build_batches(reduce_op_ctx *c, const __dtfl_antichain *held,
  * with pending keys), evaluates each key, and fills *produced with the output
  * batches to ship plus the new capability frontier.  Follows CursorTactic.
  */
+/*
+ * The per-key engine a retire drives: reduce_compute (CursorTactic's
+ * HistoryReplayer) or reference_compute (ReferenceTactic's ReferenceThinker).
+ */
+typedef void (*rd_compute_fn)(replayer *r, const void *key, size_t klen,
+    const timevec *times, engine_logic *lg, const uint64_t *upper,
+    size_t nupper, out_buffer *outputs, size_t noutputs,
+    timevec *new_interesting);
+
 static void
 rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
     produced_batch *produced, size_t *nproduced,
-    __dtfl_antichain *new_frontier)
+    __dtfl_antichain *new_frontier, rd_compute_fn compute)
 {
 	__dtfl_cursor_list src_cl, out_cl, batch_cl;
 	bool have_src, have_out;
@@ -1702,7 +2250,7 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 				vh_replay_key(&eng.output_history, &out_cl,
 				    key, klen, NULL);
 
-				reduce_compute(&eng, key, klen, &itimes,
+				compute(&eng, key, klen, &itimes,
 				    &c->logic, frontier, fn, outputs, nheld,
 				    &new_times);
 
@@ -1766,6 +2314,37 @@ rd_retire(reduce_op_ctx *c, const uint64_t *frontier, size_t fn,
 	__dtfl_antichain_free(&lower_cp);
 }
 
+/*
+ * CursorTactic and ReferenceTactic are structural twins (reduce.rs: "only the
+ * per-key engine differs"): both run rd_retire over the pending (key, time)
+ * moments in c->pend, differing only in the engine.  Neither carries state
+ * beyond c->pend, so tactic_state is NULL for both.
+ */
+static void
+cursor_tactic_retire(reduce_op_ctx *c, const uint64_t *upper, size_t nupper,
+    produced_batch *produced, size_t *nproduced,
+    __dtfl_antichain *new_frontier)
+{
+	rd_retire(c, upper, nupper, produced, nproduced, new_frontier,
+	    reduce_compute);
+}
+
+static void
+reference_tactic_retire(reduce_op_ctx *c, const uint64_t *upper,
+    size_t nupper, produced_batch *produced, size_t *nproduced,
+    __dtfl_antichain *new_frontier)
+{
+	rd_retire(c, upper, nupper, produced, nproduced, new_frontier,
+	    reference_compute);
+}
+
+static const rd_tactic_ops cursor_tactic_ops = {
+	cursor_tactic_retire, NULL
+};
+static const rd_tactic_ops reference_tactic_ops = {
+	reference_tactic_retire, NULL
+};
+
 /* ================================================================== */
 /* The reduce operator and arrangement-level entry points.            */
 /* ================================================================== */
@@ -1795,10 +2374,7 @@ reduce_logic(dtfl_op *op, void *vctx)
 		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
 		size_t n = dtfl_message_len(m);
 
-		if (rd_find_cap(c, dtfl_cap_time(cap)) == SIZE_MAX)
-			__dtfl_vec_push(&c->caps, &cap);
-		else
-			dtfl_cap_drop(cap);
+		__dtfl_caps_insert(&c->caps, c->tc, cap);
 		for (i = 0; i < n; i++) {
 			size_t len;
 			const void *recp = dtfl_message_record(m, i, &len);
@@ -1878,7 +2454,7 @@ reduce_logic(dtfl_op *op, void *vctx)
 	produced = __dtfl_alloc(DTFL_MAX(nheld, 1u) * sizeof *produced);
 	__dtfl_antichain_init(&new_frontier, c->tc);
 
-	rd_retire(c, (const uint64_t *)(void *)c->upper_limit.elems.data,
+	c->tactic->retire(c, (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit), produced, &nproduced,
 	    &new_frontier);
 
@@ -1933,7 +2509,9 @@ reduce_logic(dtfl_op *op, void *vctx)
 					break;
 				}
 			}
-			if (found != NULL) {
+			if (found == NULL)
+				__dtfl_panic("reduce: failed to find capability");
+			{
 				dtfl_cap *nc = dtfl_cap_delayed(found, t);
 
 				__dtfl_vec_push(&newcaps, &nc);
@@ -1995,17 +2573,21 @@ reduce_op_free(void *vctx)
 	__dtfl_trace_agent_free(&c->source);
 	if (c->logic_ctx_free != NULL)
 		c->logic_ctx_free(c->logic_ctx_free_arg);
+	if (c->tactic->free != NULL)
+		c->tactic->free(c->tactic_state);
 	__dtfl_free(c);
 }
 
 /*
- * __dtfl_arranged_reduce_core: build the reduce operator over the input
- * arrangement `a`, producing an output arrangement (key -> ovt, odc diffs).
+ * reduce_with_tactic: build the reduce operator over the input arrangement
+ * `a`, producing an output arrangement (key -> ovt, odc diffs), with the
+ * per-interval work routed through `tactic` (which takes tactic_state).
  */
-dtfl_arranged *
-__dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
-    const dtfl_type *ovt, const __dtfl_diff_class *odc,
-    __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *))
+static dtfl_arranged *
+reduce_with_tactic(dtfl_arranged *a, const char *name, const dtfl_type *ovt,
+    const __dtfl_diff_class *odc, __dtfl_reduce_logic_fn logic, void *ctx,
+    void (*ctx_free)(void *), const rd_tactic_ops *tactic,
+    void *tactic_state)
 {
 	dtfl_stream *in_stream = __dtfl_arranged_stream(a);
 	dtfl_scope *scope = dtfl_stream_scope(in_stream);
@@ -2026,6 +2608,9 @@ __dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
 
 	/* The output trace is a value trace: key -> out_val, odc diffs. */
 	out_trace = __dtfl_trace_new(false, ikt, ovt, tc, odc);
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "Reduce");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, out_trace, NULL);
 
 	__dtfl_trace_agent_clone(src_agent, &c->source);
 	__dtfl_trace_agent_new(out_trace, false, ikt, ovt, tc, odc,
@@ -2051,8 +2636,9 @@ __dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
 	c->odc = odc;
 	c->abelian_wrap = false;
 	__dtfl_vec_init(&c->batch_storage, sizeof(__dtfl_batch_ord *));
+	c->tactic = tactic;
+	c->tactic_state = tactic_state;
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "Reduce");
 	dtfl_op_builder_input(b, in_stream, dtfl_pact_pipeline());
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_ALWAYS);
 	out_stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
@@ -2061,6 +2647,31 @@ __dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
 	out = __dtfl_arranged_from_agent(out_stream, &out_arr_reader, ikt,
 	    odiff, depth, false);
 	return out;
+}
+
+/* reduce_trace: reduce_with_tactic with the cursor tactic. */
+dtfl_arranged *
+__dtfl_arranged_reduce_core(dtfl_arranged *a, const char *name,
+    const dtfl_type *ovt, const __dtfl_diff_class *odc,
+    __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *))
+{
+	return reduce_with_tactic(a, name, ovt, odc, logic, ctx, ctx_free,
+	    &cursor_tactic_ops, NULL);
+}
+
+/*
+ * reduce_trace_reference (reference::reduce_trace_reference): the same
+ * reduce driven by the model-derived reference tactic.  Same result
+ * contract as __dtfl_arranged_reduce_core; a testing oracle, not a stable
+ * entry point (upstream exports it doc-hidden).
+ */
+dtfl_arranged *
+__dtfl_arranged_reduce_trace_reference(dtfl_arranged *a, const char *name,
+    const dtfl_type *ovt, const __dtfl_diff_class *odc,
+    __dtfl_reduce_logic_fn logic, void *ctx, void (*ctx_free)(void *))
+{
+	return reduce_with_tactic(a, name, ovt, odc, logic, ctx, ctx_free,
+	    &reference_tactic_ops, NULL);
 }
 
 /* The abelian wrapper's context; frees the inner ctx then the wrapper. */
@@ -2116,9 +2727,9 @@ typedef struct abk_ctx {
 	__dtfl_trace_writer writer;
 	__dtfl_vec caps;		/* dtfl_cap * */
 	__dtfl_antichain prev_frontier;
-	const dtfl_type *rt;		/* key || val record type */
-	const dtfl_type *kt;
-	const dtfl_type *vt;
+	const dtfl_type *rt;		/* key || val record type (retained) */
+	const dtfl_type *kt;		/* retained */
+	const dtfl_type *vt;		/* retained */
 	const dtfl_time_class *tc;
 	const __dtfl_diff_class *dc;
 	unsigned depth;
@@ -2134,18 +2745,6 @@ abk_route_fn(const void *rec, size_t len, void *vctx)
 	size_t klen = dtfl_type_value_len(r->kt, rec, rlen);
 
 	return dtfl_type_hash(r->kt, rec, klen);
-}
-
-static size_t
-abk_find_cap(const abk_ctx *c, const uint64_t *t)
-{
-	size_t i;
-
-	for (i = 0; i < c->caps.len; i++)
-		if (__dtfl_words_cmp(dtfl_cap_time(*DTFL_VEC_AT(&c->caps,
-		    dtfl_cap *, i)), t, c->depth) == 0)
-			return i;
-	return SIZE_MAX;
 }
 
 static __dtfl_batch_ord *
@@ -2182,10 +2781,7 @@ abk_logic(dtfl_op *op, void *vctx)
 		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
 		__dtfl_batch *chunk;
 
-		if (abk_find_cap(c, dtfl_cap_time(cap)) == SIZE_MAX)
-			__dtfl_vec_push(&c->caps, &cap);
-		else
-			dtfl_cap_drop(cap);
+		__dtfl_caps_insert(&c->caps, c->tc, cap);
 		for (i = 0; i < k; i++) {
 			size_t len;
 			const void *rec = dtfl_message_record(m, i, &len);
@@ -2357,6 +2953,9 @@ abk_free(void *vctx)
 	__dtfl_trace_agent_free(&c->reader);
 	__dtfl_merge_batcher_free(&c->batcher);
 	__dtfl_chunker_free(&c->chunker);
+	dtfl_type_free(c->rt);
+	dtfl_type_free(c->kt);
+	dtfl_type_free(c->vt);
 	__dtfl_free(c);
 }
 
@@ -2380,9 +2979,10 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 
 	trace = __dtfl_trace_new(false, key_type, val_type, tc, dc);
 
-	c->rt = coll->type;
-	c->kt = key_type;
-	c->vt = val_type;
+	/* Retained, as arrange_core does: the caller may free its handles. */
+	c->rt = dtfl_type_retain(coll->type);
+	c->kt = dtfl_type_retain(key_type);
+	c->vt = dtfl_type_retain(val_type);
 	c->tc = tc;
 	c->dc = dc;
 	c->depth = depth;
@@ -2392,6 +2992,9 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	__dtfl_vec_init(&c->caps, sizeof(dtfl_cap *));
 	__dtfl_antichain_init_elem(&c->prev_frontier, tc, minimum);
 
+	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
+	/* Acquire a logger for arrange events. */
+	__dtfl_dd_logging_install(scope, b, trace, &c->batcher);
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &c->reader, &c->writer);
 	__dtfl_trace_agent_clone(&c->reader, &arr_reader);
@@ -2400,7 +3003,6 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	c->route.depth = depth;
 	c->route.dw = dw;
 
-	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
 	dtfl_op_builder_input(b, coll->stream,
 	    dtfl_pact_exchange(abk_route_fn, &c->route));
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_ALWAYS);
