@@ -27,6 +27,7 @@
  * differential model converges across workers without the trace layer.
  */
 #include "dd/collection_int.h"
+#include "dd/trace/trace_int.h"
 
 #include "progress/time_int.h"
 #include "timely/timely_int.h"
@@ -1249,4 +1250,48 @@ dtfl_collection_consolidate(dtfl_collection *c)
 	dtfl_op_builder_build(b, consolidate_logic, st, consolidate_free);
 	dtfl_type_free(ut);
 	return __dtfl_as_collection(out, c->type, out_diff, c->depth);
+}
+
+/* ------------------------------------------------------------------ */
+/* configure (lib.rs): the default exertion logic.                      */
+/* ------------------------------------------------------------------ */
+
+static bool
+default_exert(void *ctx, const __dtfl_exert_level *batches, size_t n,
+    size_t *effort)
+{
+	size_t non_empty = 0, i;
+
+	for (i = 0; i < n; i++) {
+		if (batches[i].count > 1) {
+			*effort = *(const size_t *)ctx;
+			return true;
+		}
+		if (batches[i].length > 0)
+			non_empty += 1;
+		if (non_empty > 1) {
+			*effort = *(const size_t *)ctx;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void
+default_exert_free(void *ctx)
+{
+	__dtfl_free(ctx);
+}
+
+__dtfl_exert_logic
+__dtfl_default_exert_logic(size_t effort)
+{
+	__dtfl_exert_logic l;
+	size_t *e = __dtfl_alloc(sizeof *e);
+
+	*e = effort;
+	l.fn = default_exert;
+	l.ctx = e;
+	l.ctx_free = default_exert_free;
+	return l;
 }
