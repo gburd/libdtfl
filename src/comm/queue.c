@@ -570,7 +570,21 @@ start_recv(__dtfl_mpsc *q, list_token *token)
 		if ((new_head & MARK_BIT) == 0) {
 			size_t tail;
 
+#if defined(__SANITIZE_THREAD__) && !defined(__clang__) && __GNUC__ >= 12
+/*
+ * gcc's TSan does not model fences (-Wtsan).  Ignoring one can only
+ * drop happens-before edges, so it could cause a false report, never
+ * hide a race.  This fence orders the head and tail index loads; the
+ * data a reader sees is published by the Release/Acquire pairs on
+ * head.block and the slot state, which TSan does see.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtsan"
+#endif
 			atomic_thread_fence(memory_order_seq_cst);
+#if defined(__SANITIZE_THREAD__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif
 			tail = atomic_load_explicit(&q->tail.v.index,
 			    memory_order_relaxed);
 
