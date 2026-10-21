@@ -18,6 +18,7 @@
 
 #include "dtfl/record.h"
 #include "dtfl/timely.h"
+#include "dtfl/timely_ops.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -270,6 +271,95 @@ DTFL_TEST(tee__fan_out)
 		assert_uint64(a.vals[i], ==, vals[i]);
 		assert_uint64(b.vals[i], ==, vals[i]);
 	}
+	return MUNIT_OK;
+}
+
+/*
+ * Pass-through operators (concat, inspect, exchange's single-worker
+ * path, probe) forward a received message by sharing its batch rather
+ * than copying its records.  Two chains of them hang off one source, and
+ * a map (which builds new records) runs on one chain, so the shared
+ * batches reach several consumers and must stay unchanged in all.
+ */
+static uint64_t
+route_by_value_fwd(const void *rec, size_t len, void *ctx)
+{
+	(void)len; (void)ctx;
+	return dtfl_get_u64(rec);
+}
+
+static void
+add_one(void *ctx, const uint64_t *time, const void *rec, size_t len,
+    dtfl_emit *e)
+{
+	unsigned char out[8];
+
+	(void)ctx;
+	(void)time;
+	(void)len;
+	dtfl_put_u64(out, dtfl_get_u64(rec) + 100);
+	dtfl_emit_record(e, out, sizeof out);
+}
+
+static void
+count_records(void *ctx, const uint64_t *time, const void *rec, size_t len)
+{
+	(void)time;
+	(void)rec;
+	(void)len;
+	(*(size_t *)ctx)++;
+}
+
+typedef struct share_ctx {
+	feeder_ctx feeder;
+	collected a, b, c;
+	size_t inspected;
+} share_ctx;
+
+static void
+build_share(dtfl_scope *scope, void *arg)
+{
+	share_ctx *c = arg;
+	dtfl_stream *src = make_feeder(scope, &c->feeder);
+	dtfl_stream *ins = dtfl_stream_inspect(src, count_records,
+	    DTFL_CTX(&c->inspected, NULL));
+	dtfl_stream *cat = dtfl_stream_concat(ins, src);
+	dtfl_stream *mapped = dtfl_stream_flat_map(cat, dtfl_type_u64(), add_one,
+	    DTFL_CTX(NULL, NULL));
+
+	make_sink(cat, dtfl_pact_pipeline(), &c->a);
+	make_sink(mapped, dtfl_pact_pipeline(), &c->b);
+	make_sink(src, dtfl_pact_exchange(route_by_value_fwd, NULL), &c->c);
+}
+
+DTFL_TEST(session__shared_forwarding_keeps_records)
+{
+	static const uint64_t vals[] = { 5, 6, 7, 8 };
+	static const uint64_t times[] = { 0, 0, 1, 1 };
+	share_ctx c;
+	size_t i;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.feeder.vals = vals;
+	c.feeder.times = times;
+	c.feeder.n = 4;
+	run_standalone(build_share, &c);
+
+	/* cat = inspect(src) ++ src: every value twice. */
+	assert_size(c.inspected, ==, 4);
+	assert_size(c.a.n, ==, 8);
+	assert_size(c.b.n, ==, 8);
+	assert_size(c.c.n, ==, 4);
+	qsort(c.a.vals, c.a.n, sizeof(uint64_t), cmp_u64);
+	qsort(c.b.vals, c.b.n, sizeof(uint64_t), cmp_u64);
+	qsort(c.c.vals, c.c.n, sizeof(uint64_t), cmp_u64);
+	for (i = 0; i < 8; i++) {
+		assert_uint64(c.a.vals[i], ==, vals[i / 2]);
+		assert_uint64(c.b.vals[i], ==, vals[i / 2] + 100);
+	}
+	for (i = 0; i < 4; i++)
+		assert_uint64(c.c.vals[i], ==, vals[i]);
 	return MUNIT_OK;
 }
 
@@ -601,6 +691,7 @@ DTFL_TEST(capability__downgrade_backwards_panics)
 static MunitTest tests[] = {
 	DTFL_T(builder__map_pipeline),
 	DTFL_T(tee__fan_out),
+	DTFL_T(session__shared_forwarding_keeps_records),
 	DTFL_T(exchange__two_process_workers),
 	DTFL_T(exchange__flushes_at_capacity),
 	DTFL_T(capability__counting),

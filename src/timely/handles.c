@@ -257,6 +257,23 @@ dtfl_session_give_message(dtfl_session *s, const dtfl_message *m)
 {
 	size_t i, n = __dtfl_batch_len(m->data);
 
+	/*
+	 * Session::give_container: flush what is buffered (FIFO), then send
+	 * the received batch itself, shared by reference, instead of copying
+	 * its records.  Batches are immutable once sent, and refcounts are
+	 * atomic, so sharing is safe across workers.  A session with
+	 * element hooks copies, so each record gets its own reference, as
+	 * dtfl_session_give does; so does a batch with time or diff
+	 * columns, which a session output never carries.
+	 */
+	if (n != 0 && s->elem_drop == NULL && s->elem_retain == NULL &&
+	    m->data->elem_drop == NULL && m->data->tw == 0 &&
+	    m->data->dw == 0) {
+		session_flush(s);
+		__dtfl_output_give(s->out, s->time,
+		    __dtfl_batch_retain(m->data));
+		return;
+	}
 	for (i = 0; i < n; i++) {
 		size_t len;
 		const void *rec = __dtfl_batch_rec(m->data, i, &len);
