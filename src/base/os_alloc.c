@@ -43,6 +43,21 @@ static dtfl_alloc_hooks hooks = {
 };
 static atomic_bool hooks_used;
 
+/*
+ * Latch hooks_used.  A relaxed load first: once set, the shared line
+ * stays read-only, so workers on many cores allocating at once do not
+ * write one cache line on every allocation.  Relaxed is enough: the
+ * latch only refuses a late dtfl_set_alloc_hooks(), which the API
+ * requires to happen before any other call, so nothing is published
+ * through it.
+ */
+static inline void
+mark_hooks_used(void)
+{
+	if (!atomic_load_explicit(&hooks_used, memory_order_relaxed))
+		atomic_store_explicit(&hooks_used, true, memory_order_relaxed);
+}
+
 static void default_panic(const char *msg, void *ctx);
 static dtfl_panic_fn _Atomic panic_fn = default_panic;
 static void *_Atomic panic_ctx;
@@ -77,7 +92,7 @@ __dtfl_alloc(size_t size)
 {
 	void *p;
 
-	atomic_store_explicit(&hooks_used, true, memory_order_relaxed);
+	mark_hooks_used();
 	p = hooks.malloc_fn(size == 0 ? 1 : size, hooks.ctx);
 	if (DTFL_UNLIKELY(p == NULL))
 		__dtfl_panic("allocation of %zu bytes failed", size);
@@ -99,7 +114,7 @@ __dtfl_realloc(void *ptr, size_t size)
 {
 	void *p;
 
-	atomic_store_explicit(&hooks_used, true, memory_order_relaxed);
+	mark_hooks_used();
 	p = hooks.realloc_fn(ptr, size == 0 ? 1 : size, hooks.ctx);
 	if (DTFL_UNLIKELY(p == NULL))
 		__dtfl_panic("reallocation to %zu bytes failed", size);
