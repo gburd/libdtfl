@@ -409,10 +409,57 @@ DTFL_TEST(collection__multi_worker_insert_retract_converges)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Collection::inner                                                   */
+/* ------------------------------------------------------------------ */
+
+typedef struct inner_ctx {
+	dtfl_unordered_input *in;
+	dtfl_cap *cap;
+	bool same;
+} inner_ctx;
+
+static void
+build_inner(dtfl_scope *scope, void *arg)
+{
+	inner_ctx *x = arg;
+	const dtfl_type *fields[3] = { dtfl_type_u64(), dtfl_type_u64(),
+	    dtfl_type_i64() };
+	const dtfl_type *upd = dtfl_type_tuple(fields, 3);
+	dtfl_stream *st = dtfl_unordered_input_new(scope, upd, &x->in, &x->cap);
+	dtfl_collection *c = dtfl_stream_as_collection(st, dtfl_type_u64(),
+	    dtfl_diff_i64());
+
+	/* inner returns the stream dtfl_stream_as_collection wrapped. */
+	x->same = dtfl_collection_inner(c) == st;
+	dtfl_collection_free(c);
+	dtfl_type_free(upd);
+}
+
+DTFL_TEST(collection__inner_is_the_wrapped_stream)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	inner_ctx x = { NULL, NULL, false };
+
+	(void)params; (void)data;
+	assert_int(dtfl_worker_dataflow(w, "inner", tc, build_inner, &x),
+	    ==, 0);
+	assert_true(x.same);
+	dtfl_cap_drop(x.cap);
+	dtfl_unordered_input_free(x.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(collection__cancellation_consolidates_to_empty),
 	DTFL_T(collection__net_multiset_after_updates),
 	DTFL_T(collection__multi_worker_insert_retract_converges),
+	DTFL_T(collection__inner_is_the_wrapped_stream),
 	DTFL_T_END
 };
 
