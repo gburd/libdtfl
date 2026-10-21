@@ -4,6 +4,7 @@ dtfl_config_differential_log_addr
 dtfl_config_free
 dtfl_config_from_args
 dtfl_config_from_env
+dtfl_config_idle_merge_effort
 dtfl_config_mode
 dtfl_config_new
 dtfl_config_process
@@ -12,6 +13,7 @@ dtfl_config_progress_mode
 dtfl_config_report
 dtfl_config_seed
 dtfl_config_set_cluster
+dtfl_config_set_idle_merge_effort
 dtfl_config_set_mode
 dtfl_config_set_progress_mode
 dtfl_config_set_report

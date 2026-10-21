@@ -16,8 +16,10 @@
 #include "dd/arrange_int.h"
 
 #include "dtfl/arrange.h"
+#include "dtfl/config.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
+#include "dtfl/reduce.h"
 #include "dtfl/time.h"
 #include "dtfl/timely.h"
 #include "dtfl/timely_ops.h"
@@ -707,6 +709,221 @@ DTFL_TEST(arrange__caps_insert_antichain)
 	return MUNIT_OK;
 }
 
+/*
+ * Config::idle_merge_effort (lib.rs): a trace left idle keeps merging
+ * toward one batch only when the effort is set.  Epochs 0..3 load 64, 16,
+ * 4 and 1 new keys, which leaves four Single layers in each spine; then
+ * the input stays open at time 4 and the worker steps with nothing to do.
+ * With effort, each operator's own activator reschedules it and each
+ * activation's writer.exert() merges, until every trace is one batch and
+ * the default logic answers None.  Without it, nothing is scheduled and
+ * the batches stay.  The shapes cover each operator that installs the
+ * logic: arrange (arrangement.rs), arrange_by_key and reduce (reduce.rs
+ * output trace), and arrange_from_upsert (upsert.rs).
+ */
+static const size_t idle_sizes[] = { 64, 16, 4, 1 };
+
+enum idle_shape { IDLE_ARRANGE, IDLE_REDUCE, IDLE_UPSERT };
+
+typedef struct idle_ctx {
+	enum idle_shape shape;
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	__dtfl_trace_box *box[2];	/* retained: traces outlive Arranged */
+	size_t nbox;
+	size_t loaded[2], idle[2];	/* batch counts after loading, idling */
+	size_t steps;			/* idle steps taken */
+} idle_ctx;
+
+static void
+idle_keep(idle_ctx *c, dtfl_arranged *a)
+{
+	c->box[c->nbox++] = __dtfl_trace_box_retain(
+	    __dtfl_arranged_agent(a)->box);
+}
+
+static void
+idle_count(void *ctx, const void *key, size_t klen, size_t n,
+    const void *const *in_vals, const size_t *in_vlens, const void *in_diffs,
+    size_t m, const void *const *out_vals, const size_t *out_vlens,
+    const void *out_diffs, dtfl_reduce_emit *out)
+{
+	int64_t one = 1;
+	unsigned char b[8];
+
+	(void)ctx; (void)key; (void)klen; (void)in_vals; (void)in_vlens;
+	(void)in_diffs; (void)m; (void)out_vals; (void)out_vlens;
+	(void)out_diffs;
+	dtfl_put_u64(b, n);
+	dtfl_reduce_emit_pair(out, b, 8, &one);
+}
+
+static void
+build_idle(dtfl_scope *scope, void *arg)
+{
+	idle_ctx *c = arg;
+	const dtfl_type *u64 = dtfl_type_u64();
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr, *red = NULL;
+
+	/* No reader holds compaction back, so the spines may merge freely. */
+	switch (c->shape) {
+	case IDLE_ARRANGE:
+		arr = dtfl_collection_arrange(base, "Arrange");
+		break;
+	case IDLE_REDUCE:
+		arr = dtfl_collection_arrange_by_key(base, u64, u64, "ByKey");
+		red = dtfl_arranged_reduce_abelian(arr, "Count", u64,
+		    dtfl_arranged_diff(arr), idle_count, DTFL_NOCTX);
+		break;
+	default:
+		arr = dtfl_arrange_from_upsert(base, u64, u64, "Upsert");
+		break;
+	}
+	idle_keep(c, arr);
+	if (red != NULL) {
+		idle_keep(c, red);
+		dtfl_stream_probe_with(dtfl_arranged_stream(red), c->probe);
+		dtfl_arranged_free(red);
+	} else {
+		dtfl_stream_probe_with(dtfl_arranged_stream(arr), c->probe);
+	}
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+static size_t
+idle_most(const idle_ctx *c)
+{
+	size_t i, most = 0;
+
+	for (i = 0; i < c->nbox; i++)
+		most = DTFL_MAX(most, __dtfl_trace_batch_count(c->box[i]->trace));
+	return most;
+}
+
+static void
+idle_worker(dtfl_worker *w, void *arg)
+{
+	idle_ctx *c = arg;
+	dtfl_time_class *tc = dtfl_time_u64();
+	uint64_t e, key = 0;
+	size_t i;
+
+	munit_assert_int(dtfl_worker_dataflow(w, "idle", tc, build_idle, c),
+	    ==, 0);
+	for (e = 0; e < 4; e++) {
+		uint64_t next = e + 1;
+		probe_cond pc = { c->probe, next };
+
+		for (i = 0; i < idle_sizes[e]; i++) {
+			unsigned char r[17];
+			size_t len = 16;
+
+			dtfl_put_u64(r, key);
+			if (c->shape == IDLE_UPSERT) {
+				r[8] = 1;	/* Some(key) */
+				dtfl_put_u64(r + 9, key);
+				len = 17;
+			} else {
+				dtfl_put_u64(r + 8, key);
+				if (c->shape == IDLE_ARRANGE)
+					len = 8;
+			}
+			key++;
+			dtfl_input_session_insert(c->in, r, len);
+		}
+		dtfl_input_session_advance_to(c->in, &next);
+		dtfl_input_session_flush(c->in);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+	for (i = 0; i < c->nbox; i++)
+		c->loaded[i] = __dtfl_trace_batch_count(c->box[i]->trace);
+	for (c->steps = 0; c->steps < 200 && idle_most(c) > 1; c->steps++)
+		dtfl_worker_step(w);
+	for (i = 0; i < c->nbox; i++)
+		c->idle[i] = __dtfl_trace_batch_count(c->box[i]->trace);
+	dtfl_input_session_close(c->in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_time_class_free(tc);
+}
+
+static void
+run_idle(enum idle_shape shape, int64_t effort, idle_ctx *c)
+{
+	dtfl_config *cfg = dtfl_config_new();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *rt = NULL, *fields[2];
+	size_t i;
+
+	munit_assert_int(dtfl_config_set_idle_merge_effort(cfg, effort), ==, 0);
+	munit_assert_int64(dtfl_config_idle_merge_effort(cfg), ==, effort);
+	memset(c, 0, sizeof *c);
+	c->shape = shape;
+	fields[0] = dtfl_type_u64();
+	switch (shape) {
+	case IDLE_ARRANGE:
+		c->in = dtfl_input_session_new(dtfl_type_u64(), r);
+		break;
+	case IDLE_REDUCE:
+		rt = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+		c->in = dtfl_input_session_new(rt, r);
+		break;
+	default:
+		fields[1] = dtfl_type_option(dtfl_type_u64());
+		rt = dtfl_type_tuple(fields, 2);
+		c->in = dtfl_input_session_new(rt, r);
+		break;
+	}
+	c->probe = dtfl_probe_new();
+	munit_assert_int(dtfl_execute(cfg, idle_worker, c, NULL), ==, 0);
+	for (i = 0; i < c->nbox; i++) {
+		munit_assert_size(c->loaded[i], >, 1);
+		__dtfl_trace_box_release(c->box[i]);
+	}
+	dtfl_probe_free(c->probe);
+	if (rt != NULL)
+		dtfl_type_free((dtfl_type *)rt);
+	if (shape == IDLE_UPSERT)
+		dtfl_type_free((dtfl_type *)fields[1]);
+	dtfl_diff_free(r);
+	dtfl_config_free(cfg);
+}
+
+static void
+check_idle(enum idle_shape shape, size_t nbox)
+{
+	idle_ctx c;
+	size_t i;
+
+	run_idle(shape, 0, &c);
+	munit_assert_size(c.nbox, ==, nbox);
+	for (i = 0; i < c.nbox; i++)
+		munit_assert_size(c.idle[i], ==, c.loaded[i]);
+
+	run_idle(shape, 16, &c);
+	munit_assert_size(c.nbox, ==, nbox);
+	for (i = 0; i < c.nbox; i++)
+		munit_assert_size(c.idle[i], ==, 1);
+}
+
+DTFL_TEST(arrange__idle_merge_effort)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	munit_assert_int(dtfl_config_set_idle_merge_effort(cfg, -1), ==,
+	    DTFL_EINVAL);
+	munit_assert_int64(dtfl_config_idle_merge_effort(cfg), ==, 0);
+	dtfl_config_free(cfg);
+
+	check_idle(IDLE_ARRANGE, 1);
+	check_idle(IDLE_REDUCE, 2);
+	check_idle(IDLE_UPSERT, 1);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
@@ -714,6 +931,7 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__shared_import_two_readers),
 	DTFL_T(arrange__trace_compaction_holds),
 	DTFL_T(arrange__caps_insert_antichain),
+	DTFL_T(arrange__idle_merge_effort),
 	DTFL_T_END
 };
 

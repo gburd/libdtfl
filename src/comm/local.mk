@@ -22,7 +22,8 @@ comm_sources = \
 libdtfl_la_SOURCES += $(comm_sources)
 libdtfl_internal_la_SOURCES += $(comm_sources)
 dtflinclude_HEADERS += include/dtfl/config.h
-dist_man_MANS += man/man3/dtfl_config.3
+dist_man_MANS += man/man3/dtfl_config.3 \
+	man/man3/dtfl_config_set_idle_merge_effort.3
 EXTRA_DIST += src/comm/exports.sym
 
 check_PROGRAMS += tests/unit/test_comm tests/unit/test_config

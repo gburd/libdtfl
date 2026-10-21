@@ -54,8 +54,11 @@ run_worker(worker_start *ws)
 
 	pub.w = __dtfl_worker_new(a, ws->mode, true, NULL, NULL);
 	pub.standalone = false;
-	if (ws->cfg != NULL)
+	if (ws->cfg != NULL) {
 		__dtfl_worker_install_log_subs(pub.w, ws->cfg);
+		pub.w->idle_merge_effort =
+		    (size_t)dtfl_config_idle_merge_effort(ws->cfg);
+	}
 	ws->fn(&pub, ws->ctx);
 	while (pub.w->dataflows.len > 0)
 		(void)__dtfl_worker_step_or_park(pub.w, UINT64_MAX);
@@ -272,6 +275,8 @@ __dtfl_sim_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx)
 		ws[i].pub.w = __dtfl_worker_new(a, dtfl_config_progress_mode(cfg), true,
 		    sim_clock_fn, sim);
 		__dtfl_worker_install_log_subs(ws[i].pub.w, cfg);
+		ws[i].pub.w->idle_merge_effort =
+		    (size_t)dtfl_config_idle_merge_effort(cfg);
 	}
 	__dtfl_free(b);
 	/*

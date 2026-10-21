@@ -75,6 +75,17 @@ DTFL_API void dtfl_config_set_seed(dtfl_config *cfg, uint64_t seed);
 DTFL_API int dtfl_config_set_spill_file(dtfl_config *cfg, const char *dir,
     size_t threshold_bytes, size_t head_reserve_bytes);
 
+/*
+ * differential Config::idle_merge_effort: with effort > 0, every
+ * arrangement, reduce and upsert operator reschedules itself until its
+ * trace is compact, doing as much merge work each time as if `effort`
+ * updates had arrived.  0 (the default) turns it off.  Fails with
+ * DTFL_EINVAL for a negative effort.
+ */
+DTFL_API int dtfl_config_set_idle_merge_effort(dtfl_config *cfg,
+    int64_t effort);
+DTFL_API int64_t dtfl_config_idle_merge_effort(const dtfl_config *cfg);
+
 DTFL_API dtfl_comm_mode dtfl_config_mode(const dtfl_config *cfg);
 DTFL_API size_t dtfl_config_threads(const dtfl_config *cfg);
 DTFL_API size_t dtfl_config_process(const dtfl_config *cfg);
