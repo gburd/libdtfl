@@ -27,6 +27,13 @@ mkdir -p b-c
     make -j"$(nproc)" >m.log 2>&1)
 (cd dd/experiments && RUSTFLAGS="-C force-frame-pointers=yes" \
     cargo build --release --bin arrange >../cargo.log 2>&1)
+# The idle-step benchmark (P16.5) is timely's barrier example: one
+# notification per round through a feedback loop, no data.
+tar xzf timely.tgz
+(cd timely/timely && RUSTFLAGS="-C force-frame-pointers=yes" \
+    cargo build --release --example barrier >../cargo.log 2>&1)
+CB=$HOME/b-c/examples/timely/.libs/barrier
+RB=$HOME/timely/target/release/examples/barrier
 C=$HOME/b-c/bench/experiments/.libs/arrange
 R=$HOME/dd/target/release/arrange
 L=$HOME/b-c/.libs
@@ -101,6 +108,21 @@ for comp in arrange count; do
 	for f in $fracs; do
 		rate=$(awk -v c="$cap" -v f="$f" 'BEGIN {printf "%d", c * f}')
 		pair "$comp" 1 open "$rate"
+	done
+done
+# Idle-step cost: barrier rounds, C against Rust, one worker and four.
+echo "impl,workers,rounds,rep,seconds" > "$res/step.csv"
+rounds=2000000
+for w in 1 4; do
+	for ((rep = 0; rep <= reps; rep++)); do
+		for impl in c r; do
+			[ "$impl" = c ] && bin=$CB || bin=$RB
+			t0=$(date +%s.%N)
+			env LD_LIBRARY_PATH=$L taskset -c "$(cpus_for "$w")" "$bin" "$rounds" -w "$w" \
+			    > /dev/null 2>&1 || true
+			t1=$(date +%s.%N)
+			echo "$impl,$w,$rounds,$rep,$(awk -v a="$t0" -v b="$t1" 'BEGIN {print b - a}')" >> "$res/step.csv"
+		done
 	done
 done
 log "done"

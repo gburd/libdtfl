@@ -97,6 +97,9 @@ dd=${DD_SRC:-$HOME/src/differential-dataflow}
 log "packing libdtfl $(git -C "$src" rev-parse --short "$rev") and $pin"
 git -C "$src" archive --format=tar.gz --prefix=libdtfl/ "$rev" > "$work/libdtfl.tgz"
 git -C "$dd" archive --format=tar.gz --prefix=dd/ "$pin" > "$work/dd.tgz"
+tpin=$(awk -F'`' '/^\| timely-dataflow \|/ {print $2; exit}' "$src/dev/PLAN.md")
+td=${TIMELY_SRC:-$HOME/src/timely-dataflow}
+git -C "$td" archive --format=tar.gz --prefix=timely/ "$tpin" > "$work/timely.tgz"
 
 # Launch: Debian (not Amazon Linux), SSH from here only.
 ami=$(aws ec2 describe-images --owners 136693071363 \
@@ -132,7 +135,7 @@ ssh_opts=(-o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
     -o ServerAliveInterval=30 -i "$key")
 rsh() { ssh "${ssh_opts[@]}" "admin@$ip" "$@"; }
 for _ in $(seq 1 60); do rsh true 2>/dev/null && break; sleep 10; done
-scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$src/dev/bench-ec2.d/remote.sh" "admin@$ip:"
+scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$work/timely.tgz" "$src/dev/bench-ec2.d/remote.sh" "admin@$ip:"
 
 log "provisioning, building and running the $matrix matrix"
 rsh "bash remote.sh $matrix $reps" 2>&1 | tee "$out/remote.log"

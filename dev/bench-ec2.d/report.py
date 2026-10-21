@@ -80,6 +80,25 @@ def main():
                 cells.append(' / '.join('%.1f' % (st.median(q[p] for q in qs) / 1e3)
                                         for p in (0.5, 0.99, 0.999)))
             print('| %s | %d | %s | %s |' % (comp, rate, cells[0], cells[1]))
+    step_table(d)
+
+
+def step_table(d):
+    path = d / 'step.csv'
+    if not path.exists():
+        return
+    rows = [r for r in csv.DictReader(open(path)) if r['rep'] != '0']
+    print('\n## Idle-step cost (barrier rounds)\n')
+    print('| workers | C ns/round | Rust ns/round | C slower by |')
+    print('|---|---|---|---|')
+    for w in sorted({int(r['workers']) for r in rows}):
+        ns = {}
+        for impl in ('c', 'r'):
+            v = [float(r['seconds']) / float(r['rounds']) * 1e9 for r in rows
+                 if r['impl'] == impl and int(r['workers']) == w]
+            ns[impl] = st.median(v) if v else None
+        if ns['c'] and ns['r']:
+            print('| %d | %.0f | %.0f | %.2fx |' % (w, ns['c'], ns['r'], ns['c'] / ns['r']))
 
 
 if __name__ == '__main__':
