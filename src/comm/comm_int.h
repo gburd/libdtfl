@@ -161,15 +161,28 @@ __dtfl_fifo_len(const __dtfl_fifo *q)
 }
 
 /*
- * A many-producer, one-consumer queue between threads (the port of
- * std::sync::mpsc::channel at the pin).  A mutex protects a FIFO; the
- * mutex is the only synchronization, so a value sent happens-before the
- * receive that returns it.  Reference counted (atomic): every Sender
- * clone and the Receiver hold one reference.
+ * A many-producer, one-consumer queue between threads: a lock-free port
+ * of the unbounded list channel behind std::sync::mpsc::channel at the
+ * pin's toolchain (rust 1.99.1, library/std/src/sync/mpmc/list.rs).
+ * Messages live in a linked list of blocks of 31 slots.  A sender
+ * reserves a slot by advancing the tail index with a CAS, copies the
+ * element in, and sets the slot's WRITE bit with a Release fetch_or;
+ * the receiver advances the head index and waits for WRITE with an
+ * Acquire load before copying the element out.  That pair makes a value
+ * sent happen-before the receive that returns it.  Senders never take a
+ * lock; a sender or receiver spins (then yields) only while another
+ * thread is inside a few instructions of installing a block or writing
+ * a reserved slot.  Reference counted (atomic): every Sender clone and
+ * the Receiver hold one reference.
+ *
+ * One receiver: recv, drain and close are called by one thread at a
+ * time.  Any number of threads may send concurrently.
  *
  * After __dtfl_mpsc_close (the Receiver dropped), sends fail and the
  * sender keeps ownership of the value, as mpsc::Sender::send returns
- * it in the error.
+ * it in the error.  Close sets the disconnected mark on the tail, so
+ * every send is ordered either before it (the element is queued, and
+ * close drops it) or after it (send returns false).
  */
 typedef struct __dtfl_mpsc __dtfl_mpsc;
 
@@ -185,11 +198,15 @@ void __dtfl_mpsc_release(__dtfl_mpsc *q);
 bool __dtfl_mpsc_send(__dtfl_mpsc *q, const void *elem);
 /* try_recv: pops the front element into *out; false when empty. */
 bool __dtfl_mpsc_recv(__dtfl_mpsc *q, void *out);
-/* Appends every queued element to `out` in send order, under one lock. */
+/*
+ * Appends queued elements to `out` in send order until the queue is
+ * empty (process.rs receive: `while let Ok(x) = try_recv()`).
+ */
 void __dtfl_mpsc_drain(__dtfl_mpsc *q, __dtfl_vec *out);
 /*
  * Receiver side: the Receiver is dropped.  Queued elements are dropped
- * and later sends fail.
+ * with `drop`, on the calling thread with no internal lock held, and
+ * later sends fail.
  */
 void __dtfl_mpsc_close(__dtfl_mpsc *q);
 
