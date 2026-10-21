@@ -221,16 +221,22 @@ session_flush(dtfl_session *s)
  * never pushes reserves no record bytes.
  */
 static inline void
-session_ensure_capacity(dtfl_session *s)
+session_ensure_capacity(dtfl_session *s, size_t len)
 {
+	/*
+	 * Room for the flush threshold's worth of records of the first
+	 * record's size (default_capacity::<T>() for a fixed-size T), so the
+	 * offset column does not regrow either.
+	 */
 	if (s->buffer->arena.cap == 0)
-		__dtfl_batch_reserve(s->buffer, 0, s->cap_bytes);
+		__dtfl_batch_reserve(s->buffer,
+		    s->cap_bytes / (len != 0 ? len : 1) + 1, s->cap_bytes);
 }
 
 void
 dtfl_session_give(dtfl_session *s, const void *rec, size_t len)
 {
-	session_ensure_capacity(s);
+	session_ensure_capacity(s, len);
 	__dtfl_batch_push(s->buffer, rec, len, NULL, NULL);
 	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
 		session_flush(s);
@@ -242,7 +248,7 @@ __dtfl_session_reserve(dtfl_session *s, size_t len)
 	/* Flush first so the returned record stays in a stable buffer. */
 	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
 		session_flush(s);
-	session_ensure_capacity(s);
+	session_ensure_capacity(s, len);
 	return __dtfl_batch_push_uninit(s->buffer, len, NULL, NULL);
 }
 
