@@ -9,7 +9,9 @@
  * longjmp target is on the main thread).  A worker records the first
  * failure in its result and returns; the main thread asserts after
  * joining.  Every wait is bounded by DEADLINE_NS, and a worker that
- * hits it reports a timeout instead of hanging the suite.
+ * hits it reports a timeout instead of hanging the suite.  A test that
+ * can hang inside the library (an MPSC wait for a block or a slot)
+ * also arms alarm(2), which kills the forked test child.
  */
 #define _POSIX_C_SOURCE 200809L	/* nanosleep */
 
@@ -17,6 +19,7 @@
 #include "test_comm_msg.h"
 
 #include <stdio.h>
+#include <unistd.h>	/* alarm */
 
 #include "base/os_thread.h"
 #include "comm/init_int.h"
@@ -178,6 +181,323 @@ DTFL_TEST(mpsc_close_drops_and_refuses)
 	assert_false(__dtfl_mpsc_send(q, &m));	/* sender keeps it */
 	test_msg_free(&test_msg_class, m);
 	__dtfl_mpsc_release(q);
+	return MUNIT_OK;
+}
+
+/*
+ * A tagged MPSC element: 12 bytes, so slots are not a power of two.
+ * `check` catches a slot read before its write landed (zeros) or torn.
+ */
+typedef struct mp_elem {
+	uint32_t producer;
+	uint32_t seq;
+	uint32_t check;
+} mp_elem;
+
+#define MP_MAGIC UINT32_C(0x9e3779b9)
+#define MP_CHECK(p, s) ((p) * UINT32_C(2654435761) ^ (s) ^ MP_MAGIC)
+#define MP_PRODUCERS 4
+
+typedef struct mp_producer {
+	__dtfl_mpsc *q;		/* one reference, released on exit */
+	atomic_int *go;		/* start barrier */
+	atomic_uint *fate;	/* close race: [producer * n + seq], or NULL */
+	uint32_t id;
+	uint32_t n;
+	/* Results, read by the main thread after join. */
+	uint32_t refused;	/* sends that returned false */
+	char err[128];
+} mp_producer;
+
+static void *
+mp_producer_main(void *arg)
+{
+	mp_producer *p = arg;
+	uint32_t s;
+
+	while (atomic_load_explicit(p->go, memory_order_acquire) == 0)
+		;
+	for (s = 0; s < p->n; s++) {
+		mp_elem e = { p->id, s, MP_CHECK(p->id, s) };
+
+		if (__dtfl_mpsc_send(p->q, &e)) {
+			if (p->refused > 0 && p->err[0] == '\0')
+				snprintf(p->err, sizeof p->err,
+				    "producer %u: send %u succeeded after a "
+				    "refusal", p->id, s);
+			continue;
+		}
+		/* Refused: the element is still ours. */
+		p->refused++;
+		if (p->fate != NULL)
+			atomic_fetch_add_explicit(&p->fate[p->id * p->n + s],
+			    1, memory_order_relaxed);
+	}
+	__dtfl_mpsc_release(p->q);
+	return NULL;
+}
+
+/* Spawns MP_PRODUCERS senders on `q`, each with its own reference. */
+static void
+mp_spawn(__dtfl_mpsc *q, atomic_int *go, atomic_uint *fate, uint32_t n,
+    mp_producer *p, __dtfl_thread *t)
+{
+	uint32_t i;
+
+	for (i = 0; i < MP_PRODUCERS; i++) {
+		memset(&p[i], 0, sizeof p[i]);
+		p[i].q = __dtfl_mpsc_retain(q);
+		p[i].go = go;
+		p[i].fate = fate;
+		p[i].id = i;
+		p[i].n = n;
+		if (__dtfl_thread_spawn("mp-producer", mp_producer_main, &p[i],
+		    &t[i]) != 0)
+			abort();
+	}
+}
+
+/*
+ * Checks one received element against the per-producer next sequence
+ * number.  Returns false, with a message in err, on any violation.
+ */
+static bool
+mp_accept(const mp_elem *e, uint32_t *next, uint32_t n, char *err,
+    size_t errlen)
+{
+	if (e->producer >= MP_PRODUCERS ||
+	    e->check != MP_CHECK(e->producer, e->seq)) {
+		snprintf(err, errlen, "bad element {%u, %u, %#x}",
+		    e->producer, e->seq, e->check);
+		return false;
+	}
+	if (e->seq != next[e->producer] || e->seq >= n) {
+		snprintf(err, errlen, "producer %u: got %u, expected %u",
+		    e->producer, e->seq, next[e->producer]);
+		return false;
+	}
+	next[e->producer]++;
+	return true;
+}
+
+/*
+ * Many producers, one consumer polling with recv and sometimes drain:
+ * every element arrives once, in its producer's order, across many
+ * block boundaries (a block holds 31).
+ */
+DTFL_TEST(mpsc_multi_producer_fifo_no_loss)
+{
+	const uint32_t n = 20000;
+	__dtfl_mpsc *q = __dtfl_mpsc_new(sizeof(mp_elem), NULL, NULL);
+	mp_producer p[MP_PRODUCERS];
+	__dtfl_thread t[MP_PRODUCERS];
+	uint32_t next[MP_PRODUCERS] = { 0 };
+	atomic_int go;
+	__dtfl_vec batch;
+	uint64_t got = 0, polls = 0, t0;
+	char err[128] = "";
+	uint32_t i;
+
+	(void)params; (void)data;
+	alarm(120);
+	atomic_init(&go, 0);
+	__dtfl_vec_init(&batch, sizeof(mp_elem));
+	mp_spawn(q, &go, NULL, n, p, t);
+	atomic_store_explicit(&go, 1, memory_order_release);
+	t0 = __dtfl_clock_ns();
+	while (got < (uint64_t)MP_PRODUCERS * n && err[0] == '\0' &&
+	    __dtfl_clock_ns() - t0 < DEADLINE_NS) {
+		mp_elem e;
+		size_t k;
+
+		if (++polls % 7 == 0) {
+			__dtfl_vec_clear(&batch);
+			__dtfl_mpsc_drain(q, &batch);
+			for (k = 0; k < batch.len && err[0] == '\0'; k++)
+				if (mp_accept(DTFL_VEC_AT(&batch, mp_elem, k),
+				    next, n, err, sizeof err))
+					got++;
+		} else if (__dtfl_mpsc_recv(q, &e)) {
+			if (mp_accept(&e, next, n, err, sizeof err))
+				got++;
+		}
+	}
+	for (i = 0; i < MP_PRODUCERS; i++) {
+		(void)__dtfl_thread_join(t[i]);
+		assert_string_equal(p[i].err, "");
+		assert_uint32(p[i].refused, ==, 0);
+	}
+	assert_string_equal(err, "");
+	assert_uint64(got, ==, (uint64_t)MP_PRODUCERS * n);
+	{
+		mp_elem e;
+
+		assert_false(__dtfl_mpsc_recv(q, &e));	/* nothing extra */
+	}
+	__dtfl_vec_free(&batch);
+	__dtfl_mpsc_close(q);
+	__dtfl_mpsc_release(q);
+	alarm(0);
+	return MUNIT_OK;
+}
+
+typedef struct mp_fate {
+	atomic_uint *count;	/* [producer * n + seq] */
+	uint32_t n;
+	/*
+	 * Set once close returns.  Close leaves nothing queued and later
+	 * sends fail, so the last release must drop nothing.
+	 */
+	atomic_int closed;
+	atomic_uint late;	/* drops seen after close */
+} mp_fate;
+
+/* Close race drop hook: counts the element's fate. */
+static void
+mp_drop_fate(void *elem, void *ctx)
+{
+	mp_fate *f = ctx;
+	mp_elem e;
+
+	memcpy(&e, elem, sizeof e);
+	atomic_fetch_add_explicit(&f->count[e.producer * f->n + e.seq], 1,
+	    memory_order_relaxed);
+	/* relaxed: the queue's refcount orders close before the last drop. */
+	if (atomic_load_explicit(&f->closed, memory_order_relaxed))
+		atomic_fetch_add_explicit(&f->late, 1, memory_order_relaxed);
+}
+
+/*
+ * Producers send while the consumer closes.  Every element is exactly
+ * one of: received before close, dropped by close (the drop hook), or
+ * refused to its sender.  Each round closes after a different number
+ * of receives.
+ */
+DTFL_TEST(mpsc_close_races_senders)
+{
+	const uint32_t n = 2000, rounds = 40;
+	const uint64_t total = (uint64_t)MP_PRODUCERS * n;
+	atomic_uint *fate = calloc(total, sizeof *fate);
+	mp_fate f;
+	uint32_t r, i;
+
+	(void)params; (void)data;
+	if (fate == NULL)
+		abort();
+	alarm(120);
+	f.count = fate;
+	f.n = n;
+	for (r = 0; r < rounds; r++) {
+		__dtfl_mpsc *q = __dtfl_mpsc_new(sizeof(mp_elem), mp_drop_fate,
+		    &f);
+		mp_producer p[MP_PRODUCERS];
+		__dtfl_thread t[MP_PRODUCERS];
+		uint32_t next[MP_PRODUCERS] = { 0 };
+		uint64_t stop = (uint64_t)r * 1993 % total, got = 0, k;
+		uint64_t received = 0, refused = 0, t0;
+		atomic_int go;
+		char err[128] = "";
+		mp_elem e;
+
+		for (k = 0; k < total; k++)
+			atomic_init(&fate[k], 0);
+		atomic_init(&f.closed, 0);
+		atomic_init(&f.late, 0);
+		atomic_init(&go, 0);
+		mp_spawn(q, &go, fate, n, p, t);
+		atomic_store_explicit(&go, 1, memory_order_release);
+		t0 = __dtfl_clock_ns();
+		while (got < stop && err[0] == '\0' &&
+		    __dtfl_clock_ns() - t0 < DEADLINE_NS)
+			if (__dtfl_mpsc_recv(q, &e) &&
+			    mp_accept(&e, next, n, err, sizeof err)) {
+				atomic_fetch_add_explicit(
+				    &fate[e.producer * n + e.seq], 1,
+				    memory_order_relaxed);
+				got++;
+			}
+		__dtfl_mpsc_close(q);
+		atomic_store_explicit(&f.closed, 1, memory_order_relaxed);
+		__dtfl_mpsc_release(q);
+		for (i = 0; i < MP_PRODUCERS; i++) {
+			(void)__dtfl_thread_join(t[i]);
+			assert_string_equal(p[i].err, "");
+			refused += p[i].refused;
+		}
+		assert_string_equal(err, "");
+		assert_uint64(got, ==, stop);
+		assert_uint(atomic_load(&f.late), ==, 0);
+		for (i = 0; i < MP_PRODUCERS; i++)
+			received += next[i];
+		for (k = 0; k < total; k++)
+			if (atomic_load(&fate[k]) != 1)
+				munit_errorf("round %u: element {%u, %u} "
+				    "accounted %u times (received %" PRIu64
+				    ", refused %" PRIu64 ")", r,
+				    (unsigned)(k / n), (unsigned)(k % n),
+				    atomic_load(&fate[k]), received, refused);
+	}
+	alarm(0);
+	free(fate);
+	return MUNIT_OK;
+}
+
+/* Last-release drop hook: counts drops per element index. */
+static void
+count_drop(void *elem, void *ctx)
+{
+	uint64_t idx;
+
+	memcpy(&idx, elem, sizeof idx);
+	((unsigned *)ctx)[idx]++;
+}
+
+/*
+ * The last release drops each element still queued exactly once, and
+ * none the receiver took, for counts on and around block boundaries.
+ */
+DTFL_TEST(mpsc_last_release_drops_queued_once)
+{
+	static const size_t counts[] = { 0, 1, 30, 31, 32, 61, 62, 63, 100 };
+	unsigned dropped[100];
+	size_t c, k, i, takes[4];
+
+	(void)params; (void)data;
+	alarm(120);
+	for (c = 0; c < DTFL_ARRAY_LEN(counts); c++) {
+		size_t n = counts[c];
+
+		takes[0] = 0;
+		takes[1] = n > 0 ? 1 : 0;
+		takes[2] = n > 31 ? 31 : n;
+		takes[3] = n / 2;
+		for (k = 0; k < DTFL_ARRAY_LEN(takes); k++) {
+			__dtfl_mpsc *q = __dtfl_mpsc_new(2 * sizeof(uint64_t),
+			    count_drop, dropped);
+			uint64_t e[2];
+
+			memset(dropped, 0, sizeof dropped);
+			(void)__dtfl_mpsc_retain(q);	/* a Sender */
+			for (i = 0; i < n; i++) {
+				e[0] = i;
+				e[1] = ~i;
+				assert_true(__dtfl_mpsc_send(q, e));
+			}
+			for (i = 0; i < takes[k]; i++) {
+				assert_true(__dtfl_mpsc_recv(q, e));
+				assert_uint64(e[0], ==, i);
+				assert_uint64(e[1], ==, ~(uint64_t)i);
+			}
+			__dtfl_mpsc_release(q);	/* the Receiver */
+			for (i = 0; i < n; i++)
+				assert_uint(dropped[i], ==, 0);
+			__dtfl_mpsc_release(q);	/* the last */
+			for (i = 0; i < n; i++)
+				assert_uint(dropped[i], ==,
+				    i < takes[k] ? 0 : 1);
+		}
+	}
+	alarm(0);
 	return MUNIT_OK;
 }
 
@@ -980,6 +1300,9 @@ static MunitTest tests[] = {
 	DTFL_T(parker_cross_thread_wakes),
 	DTFL_T(fifo_order_and_compaction),
 	DTFL_T(mpsc_close_drops_and_refuses),
+	DTFL_T(mpsc_multi_producer_fifo_no_loss),
+	DTFL_T(mpsc_close_races_senders),
+	DTFL_T(mpsc_last_release_drops_queued_once),
 	DTFL_T(thread_allocator_fifo_and_events),
 	DTFL_T(thread_push_returns_recycled_or_null),
 	DTFL_T(pipeline_is_local_and_unencoded),
