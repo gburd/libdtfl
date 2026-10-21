@@ -543,8 +543,19 @@ Parking and wakeup:
 - libdtfl gives each worker a futex on Linux, or a mutex/condvar pair
   elsewhere.
 - `dtfl_sync_activator` (upstream `SyncActivator`) is the one
-  cross-thread entry point.  It posts to a lock-free MPSC queue, then
-  wakes the worker.
+  cross-thread entry point.  It posts to an MPSC queue, then wakes the
+  worker.
+
+Channels between threads:
+
+- Upstream's `Process` allocator and its counters use
+  `std::sync::mpsc`, which is lock-free at the pin's toolchain (the
+  crossbeam list channel).
+- `src/comm/queue.c` is a mutex around a FIFO, locked on every send
+  and every receive poll, including empty ones.  On a 16-worker run it
+  costs about five times Rust's futex calls per record and halves
+  throughput against Rust (section 9).  P16.1 replaces it with a
+  lock-free port of the list channel.
 
 ### D8. Determinism and the simulation allocator
 
@@ -893,11 +904,22 @@ those operators exist at the pin (section 2).  Each one gets a short
   the same inputs.
 - The target for 1.0 is within 1.5x of Rust's throughput on every row,
   and the table in the manual says honestly where it is not.
+- Each row is measured along four axes, not one:
+  - throughput at 1, 2, 4, 8, 16 and 48 workers (closed loop);
+  - open-loop latency, p50, p99 and p99.9, at 25%, 50% and 75% of
+    the C build's closed-loop capacity, from upstream's open-loop mode
+    (requests on a fixed schedule, so a stall is charged to every
+    request it delays: no coordinated omission);
+  - instructions, allocations and futex calls per record;
+  - the cost of one step of an idle dataflow (P16.5).
 - Each optimization commit carries its before and after numbers.
-- Benchmarks run on dedicated EC2 hosts through the `aws-benchmark`
-  skill workflow, never on the development laptop.  Every published
-  number records the commit, configure flags, instance type and
-  compiler.
+- Benchmarks run only on a dedicated EC2 bare-metal instance, through
+  `dev/bench-ec2` (P16.3): never on the development laptop and never
+  on a LAN host.  The clock is pinned (performance governor, turbo
+  off, min = max frequency), THP and NUMA balancing are off, C and Rust
+  runs alternate, and the first run of each pair is discarded.  Every
+  published number records the commit, configure flags, instance type,
+  AMI, kernel, compilers and the tuning applied.
 
 ## 10. Phases
 
@@ -935,6 +957,7 @@ by module.
 | P13 | DDIR: parser, lowering, interpreter, explain, `dtfl-ddir` | 42 / 6,548 | P8 | the explain test suite; the upstream `.ddp`/`.ddir` programs give the same results |
 | P14 | Plugin server and its four example plugins | 6 / 520 | P8 | the `dd_server` session scripts replay |
 | P15 | 1.0 release: the three `experiments/` benchmarks, performance table, fuzz campaign, full manual, `make distcheck` on Linux (glibc, musl), FreeBSD and macOS | 3 / 586 | all | section 13 |
+| P16 | Latency and scaling: lock-free channels, the faithful benchmark modes, the EC2 metal harness, allocation discipline, the idle-step cost, exert and idle merge effort, simulator coverage, observability, two-socket runs, an IVM latency target (section 10.1) | - | P15 | section 10.1 |
 
 The table above is a DAG, not a sequence.  After P8, the phases P9,
 P10, P12, P13 and P14 are independent of each other and can run in
@@ -959,6 +982,40 @@ These are handled as follows:
   the last method lands.
 - **`Arranged::join_core`, `reduce_abelian` and `reduce_core`** are
   declared in P7 and implemented in P8.  P7's tests do not call them.
+
+### 10.1 P16: latency and scaling
+
+A review on a dedicated c7i.metal-24xl (clock pinned at 2.4 GHz, C and
+Rust alternated) found single-worker throughput within the 1.5x goal
+(arrange 1.22x, count 1.40x slower than Rust) but three gaps the
+throughput table did not show:
+
+- **Scaling.**  At 16 workers arrange is 2.14x slower and count 1.71x,
+  with the same instructions per record as at one worker: the loss is
+  contention (about five times Rust's futex calls per record, IPC 2.03
+  against 2.60).
+- **Latency.**  In upstream's open-loop mode, which the port had not
+  ported, one-worker arrange latency is 2.5x to 4.5x Rust's at p50 to
+  p99 (for example 18 against 7 microseconds at p50 under 1M records
+  per second).
+- **Allocation.**  37% of the C build's open-loop cycles are in libc
+  (malloc, realloc, free, memcpy), against 16% for Rust.
+
+P16 addresses them.  Each item has its acceptance check; numbers come
+only from the metal harness.
+
+| Item | Scope | Acceptance |
+|---|---|---|
+| P16.1 | Lock-free MPSC: port the list channel behind `std::sync::mpsc` at the pin's toolchain to C11 atomics in `src/comm/queue.c`, keeping its send, try_recv, drain and close contracts | TSan and the simulator suites pass; a multi-producer stress test checks FIFO per producer, no loss and no duplication across close; on metal, futex calls per record within 1.5x of Rust and throughput within 1.5x at every worker count up to 16 |
+| P16.2 | Faithful `arrange` benchmark: the open-loop mode, the latency histogram arrange.rs prints, the exchange arm, timely arguments (`-w` and the rest) through `dtfl_execute`, per-worker seeds and times, and per-worker core pinning as `core_affinity` does | the ledger row is `done` with no subsumed parts; output lines match upstream's format |
+| P16.3 | `dev/bench-ec2`: launch a tagged metal instance, tune it, build C and the Rust pin, run the alternating matrix of section 9, collect CSV, terminate, and sweep for leftovers | one command produces the section 9 table; no account, VPC, subnet or security-group identifiers are committed |
+| P16.4 | Allocation discipline: per-worker free lists for batches, messages and chunks; upstream's chunk recycling in the merge batcher (VecMerger's stash) | allocations per record within 1.5x of Rust's on every row; open-loop p99 within 1.5x |
+| P16.5 | Idle-step cost: a benchmark that steps a dataflow whose inputs only advance time, C against Rust in nanoseconds per step; optimize the progress tracker and change batches against it | within 1.5x of Rust |
+| P16.6 | Port `Trace::exert`, `set_exert_logic` and `exert_effort` (spine_fueled.rs), `TraceWriter::exert` (writer.rs), the `writer.exert()` calls in arrangement.rs, reduce.rs and upsert.rs, the spine's activator, and `Config::idle_merge_effort` with `configure` (lib.rs) as `dtfl_config_set_idle_merge_effort` | a test that an idle arrangement with effort set reduces to one batch and one without does not; the longest single step on a 10M-key trace is reported |
+| P16.7 | Simulator coverage: run the model and property suites under `DTFL_COMM_SIM` with drawn seeds; add fault injection (worker stalls, bounded delay and reordering within each channel's FIFO guarantee) | a `make check-sim` target; 100,000 seeds green before 1.0 (section 13) |
+| P16.8 | Observability: optional USDT probes (operator schedule, batch seal, merge begin and end, park and unpark); a public `dtfl_trace_stats` (layers, pending batches, merges in flight, updates and bytes); frame pointers kept in release builds | probes listed in the manual; `dtfl_trace_stats` has a man page and a test |
+| P16.9 | Two sockets: run the matrix on a two-socket metal instance (c6i.metal or m6i.metal) with workers spread and packed; document worker placement through the thread hooks | results in the manual |
+| P16.10 | IVM latency: for the persistent maintenance worker of `dev/notes/pg-incremental-views.md`, the p99 delay from a commit's delta to its view delta at a stated commit rate, measured with the `examples/ivm` harness | a stated target and a measured number |
 
 ## 11. License and attribution
 
@@ -1008,7 +1065,10 @@ work of all three.  The attribution is applied as follows:
   (musl), FreeBSD and macOS.
 - These are green: ASan/UBSan, TSan, interop, the docs gate, and
   100,000 seeds of the simulator property suites.
-- The performance table is published with honest numbers.
+- The performance table is published with honest numbers, along all
+  four axes of section 9, from the metal harness.
+- P16.1, P16.2, P16.3 and P16.6 are done; the others are done or
+  carry a measured reason in the manual.
 - Every public function has a man page, and the manual has no
   placeholder nodes.
 - The ABI is frozen: `src/libdtfl.map` gets its `DTFL_1.0` node, and

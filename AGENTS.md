@@ -166,8 +166,13 @@ B=$(mktemp -d /scratch/$USER/dtfl-XXXXXX)
 ( cd "$B" && ~/ws/libdtfl/configure --enable-debug && make -j"$(nproc)" check )
 ```
 
-Benchmarks run on EC2 through the `aws-benchmark` skill, never on this
-host.  Terminate what you launch.
+Benchmarks run only on a dedicated EC2 bare-metal instance, through
+`dev/bench-ec2` (or the `aws-benchmark` skill until it exists).  Never
+on this host and never on a LAN machine: their clocks are not pinned
+and other work shares them, so their numbers are not comparable.
+Correctness builds and tests stay local.  Tag what you launch, and
+terminate it, its security group and its key pair when the results are
+copied off.
 
 ## 11. Sub-agent work
 
