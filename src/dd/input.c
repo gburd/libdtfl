@@ -46,12 +46,10 @@ struct dtfl_input_session {
 static __dtfl_batch *
 session_buffer(const dtfl_input_session *s)
 {
-	__dtfl_batch *b = __dtfl_batch_new(0, 0);
 	size_t w = __dtfl_type_const_width(s->type);
 
-	__dtfl_batch_reserve(b, SESSION_BATCH, w == SIZE_MAX ? 0 :
+	return __dtfl_batch_new_reserved(0, 0, SESSION_BATCH, w == SIZE_MAX ? 0 :
 	    SESSION_BATCH * (w + (size_t)s->depth * sizeof(uint64_t) + s->dw));
-	return b;
 }
 
 /* Handle::send_batch of the buffer; leaves a fresh, empty buffer. */

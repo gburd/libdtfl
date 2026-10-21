@@ -135,8 +135,7 @@ stash_empty(__dtfl_merge_batcher *mb, size_t abytes)
 		__dtfl_batch_reserve(b, 0, abytes);
 		return b;
 	}
-	b = __dtfl_batch_new(mb->tw, mb->dw);
-	__dtfl_batch_reserve(b, mb->cap, abytes);
+	b = __dtfl_batch_new_reserved(mb->tw, mb->dw, mb->cap, abytes);
 	return b;
 }
 
