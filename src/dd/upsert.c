@@ -415,8 +415,11 @@ upsert_logic(dtfl_op *op, void *vctx)
 			    frontier + (size_t)c->depth * i);
 		changed = !__dtfl_antichain_eq(&c->prev_frontier, &cur);
 		__dtfl_antichain_free(&cur);
-		if (!changed)
+		if (!changed) {
+			/* writer.exert() runs on every activation. */
+			__dtfl_trace_writer_exert(&c->writer);
 			return c->caps.len != 0 || c->queue.len != 0;
+		}
 	}
 
 	any_behind = false;
@@ -503,6 +506,7 @@ upsert_logic(dtfl_op *op, void *vctx)
 	    __dtfl_antichain_len(&c->prev_frontier));
 
 	(void)j;
+	__dtfl_trace_writer_exert(&c->writer);
 	return c->caps.len != 0 || c->queue.len != 0;
 }
 
@@ -573,6 +577,7 @@ dtfl_arrange_from_upsert(dtfl_collection *upserts, const dtfl_type *key_type,
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "Upsert");
 	/* Acquire a logger for arrange events. */
 	__dtfl_dd_logging_install(scope, b, trace, NULL);
+	__dtfl_dd_exert_install(scope, b, trace);
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &c->reader, &c->writer);
 	/* The Arranged keeps a cloned reader; the operator keeps c->reader. */

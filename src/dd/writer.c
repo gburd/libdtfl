@@ -17,7 +17,7 @@
  * to announce progress without data.  The free path seals to the empty
  * frontier (writer.rs Drop), closing the trace.  The writer holds the box
  * weakly: once every reader is gone the trace is freed and batches reach
- * only the listener queues.
+ * only the listener queues.  exert forwards to the trace's exert.
  */
 #include "dd/arrange_int.h"
 
@@ -45,11 +45,27 @@ __dtfl_trace_writer_free(__dtfl_trace_writer *w)
 	__dtfl_antichain_init(&empty, w->tc);
 	__dtfl_trace_writer_seal(w, &empty);
 	__dtfl_antichain_free(&empty);
+	/*
+	 * The writer drops with its operator.  A trace that outlives it (held
+	 * by readers) must not activate the dropped operator's address, nor a
+	 * worker that may be freed before the last reader; upstream's
+	 * Activator keeps the Activations alive through an Rc instead.
+	 */
+	if (w->box->trace != NULL)
+		__dtfl_trace_set_activator(w->box->trace, NULL);
 
 	__dtfl_antichain_free(&w->upper);
 	__dtfl_queue_list_release(w->queues);
 	__dtfl_trace_box_release_weak(w->box);
 	w->box = NULL;
+}
+
+/* Exerts merge effort, even without additional updates. */
+void
+__dtfl_trace_writer_exert(__dtfl_trace_writer *w)
+{
+	if (w->box->trace != NULL)
+		__dtfl_trace_exert(w->box->trace);
 }
 
 void
