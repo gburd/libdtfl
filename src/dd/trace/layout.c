@@ -344,6 +344,28 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 #undef LESS_CMP
 }
 
+/*
+ * BatchContainer::with_capacity for slices: room for `n` values of
+ * `bytes` total.  merge_capacity is with_capacity of the two lengths
+ * summed (the arena gets both arenas' bytes).
+ */
+void
+__dtfl_slices_reserve(__dtfl_slices *s, size_t n, size_t bytes)
+{
+	if (bytes != 0)
+		__dtfl_vec_reserve(&s->arena, bytes);
+	if (s->stride == 0)
+		__dtfl_vec_reserve(&s->offs, n);
+}
+
+void
+__dtfl_slices_merge_capacity(__dtfl_slices *s, const __dtfl_slices *a,
+    const __dtfl_slices *b)
+{
+	__dtfl_slices_reserve(s, __dtfl_slices_len(a) + __dtfl_slices_len(b),
+	    a->arena.len + b->arena.len);
+}
+
 /* ------------------------------------------------------------------ */
 /* Offsets (OffsetList)                                                */
 /* ------------------------------------------------------------------ */
@@ -412,6 +434,45 @@ __dtfl_upds_init(__dtfl_upds *u, unsigned tw, unsigned dw)
 	u->nupds = 0;
 	u->tw = tw;
 	u->dw = dw;
+}
+
+/*
+ * Upds::with_capacity(o_size, u_size): offsets for o_size entries, and
+ * u_size times and diffs.  merge_capacity sums the two inputs' lengths.
+ */
+void
+__dtfl_upds_reserve(__dtfl_upds *u, size_t o_size, size_t u_size)
+{
+	__dtfl_vec_reserve(&u->offs.v, o_size);
+	if (u->tw != 0)
+		__dtfl_vec_reserve(&u->times, u_size);
+	if (u->dw != 0)
+		__dtfl_vec_reserve(&u->diffs, u_size);
+}
+
+void
+__dtfl_upds_merge_capacity(__dtfl_upds *u, const __dtfl_upds *a,
+    const __dtfl_upds *b)
+{
+	__dtfl_upds_reserve(u, a->offs.v.len + b->offs.v.len,
+	    a->nupds + b->nupds);
+}
+
+/* Vals::with_capacity(o_size, v_size) and merge_capacity. */
+void
+__dtfl_vals_reserve(__dtfl_vals *v, size_t o_size, size_t v_size,
+    size_t v_bytes)
+{
+	__dtfl_vec_reserve(&v->offs.v, o_size);
+	__dtfl_slices_reserve(&v->vals, v_size, v_bytes);
+}
+
+void
+__dtfl_vals_merge_capacity(__dtfl_vals *v, const __dtfl_vals *a,
+    const __dtfl_vals *b)
+{
+	__dtfl_vec_reserve(&v->offs.v, a->offs.v.len + b->offs.v.len);
+	__dtfl_slices_merge_capacity(&v->vals, &a->vals, &b->vals);
 }
 
 void

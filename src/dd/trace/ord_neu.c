@@ -25,16 +25,26 @@ __dtfl_builder_ord_init(__dtfl_builder_ord *bld, bool keyed,
     const dtfl_type *kt, const dtfl_type *vt, const dtfl_time_class *tc,
     const __dtfl_diff_class *dc, size_t keys, size_t vals, size_t upds)
 {
-	(void)keys;
-	(void)vals;
-	(void)upds;
+	/*
+	 * with_capacity(keys, vals, upds): OrdValBuilder reserves keys,
+	 * vals(keys + 1, vals) and upds(vals + 1, upds); OrdKeyBuilder keys
+	 * and upds(keys + 1, upds).  Key and value byte counts are not known
+	 * here, so the arenas grow as values arrive.
+	 */
 	bld->result.keyed = keyed;
 	__dtfl_slices_init(&bld->result.keys);
 	__dtfl_slices_set_stride(&bld->result.keys,
 	    __dtfl_slices_stride_for(kt));
+	__dtfl_slices_reserve(&bld->result.keys, keys, 0);
 	__dtfl_vals_init(&bld->result.vals);
 	__dtfl_upds_init(&bld->result.upds, dtfl_time_depth(tc),
 	    (unsigned)dc->width);
+	if (keyed) {
+		__dtfl_upds_reserve(&bld->result.upds, keys + 1, upds);
+	} else {
+		__dtfl_vals_reserve(&bld->result.vals, keys + 1, vals, 0);
+		__dtfl_upds_reserve(&bld->result.upds, vals + 1, upds);
+	}
 	__dtfl_upds_builder_init(&bld->staging, tc, dc);
 	bld->have_last = false;
 	bld->kt = kt;
@@ -151,9 +161,46 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
     __dtfl_batch **chunks, size_t nchunks, __dtfl_description *desc)
 {
 	__dtfl_builder_ord bld;
-	size_t ci, i;
+	size_t ci, i, nkeys = 0, nvals = 0, nupds = 0;
 
-	__dtfl_builder_ord_init(&bld, keyed, kt, vt, tc, dc, 0, 0, 0);
+	/*
+	 * BuilderInput::key_val_upd_counts: distinct keys, distinct (key,
+	 * val) pairs and updates over the chain, which is sorted by
+	 * (key, val), so a change from the previous row starts a new one.
+	 */
+	{
+		const void *pk = NULL, *pv = NULL;
+		size_t pkl = 0, pvl = 0;
+
+		for (ci = 0; ci < nchunks; ci++) {
+			size_t n = __dtfl_batch_len(chunks[ci]);
+
+			for (i = 0; i < n; i++) {
+				size_t len, kl;
+				const unsigned char *rec = __dtfl_batch_rec(chunks[ci],
+				    i, &len);
+
+				kl = keyed ? len : dtfl_type_value_len(kt, rec, len);
+				DTFL_ASSERT(kl != SIZE_MAX && kl <= len);
+				if (pk == NULL ||
+				    __dtfl_type_cmp(kt, pk, pkl, rec, kl) != 0) {
+					nkeys++;
+					nvals++;
+				} else if (!keyed &&
+				    __dtfl_type_cmp(vt, pv, pvl, rec + kl,
+				    len - kl) != 0) {
+					nvals++;
+				}
+				nupds++;
+				pk = rec;
+				pkl = kl;
+				pv = rec + kl;
+				pvl = len - kl;
+			}
+		}
+	}
+	__dtfl_builder_ord_init(&bld, keyed, kt, vt, tc, dc, nkeys, nvals,
+	    nupds);
 	for (ci = 0; ci < nchunks; ci++) {
 		__dtfl_batch *chunk = chunks[ci];
 		size_t n = __dtfl_batch_len(chunk);
@@ -238,12 +285,20 @@ __dtfl_merger_ord_new(__dtfl_merger_ord *m, __dtfl_batch_ord *src1,
 	m->key_cursor1 = 0;
 	m->key_cursor2 = 0;
 	m->result.keyed = src1->storage.keyed;
+	/* merge_capacity of the two inputs, as Merger::new allocates. */
 	__dtfl_slices_init(&m->result.keys);
 	__dtfl_slices_set_stride(&m->result.keys,
 	    __dtfl_slices_stride_for(src1->kt));
+	__dtfl_slices_merge_capacity(&m->result.keys, &src1->storage.keys,
+	    &src2->storage.keys);
 	__dtfl_vals_init(&m->result.vals);
+	if (!m->result.keyed)
+		__dtfl_vals_merge_capacity(&m->result.vals, &src1->storage.vals,
+		    &src2->storage.vals);
 	__dtfl_upds_init(&m->result.upds, dtfl_time_depth(src1->tc),
 	    (unsigned)src1->dc->width);
+	__dtfl_upds_merge_capacity(&m->result.upds, &src1->storage.upds,
+	    &src2->storage.upds);
 	__dtfl_upds_builder_init(&m->staging, src1->tc, src1->dc);
 	m->src1 = __dtfl_batch_ord_retain(src1);
 	m->src2 = __dtfl_batch_ord_retain(src2);
