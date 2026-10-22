@@ -29,3 +29,10 @@ Version 0.1.0 (unreleased)
 	arrange benchmark (same host, 25 s runs): 1.41 times slower on
 	count throughput and 1.34 times slower on the arrange arm, at
 	1.48 and 1.46 times the instructions per record.
+
+	bench/experiments/arrange is a faithful port of arrange.rs: it
+	takes upstream's arguments (keys recs rate work comp, then timely
+	options and open-loop), and prints the same throughput and latency
+	lines in the closed-loop and the open-loop mode.
+	dtfl_collection_inner returns the update stream behind a
+	collection (Collection::inner).

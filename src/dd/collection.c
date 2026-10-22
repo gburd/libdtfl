@@ -312,6 +312,12 @@ dtfl_collection_scope(const dtfl_collection *c)
 	return dtfl_stream_scope(c->stream);
 }
 
+dtfl_stream *
+dtfl_collection_inner(const dtfl_collection *c)
+{
+	return c->stream;
+}
+
 void
 dtfl_collection_free(dtfl_collection *c)
 {

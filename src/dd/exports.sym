@@ -27,6 +27,7 @@ dtfl_input_session_close
 dtfl_collection_type
 dtfl_collection_diff
 dtfl_collection_scope
+dtfl_collection_inner
 dtfl_collection_free
 dtfl_collection_emit_record
 dtfl_collection_emit_pair
