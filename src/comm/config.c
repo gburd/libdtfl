@@ -40,6 +40,7 @@ struct dtfl_config {
 	char *differential_log_addr;	/* owned or NULL */
 	__dtfl_vec log_subs;		/* __dtfl_log_sub, streams owned */
 	__dtfl_spill_fn *spill;		/* one reference, or NULL */
+	int64_t idle_merge_effort;	/* differential Config; 0 is None */
 };
 
 dtfl_config *
@@ -201,6 +202,27 @@ uint64_t
 dtfl_config_seed(const dtfl_config *cfg)
 {
 	return cfg->seed;
+}
+
+/*
+ * differential Config::idle_merge_effort (lib.rs).  Upstream's
+ * Option<isize> is a positive effort or 0 for None; a negative effort,
+ * which upstream would cast to a huge usize, is refused.
+ */
+int
+dtfl_config_set_idle_merge_effort(dtfl_config *cfg, int64_t effort)
+{
+	if (cfg == NULL || effort < 0)
+		return __dtfl_err(DTFL_EINVAL, "dtfl_config_set_idle_merge_effort: "
+		    "NULL config or negative effort");
+	cfg->idle_merge_effort = effort;
+	return 0;
+}
+
+int64_t
+dtfl_config_idle_merge_effort(const dtfl_config *cfg)
+{
+	return cfg->idle_merge_effort;
 }
 
 /*

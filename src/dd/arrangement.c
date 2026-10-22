@@ -32,6 +32,7 @@
 #include "dd/wrap_int.h"
 #include "dtfl/arrange.h"
 #include "progress/time_int.h"
+#include "timely/scope_int.h"
 #include "timely/timely_int.h"
 
 /*
@@ -181,8 +182,11 @@ arrange_logic(dtfl_op *op, void *vctx)
 			    frontier + (size_t)c->depth * i);
 		changed = !__dtfl_antichain_eq(&c->prev_frontier, &cur);
 		__dtfl_antichain_free(&cur);
-		if (!changed)
+		if (!changed) {
+			/* writer.exert() runs on every activation. */
+			__dtfl_trace_writer_exert(&c->writer);
 			return c->caps.len != 0;
+		}
 	}
 
 	/* Flush any partial chunk the chunker still holds into the batcher. */
@@ -326,6 +330,7 @@ arrange_logic(dtfl_op *op, void *vctx)
 		__dtfl_antichain_insert(&c->prev_frontier,
 		    frontier + (size_t)c->depth * i);
 
+	__dtfl_trace_writer_exert(&c->writer);
 	return c->caps.len != 0;
 }
 
@@ -384,6 +389,19 @@ arrange_route_by_key(const void *rec, size_t len, void *vctx)
 	return dtfl_type_hash(rc->kt, rec, klen);
 }
 
+void
+__dtfl_dd_exert_install(dtfl_scope *scope, const dtfl_op_builder *b,
+    __dtfl_trace *trace)
+{
+	size_t effort = scope->worker->idle_merge_effort;
+
+	__dtfl_trace_set_activator(trace, __dtfl_op_builder_activator(b));
+	/* If there is default exertion logic set, install it. */
+	if (effort != 0)
+		__dtfl_trace_set_exert_logic(trace,
+		    __dtfl_default_exert_logic(effort));
+}
+
 /*
  * arrange_core: index a collection into a shared trace.  `keyed` true
  * stores the whole record as the key with a unit value (arrange_by_self,
@@ -432,6 +450,7 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "Arrange");
 	/* Acquire a logger for arrange events (batcher, trace, agent). */
 	__dtfl_dd_logging_install(scope, b, trace, &ac->batcher);
+	__dtfl_dd_exert_install(scope, b, trace);
 
 	/*
 	 * TraceAgent::new gives the reader and the writer.  The reader moves

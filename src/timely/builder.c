@@ -182,6 +182,13 @@ __dtfl_op_builder_global_id(const dtfl_op_builder *b)
 	return b->slot.identifier;
 }
 
+dtfl_activator *
+__dtfl_op_builder_activator(const dtfl_op_builder *b)
+{
+	return __dtfl_activator_new(b->scope->worker, b->address,
+	    b->address_len);
+}
+
 size_t
 dtfl_op_builder_index(const dtfl_op_builder *b)
 {

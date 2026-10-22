@@ -209,6 +209,17 @@ void __dtfl_trace_writer_insert(__dtfl_trace_writer *w, __dtfl_batch_ord *batch,
 /* seal: insert an empty batch up to `upper` if it differs from the current. */
 void __dtfl_trace_writer_seal(__dtfl_trace_writer *w,
     const __dtfl_antichain *upper);
+/* exert: exert merge effort, even without additional updates. */
+void __dtfl_trace_writer_exert(__dtfl_trace_writer *w);
+/*
+ * The trace-construction step of arrangement.rs, reduce.rs and upsert.rs:
+ * give `trace` the activator of the operator `b` builds
+ * (scope.activator_for(info.address)) and, if the worker's configuration
+ * sets idle_merge_effort, the default exert logic
+ * ("differential/default_exert_logic").
+ */
+void __dtfl_dd_exert_install(dtfl_scope *scope, const dtfl_op_builder *b,
+    __dtfl_trace *trace);
 
 /* ------------------------------------------------------------------ */
 /* TraceAgent (agent.rs).                                              */

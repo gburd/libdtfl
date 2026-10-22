@@ -122,6 +122,12 @@ tests_unit_test_chunk_SOURCES = tests/unit/test_chunk.c
 tests_unit_test_chunk_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_chunk_LDADD = $(INTERNAL_LIBS)
 
+check_PROGRAMS += tests/unit/test_spine_exert
+TESTS += tests/unit/test_spine_exert
+tests_unit_test_spine_exert_SOURCES = tests/unit/test_spine_exert.c
+tests_unit_test_spine_exert_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_spine_exert_LDADD = $(INTERNAL_LIBS)
+
 check_PROGRAMS += tests/unit/test_trace_spill
 TESTS += tests/unit/test_trace_spill
 tests_unit_test_trace_spill_SOURCES = tests/unit/test_trace_spill.c

@@ -2559,6 +2559,8 @@ reduce_logic(dtfl_op *op, void *vctx)
 	(void)minimum;
 
 done:
+	/* Exert trace maintenance if we have been so requested. */
+	__dtfl_trace_writer_exert(&c->out_writer);
 	return c->caps.len != 0;
 }
 
@@ -2621,6 +2623,7 @@ reduce_with_tactic(dtfl_arranged *a, const char *name, const dtfl_type *ovt,
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "Reduce");
 	/* Acquire a logger for arrange events. */
 	__dtfl_dd_logging_install(scope, b, out_trace, NULL);
+	__dtfl_dd_exert_install(scope, b, out_trace);
 
 	__dtfl_trace_agent_clone(src_agent, &c->source);
 	__dtfl_trace_agent_new(out_trace, false, ikt, ovt, tc, odc,
@@ -2945,8 +2948,11 @@ abk_logic(dtfl_op *op, void *vctx)
 			    frontier + (size_t)c->depth * i);
 		changed = !__dtfl_antichain_eq(&c->prev_frontier, &cur);
 		__dtfl_antichain_free(&cur);
-		if (!changed)
+		if (!changed) {
+			/* writer.exert() runs on every activation. */
+			__dtfl_trace_writer_exert(&c->writer);
 			return c->caps.len != 0;
+		}
 	}
 
 	{
@@ -3070,6 +3076,7 @@ abk_logic(dtfl_op *op, void *vctx)
 		__dtfl_antichain_insert(&c->prev_frontier,
 		    frontier + (size_t)c->depth * i);
 
+	__dtfl_trace_writer_exert(&c->writer);
 	return c->caps.len != 0;
 }
 
@@ -3128,6 +3135,7 @@ arrange_by_key(dtfl_collection *coll, const dtfl_type *key_type,
 	b = dtfl_op_builder_new(scope, name != NULL ? name : "ArrangeByKey");
 	/* Acquire a logger for arrange events. */
 	__dtfl_dd_logging_install(scope, b, trace, &c->batcher);
+	__dtfl_dd_exert_install(scope, b, trace);
 	/* As arrange_core: the reader moves to the Arranged, not cloned. */
 	__dtfl_trace_agent_new(trace, false, key_type, val_type, tc, dc,
 	    &arr_reader, &c->writer);

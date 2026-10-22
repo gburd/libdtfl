@@ -312,5 +312,10 @@ void __dtfl_input_send_batch(dtfl_input *in, __dtfl_batch *b);
 
 /* OperatorInfo::global_id of the operator being built (builder.c). */
 size_t __dtfl_op_builder_global_id(const dtfl_op_builder *b);
+/*
+ * scope.activator_for(info.address): an activator (caller owns) for the
+ * operator being built, usable once it is built, on its worker only.
+ */
+dtfl_activator *__dtfl_op_builder_activator(const dtfl_op_builder *b);
 
 #endif /* DTFL_TIMELY_INT_H */

@@ -83,6 +83,25 @@ __dtfl_trace_logger(const __dtfl_trace *t, size_t *operator_id)
 }
 
 void
+__dtfl_trace_set_activator(__dtfl_trace *t, dtfl_activator *activator)
+{
+	dtfl_activator_free(t->spine.activator);
+	t->spine.activator = activator;
+}
+
+void
+__dtfl_trace_exert(__dtfl_trace *t)
+{
+	__dtfl_spine_exert(&t->spine);
+}
+
+void
+__dtfl_trace_set_exert_logic(__dtfl_trace *t, __dtfl_exert_logic logic)
+{
+	__dtfl_spine_set_exert_logic(&t->spine, logic);
+}
+
+void
 __dtfl_trace_insert(__dtfl_trace *t, __dtfl_batch_ord *batch)
 {
 	__dtfl_spine_insert(&t->spine, batch);
@@ -183,6 +202,13 @@ __dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout)
 	batches = __dtfl_spine_batches_through(&t->spine, &empty, nout);
 	__dtfl_antichain_free(&empty);
 	return batches;
+}
+
+/* The trace's spine, for tests that inspect its layers. */
+const __dtfl_spine *
+__dtfl_trace_spine(const __dtfl_trace *t)
+{
+	return &t->spine;
 }
 
 size_t

@@ -20,6 +20,11 @@
  * MergeEvent (complete Some) in complete_at when a merge of two parts
  * is extracted, and DropEvent per held batch in drop_batches on free.
  * The pin defines MergeShortfall but never logs it, so neither do we.
+ *
+ * Exertion: with exert logic installed (__dtfl_spine_set_exert_logic),
+ * exert applies effort in the absence of updates, and both exert and
+ * consider_merges activate the owning operator while the logic still asks
+ * for work, so an idle arrangement keeps merging toward one batch.
  */
 #include "dd/trace/trace_int.h"
 
@@ -214,7 +219,26 @@ void
 __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
     const dtfl_type *vt, const dtfl_time_class *tc, const __dtfl_diff_class *dc)
 {
+	__dtfl_spine_with_effort(s, 1, keyed, kt, vt, tc, dc);
+}
+
+/*
+ * Allocates a fueled `Spine` with a specified effort multiplier.
+ *
+ * This trace will merge batches progressively, with each inserted batch applying a multiple
+ * of the batch's length in effort to each merge. The `effort` parameter is that multiplier.
+ * This value should be at least one for the merging to happen; a value of zero is not helpful.
+ */
+void
+__dtfl_spine_with_effort(__dtfl_spine *s, size_t effort, bool keyed,
+    const dtfl_type *kt, const dtfl_type *vt, const dtfl_time_class *tc,
+    const __dtfl_diff_class *dc)
+{
 	uint64_t min[DTFL_TIME_MAX];
+
+	/* Zero effort is .. not smart. */
+	if (effort == 0)
+		effort = 1;
 
 	dtfl_time_minimum(tc, min);
 	__dtfl_antichain_init_elem(&s->logical_frontier, tc, min);
@@ -222,7 +246,7 @@ __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
 	__dtfl_vec_init(&s->merging, sizeof(__dtfl_merge_state));
 	__dtfl_vec_init(&s->pending, sizeof(__dtfl_batch_ord *));
 	__dtfl_antichain_init_elem(&s->upper, tc, min);
-	s->effort = 1;
+	s->effort = effort;
 	s->keyed = keyed;
 	s->kt = kt;
 	s->vt = vt;
@@ -230,6 +254,11 @@ __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
 	s->dc = dc;
 	s->logger = NULL;
 	s->operator_id = 0;
+	s->activator = NULL;
+	__dtfl_vec_init(&s->exert_logic_param, sizeof(__dtfl_exert_level));
+	s->exert_logic.fn = NULL;
+	s->exert_logic.ctx = NULL;
+	s->exert_logic.ctx_free = NULL;
 }
 
 /*
@@ -289,6 +318,20 @@ __dtfl_spine_free(__dtfl_spine *s)
 	__dtfl_antichain_free(&s->logical_frontier);
 	__dtfl_antichain_free(&s->physical_frontier);
 	__dtfl_antichain_free(&s->upper);
+	dtfl_activator_free(s->activator);
+	s->activator = NULL;
+	__dtfl_vec_free(&s->exert_logic_param);
+	if (s->exert_logic.ctx_free != NULL)
+		s->exert_logic.ctx_free(s->exert_logic.ctx);
+	s->exert_logic.fn = NULL;
+}
+
+void
+__dtfl_spine_set_exert_logic(__dtfl_spine *s, __dtfl_exert_logic logic)
+{
+	if (s->exert_logic.ctx_free != NULL)
+		s->exert_logic.ctx_free(s->exert_logic.ctx);
+	s->exert_logic = logic;
 }
 
 static __dtfl_merge_state *
@@ -469,6 +512,43 @@ tidy_layers(__dtfl_spine *s)
 }
 
 /*
+ * Determine the amount of effort we should exert in the absence of updates.
+ *
+ * This method prepares an iterator over batches, including the level, count, and length of each layer.
+ * It supplies this to `self.exert_logic`, who produces the response of the amount of exertion to apply.
+ * Returns false for None.
+ */
+static bool
+exert_effort(__dtfl_spine *s, size_t *effort)
+{
+	size_t index;
+
+	if (s->exert_logic.fn == NULL)
+		return false;
+	__dtfl_vec_clear(&s->exert_logic_param);
+	for (index = s->merging.len; index-- > 0;) {
+		const __dtfl_merge_state *m = layer(s, index);
+		__dtfl_exert_level p;
+
+		p.index = index;
+		if (ms_is_vacant(m)) {
+			p.count = 0;
+			p.length = 0;
+		} else if (ms_is_single(m)) {
+			p.count = 1;
+			p.length = ms_len(m);
+		} else {
+			p.count = 2;
+			p.length = ms_len(m);
+		}
+		__dtfl_vec_push(&s->exert_logic_param, &p);
+	}
+	return s->exert_logic.fn(s->exert_logic.ctx,
+	    (const __dtfl_exert_level *)(void *)s->exert_logic_param.data,
+	    s->exert_logic_param.len, effort);
+}
+
+/*
  * introduce_batch: the fuelled insertion.  Fuel is "8 << batch_index"
  * (times effort), applied to in-progress merges, then roll up and insert
  * into an empty layer, then tidy.  The 8 << level constant is kept exactly.
@@ -505,13 +585,94 @@ consider_merges(__dtfl_spine *s)
 		if (!__dtfl_frontier_le(up, &s->physical_frontier))
 			break;
 
+		/* Batch can be taken in optimized insertion. */
 		__dtfl_vec_remove(&s->pending, 0);
-		{
+
+		/*
+		 * If `batch` and the most recently inserted batch are both
+		 * empty, we can just fuse them.  We can also replace a
+		 * structurally empty batch with this empty batch, preserving
+		 * the apparent record count but now with non-trivial lower and
+		 * upper bounds.
+		 */
+		if (__dtfl_batch_ord_len(first) == 0) {
+			size_t pos;
+
+			for (pos = 0; pos < s->merging.len; pos++)
+				if (!ms_is_vacant(layer(s, pos)))
+					break;
+			if (pos < s->merging.len &&
+			    ms_is_single(layer(s, pos)) &&
+			    ms_len(layer(s, pos)) == 0) {
+				__dtfl_batch_ord *merged;
+				bool present;
+				__dtfl_merge_state *m;
+
+				insert_at(s, first, true, pos);
+				merged = complete_at(s, pos, &present);
+				m = layer(s, pos);
+				m->kind = DTFL_MERGE_SINGLE;
+				m->present = present;
+				m->batch = merged;
+				first = NULL;
+			}
+		}
+
+		/* Normal insertion for the batch. */
+		if (first != NULL) {
 			size_t len = __dtfl_batch_ord_len(first);
 			size_t index = __dtfl_level_of_len(len);
 
 			__dtfl_spine_introduce_batch(s, first, index);
 		}
+	}
+
+	/* Having performed all of our work, if we should perform more work reschedule ourselves. */
+	{
+		size_t effort;
+
+		if (exert_effort(s, &effort) && s->activator != NULL)
+			dtfl_activator_activate(s->activator);
+	}
+}
+
+/*
+ * Apply some amount of effort to trace maintenance.
+ *
+ * Whether and how much effort to apply is determined by `self.exert_logic`, a closure the user can set.
+ */
+void
+__dtfl_spine_exert(__dtfl_spine *s)
+{
+	size_t effort;
+
+	/* If there is work to be done, ... */
+	tidy_layers(s);
+	/* Determine whether we should apply effort independent of updates. */
+	if (exert_effort(s, &effort)) {
+		size_t i;
+		bool any_double = false;
+
+		for (i = 0; i < s->merging.len; i++)
+			if (ms_is_double(layer(s, i)))
+				any_double = true;
+
+		/* If any merges exist, we can directly call `apply_fuel`. */
+		if (any_double) {
+			int64_t fuel = (int64_t)effort;
+
+			apply_fuel(s, &fuel);
+		}
+		/* Otherwise, we'll need to introduce fake updates to move merges along. */
+		else {
+			/* Introduce an empty batch with roughly *effort number of virtual updates. */
+			size_t level = __dtfl_level_of_len(effort);
+
+			__dtfl_spine_introduce_batch(s, NULL, level);
+		}
+		/* We were not in reduced form, so let's check again in the future. */
+		if (s->activator != NULL)
+			dtfl_activator_activate(s->activator);
 	}
 }
 

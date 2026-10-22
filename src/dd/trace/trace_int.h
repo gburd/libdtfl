@@ -29,6 +29,7 @@
 
 #include "dd/dd_int.h"
 #include "base/log_int.h"
+#include "dtfl/timely.h"	/* dtfl_activator */
 
 /*
  * The base pointer of an antichain's flat run, safe when it is empty (so
@@ -657,6 +658,31 @@ typedef struct __dtfl_merge_state {
 	size_t len1, len2;
 } __dtfl_merge_state;
 
+/*
+ * ExertionLogic (trace/mod.rs): whether and how much effort a trace
+ * should exert in the absence of updates.  `levels` lists the spine's
+ * layers from large to small as (index, count, length) triples: the
+ * level, the number of batches in it (0 Vacant, 1 Single, 2 Double), and
+ * their total length in updates.  Returns true and sets *effort to a
+ * number of updates' worth of effort to apply, or false if no work is
+ * required.  Upstream shares one Arc'd closure per worker; here each
+ * trace owns its logic, and ctx_free (may be NULL) releases ctx.
+ */
+typedef struct __dtfl_exert_level {
+	size_t index;
+	size_t count;
+	size_t length;
+} __dtfl_exert_level;
+
+typedef bool (*__dtfl_exert_fn)(void *ctx, const __dtfl_exert_level *levels,
+    size_t n, size_t *effort);
+
+typedef struct __dtfl_exert_logic {
+	__dtfl_exert_fn fn;	/* NULL: no logic (upstream None) */
+	void *ctx;
+	void (*ctx_free)(void *);
+} __dtfl_exert_logic;
+
 typedef struct __dtfl_spine {
 	__dtfl_antichain logical_frontier;
 	__dtfl_antichain physical_frontier;
@@ -671,11 +697,42 @@ typedef struct __dtfl_spine {
 	const __dtfl_diff_class *dc;
 	__dtfl_logger *logger;	/* retained; NULL: no differential logging */
 	size_t operator_id;	/* timely operator global id */
+	/*
+	 * The owning operator's activator (owned, may be NULL).  Used only on
+	 * the worker thread that owns the operator; the writer clears it when
+	 * the operator drops (__dtfl_trace_writer_free), so a trace that
+	 * outlives its operator never activates a dead worker.
+	 */
+	dtfl_activator *activator;
+	/* Parameters to `exert_logic`, containing tuples of (index, count, length). */
+	__dtfl_vec exert_logic_param;	/* __dtfl_exert_level */
+	/* Logic to indicate whether and how many records we should introduce in the absence of actual updates. */
+	__dtfl_exert_logic exert_logic;
 } __dtfl_spine;
 
+/*
+ * The default exertion logic `configure` installs (lib.rs) for
+ * Config::idle_merge_effort Some(effort): Some(effort) while any level
+ * holds two batches or more than one level is non-empty, else None.
+ * Defined in src/dd/collection.c.
+ */
+__dtfl_exert_logic __dtfl_default_exert_logic(size_t effort);
+
+/* Spine::new: with_effort(1, ..). */
 void __dtfl_spine_init(__dtfl_spine *s, bool keyed, const dtfl_type *kt,
     const dtfl_type *vt, const dtfl_time_class *tc, const __dtfl_diff_class *dc);
+/*
+ * Spine::with_effort: each inserted batch applies `effort` times its
+ * length in effort to each merge.  Zero is replaced by one.
+ */
+void __dtfl_spine_with_effort(__dtfl_spine *s, size_t effort, bool keyed,
+    const dtfl_type *kt, const dtfl_type *vt, const dtfl_time_class *tc,
+    const __dtfl_diff_class *dc);
 void __dtfl_spine_free(__dtfl_spine *s);
+/* Trace::exert: apply effort as `exert_logic` directs, even without updates. */
+void __dtfl_spine_exert(__dtfl_spine *s);
+/* Trace::set_exert_logic: replaces (and releases) any previous logic. */
+void __dtfl_spine_set_exert_logic(__dtfl_spine *s, __dtfl_exert_logic logic);
 /* Trace::insert: add a batch (takes ownership).  Asserts contiguity. */
 void __dtfl_spine_insert(__dtfl_spine *s, __dtfl_batch_ord *batch);
 /* Trace::close: finish with an empty batch to [upper, empty). */
@@ -716,6 +773,15 @@ void __dtfl_trace_set_logger(__dtfl_trace *t, __dtfl_logger *logger,
     size_t operator_id);
 /* The trace's logger (borrowed, may be NULL) and its operator id. */
 __dtfl_logger *__dtfl_trace_logger(const __dtfl_trace *t, size_t *operator_id);
+/*
+ * Trace::new(.., activator): installs the owning operator's activator
+ * (takes ownership; NULL clears it), which the spine activates while
+ * its exert logic asks for more work.
+ */
+void __dtfl_trace_set_activator(__dtfl_trace *t, dtfl_activator *activator);
+/* Trace::exert and Trace::set_exert_logic (the spine's). */
+void __dtfl_trace_exert(__dtfl_trace *t);
+void __dtfl_trace_set_exert_logic(__dtfl_trace *t, __dtfl_exert_logic logic);
 void __dtfl_trace_insert(__dtfl_trace *t, __dtfl_batch_ord *batch);
 void __dtfl_trace_close(__dtfl_trace *t);
 void __dtfl_trace_set_logical_compaction(__dtfl_trace *t,
@@ -745,6 +811,8 @@ __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
  * holds advance keeps this logarithmic in the number of inserted batches.
  */
 size_t __dtfl_trace_batch_count(const __dtfl_trace *t);
+/* The trace's spine, for tests that inspect its layers. */
+const __dtfl_spine *__dtfl_trace_spine(const __dtfl_trace *t);
 /*
  * TraceReader::advance_upper (trace/mod.rs): advance `upper` across the
  * trace's empty batches.  An empty batch whose lower equals `upper` moves

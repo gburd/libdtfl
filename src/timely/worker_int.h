@@ -105,6 +105,11 @@ struct __dtfl_worker {
 	__dtfl_vec paths;		/* channel id -> path; sparse, see worker.c */
 	__dtfl_vec temp_channel_ids;	/* size_t; channels of the dataflow being built */
 	__dtfl_vec active_dataflows;	/* size_t scratch */
+	/*
+	 * Config "differential/idle_merge_effort" (lib.rs configure): the
+	 * effort the default exert logic applies; 0 is None.
+	 */
+	size_t idle_merge_effort;
 	pthread_t owner;		/* debug owner-thread check */
 	int stepping;			/* reentrancy guard (PLAN section 5, rule 6) */
 };
