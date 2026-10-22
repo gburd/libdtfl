@@ -204,6 +204,13 @@ __dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout)
 	return batches;
 }
 
+/* The trace's spine, for tests that inspect its layers. */
+const __dtfl_spine *
+__dtfl_trace_spine(const __dtfl_trace *t)
+{
+	return &t->spine;
+}
+
 size_t
 __dtfl_trace_batch_count(const __dtfl_trace *t)
 {

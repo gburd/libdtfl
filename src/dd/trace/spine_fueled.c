@@ -585,8 +585,41 @@ consider_merges(__dtfl_spine *s)
 		if (!__dtfl_frontier_le(up, &s->physical_frontier))
 			break;
 
+		/* Batch can be taken in optimized insertion. */
 		__dtfl_vec_remove(&s->pending, 0);
-		{
+
+		/*
+		 * If `batch` and the most recently inserted batch are both
+		 * empty, we can just fuse them.  We can also replace a
+		 * structurally empty batch with this empty batch, preserving
+		 * the apparent record count but now with non-trivial lower and
+		 * upper bounds.
+		 */
+		if (__dtfl_batch_ord_len(first) == 0) {
+			size_t pos;
+
+			for (pos = 0; pos < s->merging.len; pos++)
+				if (!ms_is_vacant(layer(s, pos)))
+					break;
+			if (pos < s->merging.len &&
+			    ms_is_single(layer(s, pos)) &&
+			    ms_len(layer(s, pos)) == 0) {
+				__dtfl_batch_ord *merged;
+				bool present;
+				__dtfl_merge_state *m;
+
+				insert_at(s, first, true, pos);
+				merged = complete_at(s, pos, &present);
+				m = layer(s, pos);
+				m->kind = DTFL_MERGE_SINGLE;
+				m->present = present;
+				m->batch = merged;
+				first = NULL;
+			}
+		}
+
+		/* Normal insertion for the batch. */
+		if (first != NULL) {
 			size_t len = __dtfl_batch_ord_len(first);
 			size_t index = __dtfl_level_of_len(len);
 

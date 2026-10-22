@@ -791,6 +791,8 @@ __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
  * holds advance keeps this logarithmic in the number of inserted batches.
  */
 size_t __dtfl_trace_batch_count(const __dtfl_trace *t);
+/* The trace's spine, for tests that inspect its layers. */
+const __dtfl_spine *__dtfl_trace_spine(const __dtfl_trace *t);
 /*
  * TraceReader::advance_upper (trace/mod.rs): advance `upper` across the
  * trace's empty batches.  An empty batch whose lower equals `upper` moves

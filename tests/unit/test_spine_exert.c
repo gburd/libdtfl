@@ -219,7 +219,65 @@ DTFL_TEST(lib__default_exert_logic)
 	return MUNIT_OK;
 }
 
+/*
+ * consider_merges fuses an empty batch into the lowest non-vacant layer
+ * when that layer is an empty Single (spine_fueled.rs 410-421), instead
+ * of introducing it with its fuel and roll-up.  A run of empty seals
+ * after one empty batch therefore leaves a single empty layer, whose
+ * bounds cover every seal, and no merge in progress.
+ */
+DTFL_TEST(spine__empty_batches_fuse)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_trace *tr = __dtfl_trace_new(false, dtfl_type_u64(),
+	    dtfl_type_u64(), tc, I64);
+	__dtfl_antichain phys;
+	uint64_t far = 1000, e;
+	size_t nonvacant = 0, i;
+	const __dtfl_spine *sp;
+
+	(void)params; (void)data;
+	__dtfl_antichain_init_elem(&phys, tc, &far);
+	__dtfl_trace_set_physical_compaction(tr, &phys);
+	__dtfl_antichain_free(&phys);
+	for (e = 0; e < 40; e++) {
+		__dtfl_antichain lower, upper;
+		uint64_t up = e + 1;
+
+		__dtfl_antichain_init_elem(&lower, tc, &e);
+		__dtfl_antichain_init_elem(&upper, tc, &up);
+		__dtfl_trace_insert(tr, __dtfl_batch_ord_empty(false,
+		    dtfl_type_u64(), dtfl_type_u64(), tc, I64, &lower, &upper));
+	}
+	sp = __dtfl_trace_spine(tr);
+	for (i = 0; i < sp->merging.len; i++) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&sp->merging,
+		    __dtfl_merge_state, i);
+
+		assert_int(m->kind, !=, DTFL_MERGE_INPROGRESS);
+		if (m->kind != DTFL_MERGE_VACANT)
+			nonvacant++;
+	}
+	assert_size(nonvacant, ==, 1);
+	assert_size(sp->merging.len, ==, 1);
+	{
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&sp->merging,
+		    __dtfl_merge_state, 0);
+
+		assert_int(m->kind, ==, DTFL_MERGE_SINGLE);
+		assert_true(m->present);
+		assert_uint64(__dtfl_ac_base(__dtfl_batch_ord_lower(m->batch))[0],
+		    ==, 0);
+		assert_uint64(__dtfl_ac_base(__dtfl_batch_ord_upper(m->batch))[0],
+		    ==, 40);
+	}
+	__dtfl_trace_free(tr);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(spine__empty_batches_fuse),
 	DTFL_T(spine__exert_without_logic_only_tidies),
 	DTFL_T(spine__exert_with_logic_reduces_to_one_batch),
 	DTFL_T(lib__default_exert_logic),

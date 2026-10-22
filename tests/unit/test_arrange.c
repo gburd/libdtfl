@@ -727,6 +727,8 @@ enum idle_shape { IDLE_ARRANGE, IDLE_REDUCE, IDLE_UPSERT };
 
 typedef struct idle_ctx {
 	enum idle_shape shape;
+	bool pin;			/* hold a reader at physical 0 while loading */
+	dtfl_trace *reader;		/* the pinned reader (pin only) */
 	dtfl_input_session *in;
 	dtfl_probe *probe;
 	__dtfl_trace_box *box[2];	/* retained: traces outlive Arranged */
@@ -781,6 +783,12 @@ build_idle(dtfl_scope *scope, void *arg)
 		break;
 	}
 	idle_keep(c, arr);
+	if (c->pin) {
+		uint64_t zero = 0;
+
+		c->reader = dtfl_arranged_trace(arr);
+		dtfl_trace_set_physical_compaction(c->reader, &zero, 1);
+	}
 	if (red != NULL) {
 		idle_keep(c, red);
 		dtfl_stream_probe_with(dtfl_arranged_stream(red), c->probe);
@@ -837,6 +845,17 @@ idle_worker(dtfl_worker *w, void *arg)
 		dtfl_input_session_flush(c->in);
 		dtfl_worker_step_while(w, probe_behind, &pc);
 	}
+	if (c->pin) {
+		/*
+		 * The pinned reader kept the batches pending; let the worker go
+		 * quiet, then release them.  Only consider_merges' activation
+		 * can now reschedule the operator: no input arrives.
+		 */
+		for (i = 0; i < 50; i++)
+			dtfl_worker_step(w);
+		dtfl_trace_free(c->reader);
+		c->reader = NULL;
+	}
 	for (i = 0; i < c->nbox; i++)
 		c->loaded[i] = __dtfl_trace_batch_count(c->box[i]->trace);
 	for (c->steps = 0; c->steps < 200 && idle_most(c) > 1; c->steps++)
@@ -849,8 +868,18 @@ idle_worker(dtfl_worker *w, void *arg)
 	dtfl_time_class_free(tc);
 }
 
+static void run_idle_ctx(enum idle_shape shape, int64_t effort, idle_ctx *c);
+
 static void
 run_idle(enum idle_shape shape, int64_t effort, idle_ctx *c)
+{
+	memset(c, 0, sizeof *c);
+	run_idle_ctx(shape, effort, c);
+}
+
+/* run_idle on a context the caller prepared (c->pin). */
+static void
+run_idle_ctx(enum idle_shape shape, int64_t effort, idle_ctx *c)
 {
 	dtfl_config *cfg = dtfl_config_new();
 	dtfl_diff *r = dtfl_diff_i64();
@@ -859,7 +888,6 @@ run_idle(enum idle_shape shape, int64_t effort, idle_ctx *c)
 
 	munit_assert_int(dtfl_config_set_idle_merge_effort(cfg, effort), ==, 0);
 	munit_assert_int64(dtfl_config_idle_merge_effort(cfg), ==, effort);
-	memset(c, 0, sizeof *c);
 	c->shape = shape;
 	fields[0] = dtfl_type_u64();
 	switch (shape) {
@@ -924,6 +952,27 @@ DTFL_TEST(arrange__idle_merge_effort)
 	return MUNIT_OK;
 }
 
+/*
+ * The activation at the end of consider_merges (spine_fueled.rs 432-436):
+ * a reader pins the physical frontier at 0 while the batches load, so they
+ * stay pending; the worker goes quiet; then the reader is dropped, which
+ * releases the hold and migrates the batches into the spine from the
+ * compaction call, outside any operator activation.  With effort set, the
+ * spine must reschedule its operator from there, or nothing ever merges.
+ */
+DTFL_TEST(arrange__idle_merge_after_release)
+{
+	idle_ctx c;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.pin = true;
+	run_idle_ctx(IDLE_ARRANGE, 16, &c);
+	munit_assert_size(c.nbox, ==, 1);
+	munit_assert_size(c.idle[0], ==, 1);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
@@ -932,6 +981,7 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__trace_compaction_holds),
 	DTFL_T(arrange__caps_insert_antichain),
 	DTFL_T(arrange__idle_merge_effort),
+	DTFL_T(arrange__idle_merge_after_release),
 	DTFL_T_END
 };
 
