@@ -28,6 +28,17 @@ Version 0.1.0 (unreleased)
 	dtfl_trace_stats_get reports a trace's layers, batches, pending
 	batches, merges in progress, updates and bytes, for monitoring.
 
+	make check-sim runs the multi-worker property tests under the
+	simulator with drawn seeds, worker stalls and delivery delays that
+	keep each channel's FIFO order; DTFL_SIM_SEEDS and DTFL_SIM_JOBS
+	size the run (see the manual's Installation chapter).
+
+	Known issue, inherited from timely 0.31.0: flushing an input that
+	feeds an exchange, stepping the worker, and then closing or
+	advancing the input can leave the flushed records undelivered,
+	and the dataflow never completes.  Closing or advancing without
+	the intervening flush avoids it.  See dev/upstream-notes.md.
+
 	Throughput within 1.5 times of the Rust originals on the pinned
 	arrange benchmark, at 1, 4 and 16 workers, on a dedicated
 	bare-metal host with the clock pinned: 1.20 to 1.39 times slower on
