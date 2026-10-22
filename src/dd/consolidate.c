@@ -293,8 +293,7 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 	if (n == 0)
 		return;
 	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
-	out = __dtfl_batch_new(b->tw, b->dw);
-	__dtfl_batch_reserve(out, n, b->arena.len);
+	out = __dtfl_batch_new_reserved(b->tw, b->dw, n, b->arena.len);
 	if ((v = sort_packed(b, rt)) != NULL) {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
     (defined(__GNUC__) || defined(__clang__))
@@ -405,8 +404,8 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 		for (i = 0; i < end; i = j) {
 			size_t run;
 
-			out = __dtfl_batch_new(cur->tw, cur->dw);
-			__dtfl_batch_reserve(out, c->cap, c->cap * avg);
+			out = __dtfl_batch_new_reserved(cur->tw, cur->dw, c->cap,
+			    c->cap * avg);
 			run = DTFL_MIN(c->cap, end - i);
 			__dtfl_batch_push_run(out, cur, i, run);
 			j = i + run;
@@ -418,8 +417,8 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 		 * push_into keeps current's capacity at 2 * preferred, so the
 		 * buffer refills without growing.
 		 */
-		rest = __dtfl_batch_new(cur->tw, cur->dw);
-		__dtfl_batch_reserve(rest, 2 * c->cap, 2 * c->cap * avg);
+		rest = __dtfl_batch_new_reserved(cur->tw, cur->dw, 2 * c->cap,
+		    2 * c->cap * avg);
 		__dtfl_batch_push_run(rest, cur, end, n - end);
 		replace_storage(cur, rest);
 	}
