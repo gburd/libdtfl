@@ -169,6 +169,25 @@ DTFL_API const uint64_t *dtfl_trace_physical_compaction(const dtfl_trace *t,
     size_t *n);
 
 /*
+ * The shape of a trace's spine, for monitoring: how many batches and
+ * updates it holds, how many layers are merging, and the bytes its
+ * batches occupy.  Set `size` to sizeof(dtfl_trace_stats) before the
+ * call; fields past it are left alone, so the struct can grow.
+ * Returns DTFL_EINVAL for a bad size.  Worker-owned, like the trace.
+ */
+typedef struct dtfl_trace_stats {
+	size_t size;		/* in: sizeof(dtfl_trace_stats) */
+	size_t layers;		/* spine levels, vacant ones included */
+	size_t batches;		/* batches a cursor would visit, empty ones too */
+	size_t pending;		/* batches not yet past the physical frontier */
+	size_t merges;		/* layers with a merge in progress */
+	size_t updates;		/* (key, val, time, diff) updates in all batches */
+	size_t bytes;		/* key, value, time and diff bytes in all batches */
+} dtfl_trace_stats;
+
+DTFL_API int dtfl_trace_stats_get(const dtfl_trace *t, dtfl_trace_stats *out);
+
+/*
  * enter / leave: carry an arrangement across a scope boundary.  enter brings
  * it into `child`, a scope that directly refines the arrangement's scope,
  * lifting every time with to_inner; leave returns to the parent.

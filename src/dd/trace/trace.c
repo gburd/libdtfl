@@ -211,6 +211,53 @@ __dtfl_trace_spine(const __dtfl_trace *t)
 	return &t->spine;
 }
 
+/* The bytes a batch's columns hold. */
+static size_t
+batch_ord_bytes(const __dtfl_batch_ord *b)
+{
+	const __dtfl_ord_storage *st = &b->storage;
+
+	return st->keys.arena.len + st->keys.offs.len * sizeof(size_t) +
+	    st->vals.vals.arena.len + st->vals.vals.offs.len * sizeof(size_t) +
+	    st->vals.offs.v.len * sizeof(size_t) +
+	    st->upds.offs.v.len * sizeof(size_t) +
+	    st->upds.times.len * st->upds.times.elem +
+	    st->upds.diffs.len * st->upds.diffs.elem;
+}
+
+static void
+stats_add(__dtfl_trace_counts *c, const __dtfl_batch_ord *b)
+{
+	c->batches++;
+	c->updates += __dtfl_batch_ord_len(b);
+	c->bytes += batch_ord_bytes(b);
+}
+
+void
+__dtfl_trace_counts_get(const __dtfl_trace *t, __dtfl_trace_counts *c)
+{
+	const __dtfl_spine *s = &t->spine;
+	size_t i;
+
+	memset(c, 0, sizeof *c);
+	c->layers = s->merging.len;
+	c->pending = s->pending.len;
+	for (i = 0; i < s->pending.len; i++)
+		stats_add(c, *DTFL_VEC_AT(&s->pending, __dtfl_batch_ord *, i));
+	for (i = 0; i < s->merging.len; i++) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&s->merging,
+		    __dtfl_merge_state, i);
+
+		if (m->kind == DTFL_MERGE_INPROGRESS) {
+			c->merges++;
+			stats_add(c, m->in1);
+			stats_add(c, m->in2);
+		} else if (m->kind != DTFL_MERGE_VACANT && m->present) {
+			stats_add(c, m->batch);
+		}
+	}
+}
+
 size_t
 __dtfl_trace_batch_count(const __dtfl_trace *t)
 {
