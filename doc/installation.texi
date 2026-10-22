@@ -87,3 +87,39 @@ manual pages.
 @end table
 
 A phase of the project is not finished until all six pass.
+
+@subheading Simulator coverage
+
+@command{make check-sim} runs the multi-worker property tests under the
+simulation allocator (@code{DTFL_COMM_SIM}), which runs every worker on
+one thread under a seeded scheduler.  Each test case draws its own
+simulator seed, worker count and progress mode, and a fault set: worker
+stalls (a worker skips a drawn number of scheduler turns) and delivery
+delays (a message waits a drawn number of turns).  A delay holds back
+everything behind the message on its (sender, receiver, channel) queue,
+so per-channel FIFO order, which timely relies on, is kept; only
+messages on different queues are reordered.  The properties cover the
+communication layer, join, count, notification order and an iterative
+bfs.
+
+It needs a build configured @option{--with-hegel}; without it every
+property reports SKIP.  Two variables size the run:
+
+@table @env
+@item DTFL_SIM_SEEDS
+test cases per property (default 2000);
+@item DTFL_SIM_JOBS
+parallel shards (default 1).  Shard @var{k} runs hegel with seed
+@var{k}+1, so a run is reproducible from these two values.
+@end table
+
+For example, a release qualification run of 100,000 seeds per property
+on 16 cores:
+
+@example
+DTFL_SIM_SEEDS=100000 DTFL_SIM_JOBS=16 make check-sim
+@end example
+
+Each property prints PASS, FAIL or SKIP.  A failure prints the minimal
+case hegel shrank it to, including the simulator seed and faults, and a
+@env{DTFL_PBT_REPLAY} command that reruns that one case.
