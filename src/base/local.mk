@@ -8,6 +8,7 @@ base_sources = \
 	src/base/bytes.c \
 	src/base/hash.c \
 	src/base/os_alloc.c \
+	src/base/probes_int.h \
 	src/base/record.c \
 	src/base/sock_int.h \
 	src/base/util.c

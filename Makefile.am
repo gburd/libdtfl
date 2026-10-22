@@ -6,7 +6,7 @@
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src -I$(top_builddir)
-AM_CFLAGS = $(DTFL_STD_CFLAGS) $(DTFL_WARN_CFLAGS)
+AM_CFLAGS = $(DTFL_STD_CFLAGS) $(DTFL_WARN_CFLAGS) $(DTFL_FP_CFLAGS)
 
 lib_LTLIBRARIES = libdtfl.la
 libdtfl_la_SOURCES =
