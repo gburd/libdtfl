@@ -23,6 +23,11 @@ bench_experiments_arrange_SOURCES = bench/experiments/arrange.c
 bench_experiments_arrange_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 bench_experiments_arrange_LDADD = libdtfl.la
 
+# Smoke test of the arrange experiment's modes and output format (not a
+# measurement): tiny sizes, about a second per run.
+dist_check_SCRIPTS += tests/dist/test_bench_arrange.sh
+TESTS += tests/dist/test_bench_arrange.sh
+
 bench_experiments_graphs_SOURCES = bench/experiments/graphs.c
 bench_experiments_graphs_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 bench_experiments_graphs_LDADD = libdtfl.la

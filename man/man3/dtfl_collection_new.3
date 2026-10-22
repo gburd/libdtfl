@@ -19,6 +19,7 @@
 .Nm dtfl_collection_type ,
 .Nm dtfl_collection_diff ,
 .Nm dtfl_collection_scope ,
+.Nm dtfl_collection_inner ,
 .Nm dtfl_stream_as_collection ,
 .Nm dtfl_collection_free ,
 .Nm dtfl_collection_emit_record ,
@@ -64,6 +65,8 @@ Timely and differential dataflow library
 .Fn dtfl_collection_diff "const dtfl_collection *c"
 .Ft dtfl_scope *
 .Fn dtfl_collection_scope "const dtfl_collection *c"
+.Ft dtfl_stream *
+.Fn dtfl_collection_inner "const dtfl_collection *c"
 .Ft dtfl_collection *
 .Fn dtfl_stream_as_collection "dtfl_stream *st" "const dtfl_type *rec_type" "dtfl_diff *diff"
 .Ft void
@@ -142,6 +145,16 @@ requires.
 and
 .Fn dtfl_collection_scope
 report the record type, diff class and scope behind a collection.
+.Fn dtfl_collection_inner
+returns the stream behind a collection, differential's
+.Va Collection::inner :
+its records are the
+.Pq record , time , diff
+updates in the layout
+.Fn dtfl_stream_as_collection
+reads.
+The stream is borrowed: it is owned by the scope and stays valid while
+the scope does, independent of the collection handle.
 .Fn dtfl_collection_free
 releases the handle without touching the dataflow.
 .Pp

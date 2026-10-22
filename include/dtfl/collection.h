@@ -201,6 +201,13 @@ DTFL_API void dtfl_input_session_close(dtfl_input_session *s);
 DTFL_API const dtfl_type *dtfl_collection_type(const dtfl_collection *c);
 DTFL_API const dtfl_diff *dtfl_collection_diff(const dtfl_collection *c);
 DTFL_API dtfl_scope *dtfl_collection_scope(const dtfl_collection *c);
+/*
+ * Collection::inner: the stream of (record, time, diff) update records
+ * behind the collection, in the layout dtfl_stream_as_collection reads.
+ * Borrowed: the stream is owned by the scope and valid while the scope
+ * is; dtfl_collection_free does not affect it.
+ */
+DTFL_API dtfl_stream *dtfl_collection_inner(const dtfl_collection *c);
 DTFL_API void dtfl_collection_free(dtfl_collection *c);
 
 /*

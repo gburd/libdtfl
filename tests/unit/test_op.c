@@ -18,6 +18,8 @@
 
 #include "dtfl/record.h"
 #include "dtfl/timely.h"
+#include "dtfl/timely_ops.h"
+#include "timely/timely_int.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -270,6 +272,240 @@ DTFL_TEST(tee__fan_out)
 		assert_uint64(a.vals[i], ==, vals[i]);
 		assert_uint64(b.vals[i], ==, vals[i]);
 	}
+	return MUNIT_OK;
+}
+
+/*
+ * Pass-through operators (concat, inspect, exchange's single-worker
+ * path, probe) forward a received message by sharing its batch rather
+ * than copying its records.  Two chains of them hang off one source, and
+ * a map (which builds new records) runs on one chain, so the shared
+ * batches reach several consumers and must stay unchanged in all.
+ */
+static uint64_t
+route_by_value_fwd(const void *rec, size_t len, void *ctx)
+{
+	(void)len; (void)ctx;
+	return dtfl_get_u64(rec);
+}
+
+static void
+add_one(void *ctx, const uint64_t *time, const void *rec, size_t len,
+    dtfl_emit *e)
+{
+	unsigned char out[8];
+
+	(void)ctx;
+	(void)time;
+	(void)len;
+	dtfl_put_u64(out, dtfl_get_u64(rec) + 100);
+	dtfl_emit_record(e, out, sizeof out);
+}
+
+static void
+count_records(void *ctx, const uint64_t *time, const void *rec, size_t len)
+{
+	(void)time;
+	(void)rec;
+	(void)len;
+	(*(size_t *)ctx)++;
+}
+
+typedef struct share_ctx {
+	feeder_ctx feeder;
+	collected a, b, c;
+	size_t inspected;
+} share_ctx;
+
+static void
+build_share(dtfl_scope *scope, void *arg)
+{
+	share_ctx *c = arg;
+	dtfl_stream *src = make_feeder(scope, &c->feeder);
+	dtfl_stream *ins = dtfl_stream_inspect(src, count_records,
+	    DTFL_CTX(&c->inspected, NULL));
+	dtfl_stream *cat = dtfl_stream_concat(ins, src);
+	dtfl_stream *mapped = dtfl_stream_flat_map(cat, dtfl_type_u64(), add_one,
+	    DTFL_CTX(NULL, NULL));
+
+	make_sink(cat, dtfl_pact_pipeline(), &c->a);
+	make_sink(mapped, dtfl_pact_pipeline(), &c->b);
+	make_sink(src, dtfl_pact_exchange(route_by_value_fwd, NULL), &c->c);
+}
+
+DTFL_TEST(session__shared_forwarding_keeps_records)
+{
+	static const uint64_t vals[] = { 5, 6, 7, 8 };
+	static const uint64_t times[] = { 0, 0, 1, 1 };
+	share_ctx c;
+	size_t i;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.feeder.vals = vals;
+	c.feeder.times = times;
+	c.feeder.n = 4;
+	run_standalone(build_share, &c);
+
+	/* cat = inspect(src) ++ src: every value twice. */
+	assert_size(c.inspected, ==, 4);
+	assert_size(c.a.n, ==, 8);
+	assert_size(c.b.n, ==, 8);
+	assert_size(c.c.n, ==, 4);
+	qsort(c.a.vals, c.a.n, sizeof(uint64_t), cmp_u64);
+	qsort(c.b.vals, c.b.n, sizeof(uint64_t), cmp_u64);
+	qsort(c.c.vals, c.c.n, sizeof(uint64_t), cmp_u64);
+	for (i = 0; i < 8; i++) {
+		assert_uint64(c.a.vals[i], ==, vals[i / 2]);
+		assert_uint64(c.b.vals[i], ==, vals[i / 2] + 100);
+	}
+	for (i = 0; i < 4; i++)
+		assert_uint64(c.c.vals[i], ==, vals[i]);
+	return MUNIT_OK;
+}
+
+/*
+ * Whether a forwarded message is shared depends on the element hooks.
+ * A feeder emits records with (drop, retain) hooks of its choosing, a
+ * pass-through operator forwards each message with
+ * dtfl_session_give_message under hooks of its own, and a sink records
+ * the hooks of the batches it receives.  A hookless forwarder, or one
+ * with the batch's own hooks, shares the batch: the sink sees the
+ * feeder's hooks and each record is dropped once and never retained
+ * again.  A forwarder with other hooks copies into its own buffer (the
+ * sink sees the forwarder's hooks).  Each hook counts its calls.
+ */
+static size_t n_drop_a, n_retain_a, n_retain_b;
+
+static void hook_drop_a(void *rec) { (void)rec; n_drop_a++; }
+static void hook_retain_a(void *rec) { (void)rec; n_retain_a++; }
+static void hook_retain_b(void *rec) { (void)rec; n_retain_b++; }
+
+typedef struct hook_pair {
+	void (*drop)(void *rec);
+	void (*retain)(void *rec);
+} hook_pair;
+
+typedef struct hooks_ctx {
+	hook_pair feed, fwd;
+	hook_pair seen[8];
+	size_t nseen, nrecs;
+} hooks_ctx;
+
+static bool
+hook_feeder_logic(dtfl_op *op, void *vctx)
+{
+	hooks_ctx *c = vctx;
+	dtfl_cap *cap = dtfl_op_initial_cap(op, 0);
+	dtfl_session *s;
+	unsigned char buf[8];
+	uint64_t v;
+
+	if (cap == NULL)
+		return false;
+	s = dtfl_op_session(op, 0, cap);
+	__dtfl_session_set_batch_ptr_hooks(s, c->feed.drop, c->feed.retain);
+	for (v = 0; v < 3; v++) {
+		dtfl_put_u64(buf, v);
+		dtfl_session_give(s, buf, sizeof buf);
+	}
+	dtfl_session_close(s);
+	dtfl_cap_drop(cap);
+	return false;
+}
+
+static bool
+hook_forward_logic(dtfl_op *op, void *vctx)
+{
+	hooks_ctx *c = vctx;
+	dtfl_message *m;
+
+	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		dtfl_cap *cap = dtfl_op_input_cap(op, 0, 0);
+		dtfl_session *s = dtfl_op_session(op, 0, cap);
+
+		if (c->fwd.drop != NULL || c->fwd.retain != NULL)
+			__dtfl_session_set_batch_ptr_hooks(s, c->fwd.drop,
+			    c->fwd.retain);
+		dtfl_session_give_message(s, m);
+		dtfl_session_close(s);
+		dtfl_cap_drop(cap);
+	}
+	return false;
+}
+
+static bool
+hook_sink_logic(dtfl_op *op, void *vctx)
+{
+	hooks_ctx *c = vctx;
+	dtfl_message *m;
+
+	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		if (c->nseen < 8) {
+			c->seen[c->nseen].drop = m->data->elem_drop;
+			c->seen[c->nseen].retain = m->data->elem_retain;
+			c->nseen++;
+		}
+		c->nrecs += dtfl_message_len(m);
+	}
+	return false;
+}
+
+static void
+build_hooks(dtfl_scope *scope, void *arg)
+{
+	dtfl_op_builder *b = dtfl_op_builder_new(scope, "HookFeeder");
+	dtfl_stream *src = dtfl_op_builder_output(b, dtfl_type_u64()), *fwd;
+
+	dtfl_op_builder_build(b, hook_feeder_logic, arg, NULL);
+	b = dtfl_op_builder_new(scope, "HookForward");
+	dtfl_op_builder_input(b, src, dtfl_pact_pipeline());
+	fwd = dtfl_op_builder_output(b, dtfl_type_u64());
+	dtfl_op_builder_build(b, hook_forward_logic, arg, NULL);
+	b = dtfl_op_builder_new(scope, "HookSink");
+	dtfl_op_builder_input(b, fwd, dtfl_pact_pipeline());
+	dtfl_op_builder_build(b, hook_sink_logic, arg, NULL);
+}
+
+DTFL_TEST(session__forward_shares_only_with_equal_hooks)
+{
+	hooks_ctx c;
+
+	(void)params; (void)data;
+
+	/* Owning-pointer batch through a hookless forwarder: shared. */
+	memset(&c, 0, sizeof c);
+	n_drop_a = n_retain_a = n_retain_b = 0;
+	c.feed.drop = hook_drop_a;
+	c.feed.retain = hook_retain_a;
+	run_standalone(build_hooks, &c);
+	assert_size(c.nrecs, ==, 3);
+	assert_size(c.nseen, >=, 1);
+	assert_ptr_equal(c.seen[0].drop, hook_drop_a);
+	assert_size(n_retain_a, ==, 0);
+	assert_size(n_drop_a, ==, 3);
+
+	/* The same hooks on both: shared, so each record dropped once. */
+	memset(&c, 0, sizeof c);
+	n_drop_a = n_retain_a = n_retain_b = 0;
+	c.feed.drop = c.fwd.drop = hook_drop_a;
+	c.feed.retain = c.fwd.retain = hook_retain_a;
+	run_standalone(build_hooks, &c);
+	assert_size(c.nrecs, ==, 3);
+	assert_ptr_equal(c.seen[0].drop, hook_drop_a);
+	assert_ptr_equal(c.seen[0].retain, hook_retain_a);
+	assert_size(n_retain_a, ==, 0);
+	assert_size(n_drop_a, ==, 3);
+
+	/* Retain-only hooks on the forwarder, none on the feed: copied. */
+	memset(&c, 0, sizeof c);
+	n_drop_a = n_retain_a = n_retain_b = 0;
+	c.fwd.retain = hook_retain_b;
+	run_standalone(build_hooks, &c);
+	assert_size(c.nrecs, ==, 3);
+	assert_ptr_equal(c.seen[0].retain, hook_retain_b);
 	return MUNIT_OK;
 }
 
@@ -601,6 +837,8 @@ DTFL_TEST(capability__downgrade_backwards_panics)
 static MunitTest tests[] = {
 	DTFL_T(builder__map_pipeline),
 	DTFL_T(tee__fan_out),
+	DTFL_T(session__shared_forwarding_keeps_records),
+	DTFL_T(session__forward_shares_only_with_equal_hooks),
 	DTFL_T(exchange__two_process_workers),
 	DTFL_T(exchange__flushes_at_capacity),
 	DTFL_T(capability__counting),
