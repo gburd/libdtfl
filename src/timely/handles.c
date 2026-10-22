@@ -226,11 +226,13 @@ session_ensure_capacity(dtfl_session *s, size_t len)
 	/*
 	 * Room for the flush threshold's worth of records of the first
 	 * record's size (default_capacity::<T>() for a fixed-size T), so the
-	 * offset column does not regrow either.
+	 * offset column does not regrow either.  Records count as at least
+	 * a word, which keeps the offsets no larger than the arena.
 	 */
 	if (s->buffer->arena.cap == 0)
 		__dtfl_batch_reserve(s->buffer,
-		    s->cap_bytes / (len != 0 ? len : 1) + 1, s->cap_bytes);
+		    s->cap_bytes / DTFL_MAX(len, sizeof(size_t)) + 1,
+		    s->cap_bytes);
 }
 
 void
@@ -261,14 +263,19 @@ dtfl_session_give_message(dtfl_session *s, const dtfl_message *m)
 	 * Session::give_container: flush what is buffered (FIFO), then send
 	 * the received batch itself, shared by reference, instead of copying
 	 * its records.  Batches are immutable once sent, and refcounts are
-	 * atomic, so sharing is safe across workers.  A session with
-	 * element hooks copies, so each record gets its own reference, as
-	 * dtfl_session_give does; so does a batch with time or diff
-	 * columns, which a session output never carries.
+	 * atomic, so sharing is safe across workers.  A shared batch keeps
+	 * its own element hooks, so a batch of owning pointers (the
+	 * batch-pointer streams) still owns each record exactly once, as
+	 * upstream's moved Vec<Rc<_>> does; that holds when the session
+	 * has no hooks (a plain pass-through such as probe or concat) or the
+	 * batch's own.  A session with other hooks copies, as
+	 * dtfl_session_give does; so do batches with time or diff columns,
+	 * which a session output never carries.
 	 */
-	if (n != 0 && s->elem_drop == NULL && s->elem_retain == NULL &&
-	    m->data->elem_drop == NULL && m->data->tw == 0 &&
-	    m->data->dw == 0) {
+	if (n != 0 && m->data->tw == 0 && m->data->dw == 0 &&
+	    ((s->elem_drop == NULL && s->elem_retain == NULL) ||
+	    (s->elem_drop == m->data->elem_drop &&
+	    s->elem_retain == m->data->elem_retain))) {
 		session_flush(s);
 		__dtfl_output_give(s->out, s->time,
 		    __dtfl_batch_retain(m->data));

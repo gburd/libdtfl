@@ -171,6 +171,7 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 	{
 		const void *pk = NULL, *pv = NULL;
 		size_t pkl = 0, pvl = 0;
+		bool first = true;
 
 		for (ci = 0; ci < nchunks; ci++) {
 			size_t n = __dtfl_batch_len(chunks[ci]);
@@ -182,7 +183,7 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 
 				kl = keyed ? len : dtfl_type_value_len(kt, rec, len);
 				DTFL_ASSERT(kl != SIZE_MAX && kl <= len);
-				if (pk == NULL ||
+				if (first ||
 				    __dtfl_type_cmp(kt, pk, pkl, rec, kl) != 0) {
 					nkeys++;
 					nvals++;
@@ -192,6 +193,7 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 					nvals++;
 				}
 				nupds++;
+				first = false;
 				pk = rec;
 				pkl = kl;
 				pv = rec + kl;

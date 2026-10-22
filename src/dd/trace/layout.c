@@ -352,6 +352,9 @@ __dtfl_slices_advance(const __dtfl_slices *s, const dtfl_type *t, size_t start,
 void
 __dtfl_slices_reserve(__dtfl_slices *s, size_t n, size_t bytes)
 {
+	/* A stride column knows its bytes: n values of `stride`. */
+	if (s->stride != 0 && bytes == 0)
+		bytes = __dtfl_mul_size(n, s->stride);
 	if (bytes != 0)
 		__dtfl_vec_reserve(&s->arena, bytes);
 	if (s->stride == 0)
