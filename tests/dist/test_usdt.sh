@@ -3,8 +3,8 @@
 # tests/dist/test_usdt.sh: the library carries every documented USDT
 # probe.
 #
-# The probe list is the @item lines of the "Static probes" table in
-# doc/diagnostics.texi (name, then argument count).  When configure
+# The probe list is the @item and @itemx lines of the "Static probes"
+# table in doc/diagnostics.texi (name, then argument count).  When configure
 # enabled USDT, `readelf -n` on the built libdtfl.so must list each of
 # them under provider dtfl with that many arguments, and no dtfl probe
 # the manual does not name.  SKIP (77) when USDT is off, when readelf is
@@ -31,10 +31,10 @@ fi
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/dtfl-usdt.XXXXXX") || exit 99
 trap 'rm -rf "$tmp"' EXIT
 
-# Documented: "@item @code{dtfl:NAME} (N arguments)" -> "NAME N".
+# Documented: "@item[x] @code{dtfl:NAME} (N arguments)" -> "NAME N".
 sed -n '/^@c usdt-probes-begin/,/^@c usdt-probes-end/p' \
     "$top/doc/diagnostics.texi" \
-	| sed -n 's/^@item @code{dtfl:\([a-z_]*\)}.*(\([0-9]*\) argument.*/\1 \2/p' \
+	| sed -n 's/^@itemx\{0,1\} @code{dtfl:\([a-z_]*\)}.*(\([0-9]*\) argument.*/\1 \2/p' \
 	| sort -u > "$tmp/doc"
 if [ ! -s "$tmp/doc" ]; then
 	echo "[usdt] FAIL: no probes found in doc/diagnostics.texi"

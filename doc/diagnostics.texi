@@ -83,7 +83,7 @@ batch and merge, never in a per-record loop.  Every integer argument is
 a @code{uint64_t}; addresses are @code{const void *} and are useful only
 to match one probe's firing with another's.
 
-@c usdt-probes-begin: tests/dist/test_usdt.sh reads the @item lines.
+@c usdt-probes-begin: tests/dist/test_usdt.sh reads the @item and @itemx lines.
 @table @asis
 @item @code{dtfl:operator_start} (5 arguments)
 @itemx @code{dtfl:operator_end} (5 arguments)
