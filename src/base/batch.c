@@ -29,6 +29,19 @@
 __dtfl_batch *
 __dtfl_batch_new(unsigned time_words, unsigned diff_bytes)
 {
+	return __dtfl_batch_new_reserved(time_words, diff_bytes, 0, 0);
+}
+
+/*
+ * __dtfl_batch_new, with room for `rows` records and `bytes` arena bytes
+ * reserved as __dtfl_batch_reserve would, but with each column allocated
+ * once at its final size: the offsets vector holds its leading zero and
+ * `rows` more without a second allocation.
+ */
+__dtfl_batch *
+__dtfl_batch_new_reserved(unsigned time_words, unsigned diff_bytes,
+    size_t rows, size_t bytes)
+{
 	__dtfl_batch *b = __dtfl_alloc(sizeof *b);
 	size_t zero = 0;
 
@@ -37,11 +50,14 @@ __dtfl_batch_new(unsigned time_words, unsigned diff_bytes)
 	__dtfl_vec_init(&b->offs, sizeof(size_t));
 	__dtfl_vec_init(&b->times, sizeof(uint64_t));
 	__dtfl_vec_init(&b->diffs, 1);
-	__dtfl_vec_push(&b->offs, &zero);
 	b->tw = time_words;
 	b->dw = diff_bytes;
 	b->elem_drop = NULL;
 	b->elem_retain = NULL;
+	__dtfl_vec_reserve(&b->offs, rows + 1);
+	__dtfl_vec_push_size(&b->offs, zero);
+	if (rows != 0 || bytes != 0)
+		__dtfl_batch_reserve(b, rows, bytes);
 	return b;
 }
 

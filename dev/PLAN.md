@@ -551,11 +551,8 @@ Channels between threads:
 - Upstream's `Process` allocator and its counters use
   `std::sync::mpsc`, which is lock-free at the pin's toolchain (the
   crossbeam list channel).
-- `src/comm/queue.c` is a mutex around a FIFO, locked on every send
-  and every receive poll, including empty ones.  On a 16-worker run it
-  costs about five times Rust's futex calls per record and halves
-  throughput against Rust (section 9).  P16.1 replaces it with a
-  lock-free port of the list channel.
+- `src/comm/queue.c` ports that list channel to C11 atomics (P16.1;
+  the metal futex and throughput measurement is still open).
 
 ### D8. Determinism and the simulation allocator
 

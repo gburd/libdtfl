@@ -10,5 +10,9 @@ libdtfl -- thanks
 		differential dataflow
 		the timely diagnostics tools
 
-	and to the authors of the hegel property-testing engine, used for
-	the library's property tests.
+	The queue between worker threads is a port of the Rust standard
+	library's mpsc list channel, which comes from crossbeam-channel;
+	thanks to the Crossbeam and Rust developers.
+
+	And thanks to the authors of the hegel property-testing engine,
+	used for the library's property tests.

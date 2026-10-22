@@ -164,6 +164,9 @@ typedef struct __dtfl_batch {
 } __dtfl_batch;
 
 __dtfl_batch *__dtfl_batch_new(unsigned time_words, unsigned diff_bytes);
+/* A new batch with room for `rows` records and `bytes` arena bytes. */
+__dtfl_batch *__dtfl_batch_new_reserved(unsigned time_words,
+    unsigned diff_bytes, size_t rows, size_t bytes);
 /*
  * Marks an arena as holding owning record pointers: release runs `drop`
  * on each record (and clear/make_mut keep the invariant), `retain` is run

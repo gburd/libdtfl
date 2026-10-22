@@ -341,11 +341,140 @@ DTFL_TEST(merge_batcher__fast_merge_rejects_variable_records)
 	return MUNIT_OK;
 }
 
+/*
+ * The batcher recycles drained chunks through its stash (VecMerger's
+ * empty, refill and extract).  A recycled chunk must come back empty:
+ * push many small random chunks, so merges drain and refill the stash
+ * over and over, seal at two frontiers, and compare everything sealed
+ * with the consolidation of everything pushed.  Updates pushed after the
+ * first seal are moved to times at or after its upper (8 + t), as the
+ * batcher requires.
+ */
+static int
+row_order(const void *a, const void *b)
+{
+	const u3 *x = a, *y = b;
+
+	if (x->d != y->d)
+		return x->d < y->d ? -1 : 1;
+	return (x->t > y->t) - (x->t < y->t);
+}
+
+DTFL_TEST(merge_batcher__recycled_chunks_come_back_empty)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_merge_batcher mb;
+	__dtfl_batch *all = __dtfl_batch_new(1, 8);
+	uint64_t rng = 0x853c49e6748fea9bULL;
+	u3 got[4096];
+	size_t ngot = 0, push, i, s;
+
+	(void)params; (void)data;
+	__dtfl_merge_batcher_init(&mb, dtfl_type_u64(), tc, I64);
+	for (s = 0; s < 2; s++) {
+		uint64_t up = s == 0 ? 8 : 100;
+		__dtfl_antichain upper;
+		__dtfl_description desc;
+		__dtfl_batch **out;
+		size_t nout, c;
+
+		for (push = 0; push < 60; push++) {
+			size_t n = 1 + (size_t)(rng % (3 * mb.cap / 2));
+			__dtfl_batch *ch = random_chunk(&rng, n, I64);
+			size_t r;
+
+			if (s == 1) {
+				for (r = 0; r < __dtfl_batch_len(ch); r++)
+					__dtfl_batch_time_mut(ch, r)[0] += 8;
+			}
+			for (r = 0; r < __dtfl_batch_len(ch); r++)
+				__dtfl_batch_push_from(all, ch, r);
+			__dtfl_merge_batcher_push(&mb, ch);
+		}
+		__dtfl_antichain_init_elem(&upper, tc, &up);
+		__dtfl_merge_batcher_seal(&mb, &upper, &out, &nout, &desc);
+		for (c = 0; c < nout; c++) {
+			for (i = 0; i < __dtfl_batch_len(out[c]); i++) {
+				size_t len;
+				int64_t r;
+
+				assert_size(ngot, <, sizeof got / sizeof got[0]);
+				got[ngot].d = dtfl_get_u64(__dtfl_batch_rec(out[c], i,
+				    &len));
+				got[ngot].t = __dtfl_batch_time(out[c], i)[0];
+				memcpy(&r, __dtfl_batch_diff(out[c], i), 8);
+				got[ngot].r = r;
+				ngot++;
+			}
+		}
+		release_chunks(out, nout);
+		__dtfl_description_free(&desc);
+		__dtfl_antichain_free(&upper);
+	}
+	/* Both seals together hold every update (times are below 100). */
+	__dtfl_consolidate_batch(all, dtfl_type_u64(), I64);
+	qsort(got, ngot, sizeof got[0], row_order);
+	assert_size(ngot, ==, __dtfl_batch_len(all));
+	for (i = 0; i < ngot; i++) {
+		size_t len;
+		int64_t r;
+
+		memcpy(&r, __dtfl_batch_diff(all, i), 8);
+		assert_uint64(got[i].d, ==, dtfl_get_u64(__dtfl_batch_rec(all, i,
+		    &len)));
+		assert_uint64(got[i].t, ==, __dtfl_batch_time(all, i)[0]);
+		assert_int64(got[i].r, ==, r);
+	}
+	__dtfl_batch_release(all);
+	__dtfl_merge_batcher_free(&mb);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
+/*
+ * Only a uniquely held chunk may be recycled: a chunk pushed into the
+ * batcher while someone else still holds a reference must not be
+ * cleared under that holder when the merge drains it.
+ */
+DTFL_TEST(merge_batcher__shared_chunk_is_not_recycled)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_merge_batcher mb;
+	__dtfl_antichain upper;
+	__dtfl_description desc;
+	__dtfl_batch **out, *held[8];
+	uint64_t rng = 0x1d872b41ULL, up = 100;
+	size_t nout, i, len0[8];
+
+	(void)params; (void)data;
+	__dtfl_merge_batcher_init(&mb, dtfl_type_u64(), tc, I64);
+	for (i = 0; i < 8; i++) {
+		held[i] = random_chunk(&rng, mb.cap, I64);
+		len0[i] = __dtfl_batch_len(held[i]);
+		/* The batcher gets one reference; the test keeps another. */
+		__dtfl_merge_batcher_push(&mb, __dtfl_batch_retain(held[i]));
+	}
+	__dtfl_antichain_init_elem(&upper, tc, &up);
+	__dtfl_merge_batcher_seal(&mb, &upper, &out, &nout, &desc);
+	for (i = 0; i < 8; i++) {
+		assert_size(__dtfl_batch_len(held[i]), ==, len0[i]);
+		__dtfl_batch_release(held[i]);
+	}
+	release_chunks(out, nout);
+	__dtfl_description_free(&desc);
+	__dtfl_antichain_free(&upper);
+	__dtfl_merge_batcher_free(&mb);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(trace_implementations_merge_batcher_test__frontier_is_post_consolidation),
 	DTFL_T(trace_implementations_merge_batcher_test__frontier_survivor_minimum),
 	DTFL_T(merge_batcher__fast_merge_matches_general),
 	DTFL_T(merge_batcher__fast_merge_rejects_variable_records),
+	DTFL_T(merge_batcher__recycled_chunks_come_back_empty),
+	DTFL_T(merge_batcher__shared_chunk_is_not_recycled),
 	DTFL_T_END
 };
 

@@ -104,6 +104,11 @@ void __dtfl_slices_free(__dtfl_slices *s);
 void __dtfl_slices_clear(__dtfl_slices *s);
 /* Appends a value. */
 void __dtfl_slices_push(__dtfl_slices *s, const void *p, size_t len);
+/* BatchContainer::with_capacity: n values, `bytes` arena bytes. */
+void __dtfl_slices_reserve(__dtfl_slices *s, size_t n, size_t bytes);
+/* BatchContainer::merge_capacity: room for both inputs. */
+void __dtfl_slices_merge_capacity(__dtfl_slices *s, const __dtfl_slices *a,
+    const __dtfl_slices *b);
 
 /*
  * The fixed stride a type qualifies for in the columnar path, or 0 to keep
@@ -223,6 +228,11 @@ typedef struct __dtfl_vals {
 
 void __dtfl_vals_init(__dtfl_vals *v);
 void __dtfl_vals_free(__dtfl_vals *v);
+/* Vals::with_capacity (v_bytes: arena bytes for the values) and merge_capacity. */
+void __dtfl_vals_reserve(__dtfl_vals *v, size_t o_size, size_t v_size,
+    size_t v_bytes);
+void __dtfl_vals_merge_capacity(__dtfl_vals *v, const __dtfl_vals *a,
+    const __dtfl_vals *b);
 /* Lower and upper bounds in vals of the list indexed by `index`. */
 void __dtfl_vals_bounds(const __dtfl_vals *v, size_t index, size_t *lo,
     size_t *hi);
@@ -244,6 +254,10 @@ typedef struct __dtfl_upds {
 
 void __dtfl_upds_init(__dtfl_upds *u, unsigned tw, unsigned dw);
 void __dtfl_upds_free(__dtfl_upds *u);
+/* Upds::with_capacity and merge_capacity. */
+void __dtfl_upds_reserve(__dtfl_upds *u, size_t o_size, size_t u_size);
+void __dtfl_upds_merge_capacity(__dtfl_upds *u, const __dtfl_upds *a,
+    const __dtfl_upds *b);
 /*
  * Upds::bounds: equal lower and upper encodes "singleton; just before
  * here", so return (lower - 1, upper) in that case.  lower must then be
@@ -550,6 +564,12 @@ typedef struct __dtfl_merge_batcher {
 	__dtfl_antichain lower;
 	__dtfl_antichain frontier;	/* after the last seal */
 	size_t cap;		/* target chunk capacity, a power of two */
+	/*
+	 * MergeBatcher::stash: emptied chunks recycled through merging,
+	 * each uniquely held and with room for `cap` rows.  Cleared after
+	 * every seal, as upstream's is.
+	 */
+	__dtfl_vec stash;	/* __dtfl_batch *, owned */
 	__dtfl_logger *logger;	/* retained; NULL: no size accounting */
 	size_t operator_id;	/* timely operator global id */
 } __dtfl_merge_batcher;
