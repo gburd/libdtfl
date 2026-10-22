@@ -17,10 +17,11 @@
 # 1, BASE from DTFL_SIM_BASE or 1, DIR a fresh directory under
 # ${TMPDIR:-.}.  Run from the build directory (make check-sim does).
 #
-# Prints PASS, FAIL or SKIP per property and exits 0 if all passed, 1 if
-# any failed, and 77 if the suites were built without hegel.  A FAIL
-# prints the shard's minimal counterexample and the command that replays
-# it; each shard's full log stays in DIR.
+# Prints PASS, FAIL or SKIP per property, then a summary line.  Exits 1
+# if any property failed, else 0; a SKIP (the suites were built without
+# hegel) is not a failure but is never reported as PASS.  A FAIL prints
+# the shard's minimal counterexample and the command that replays it;
+# each shard's full log stays in DIR.
 set -u
 
 seeds=${DTFL_SIM_SEEDS:-2000}
@@ -55,8 +56,11 @@ tests/pbt/pbt_ops_notify notify_multiworker
 tests/pbt/pbt_bfs bfs_multiworker
 "
 
-per=$(( (seeds + jobs - 1) / jobs ))
-echo "check-sim: $seeds seeds per property in $jobs shard(s) of $per, base $base"
+# Shard k runs per or per + 1 cases, so the shards sum to exactly SEEDS.
+per=$((seeds / jobs))
+extra=$((seeds % jobs))
+[ "$per" -ge 1 ] || { echo "check-sim: -n $seeds < -j $jobs" >&2; exit 2; }
+echo "check-sim: $seeds seeds per property in $jobs shard(s), base $base"
 echo "check-sim: logs in $out"
 start=$(date +%s)
 status=0
@@ -77,9 +81,11 @@ while read -r prog prop; do
 		mkdir -p "$d"
 		# Each shard runs in its own directory: hegel keeps its example
 		# database under the working directory.
+		n=$per
+		[ "$k" -lt "$extra" ] && n=$((per + 1))
 		( cd "$d" && DTFL_PBT_COMM=sim \
 		    DTFL_PBT_FAULTS=${DTFL_PBT_FAULTS:-on} DTFL_PBT_ONLY=$prop \
-		    DTFL_PBT_CASES=$per DTFL_PBT_SEED=$((base + k)) \
+		    DTFL_PBT_CASES=$n DTFL_PBT_SEED=$((base + k)) \
 		    "$build/$prog" > log 2>&1; echo $? > rc ) &
 		k=$((k + 1))
 	done
@@ -99,17 +105,21 @@ while read -r prog prop; do
 		k=$((k + 1))
 	done
 	case $res in
-	PASS) echo "PASS: $prop ($((per * jobs)) seeds)" ;;
+	PASS) echo "PASS: $prop ($seeds seeds)" ;;
 	SKIP) echo "SKIP: $prop (built without hegel; configure --with-hegel)"
 	      skipped=1 ;;
-	FAIL) echo "FAIL: $prop"; status=1 ;;
+	FAIL) echo "FAIL: $prop (replay with $prog)"; status=1 ;;
 	esac
 done < "$out/props"
 echo "check-sim: $(( $(date +%s) - start ))s"
 if [ "$status" -ne 0 ]; then
-	echo "check-sim: FAIL.  Run the printed replay line's variables on the"
-	echo "check-sim: property's program (the suite named before the slash)."
+	echo "check-sim: FAIL.  Run a printed replay line's variables with the"
+	echo "check-sim: program named on its FAIL line."
 	exit 1
 fi
-[ "$skipped" -ne 0 ] && exit 77
+if [ "$skipped" -ne 0 ]; then
+	echo "check-sim: SKIP (no property ran; configure --with-hegel)"
+else
+	echo "check-sim: PASS"
+fi
 exit 0
