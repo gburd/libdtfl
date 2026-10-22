@@ -87,10 +87,12 @@ __dtfl_fifo_free(__dtfl_fifo *q)
  * - If a message has been written into the slot, `WRITE` is set.
  * - If a message has been read from the slot, `READ` is set.
  * - If the block is being destroyed, `DESTROY` is set.
+ * (Upstream's WRITE, READ and DESTROY, prefixed here so they cannot
+ * collide with a system header's macros.)
  */
-#define WRITE ((size_t)1)
-#define READ ((size_t)2)
-#define DESTROY ((size_t)4)
+#define SLOT_WRITE ((size_t)1)
+#define SLOT_READ ((size_t)2)
+#define SLOT_DESTROY ((size_t)4)
 
 /* Each block covers one "lap" of indices. */
 #define LAP ((size_t)32)
@@ -163,8 +165,8 @@ spin_heavy(backoff *b)
 /*
  * A slot in a block: the state word, then the message at q->msg_off.
  * The message is plain memory, written only by the sender that
- * reserved the slot, before its Release fetch_or of WRITE, and read
- * only after an Acquire load sees WRITE.
+ * reserved the slot, before its Release fetch_or of SLOT_WRITE, and read
+ * only after an Acquire load sees SLOT_WRITE.
  */
 typedef struct slot {
 	atomic_size_t state;
@@ -252,7 +254,7 @@ wait_write(slot *s)
 	backoff b = { 0 };
 
 	while ((atomic_load_explicit(&s->state, memory_order_acquire) &
-	    WRITE) == 0)
+	    SLOT_WRITE) == 0)
 		spin_heavy(&b);
 }
 
@@ -279,7 +281,7 @@ wait_next(block *b)
 }
 
 /*
- * Block::destroy: sets the DESTROY bit in slots starting from `start`
+ * Block::destroy: sets the SLOT_DESTROY bit in slots starting from `start`
  * and destroys the block.
  */
 static void
@@ -288,17 +290,17 @@ block_destroy(const __dtfl_mpsc *q, block *this, size_t start)
 	size_t i;
 
 	/*
-	 * It is not necessary to set the DESTROY bit in the last slot
+	 * It is not necessary to set the SLOT_DESTROY bit in the last slot
 	 * because that slot has begun destruction of the block.
 	 */
 	for (i = start; i < BLOCK_CAP - 1; i++) {
 		slot *s = slot_at(q, this, i);
 
-		/* Mark the DESTROY bit if a thread is still using the slot. */
+		/* Mark the SLOT_DESTROY bit if a thread is still using the slot. */
 		if ((atomic_load_explicit(&s->state, memory_order_acquire) &
-		    READ) == 0 &&
-		    (atomic_fetch_or_explicit(&s->state, DESTROY,
-		    memory_order_acq_rel) & READ) == 0) {
+		    SLOT_READ) == 0 &&
+		    (atomic_fetch_or_explicit(&s->state, SLOT_DESTROY,
+		    memory_order_acq_rel) & SLOT_READ) == 0) {
 			/*
 			 * If a thread is still using the slot, it will
 			 * continue destruction of the block.
@@ -527,7 +529,7 @@ channel_write(__dtfl_mpsc *q, const list_token *token, const void *msg)
 	s = slot_at(q, token->block, token->offset);
 	memcpy(slot_msg(q, s), msg, q->elem);
 	/* Pairs with the Acquire load in wait_write. */
-	atomic_fetch_or_explicit(&s->state, WRITE, memory_order_release);
+	atomic_fetch_or_explicit(&s->state, SLOT_WRITE, memory_order_release);
 
 	/* receivers.notify(): no receiver blocks here (see above). */
 	return true;
@@ -696,8 +698,8 @@ channel_read(__dtfl_mpsc *q, const list_token *token, void *out)
 	 */
 	if (offset + 1 == BLOCK_CAP)
 		block_destroy(q, b, 0);
-	else if ((atomic_fetch_or_explicit(&s->state, READ,
-	    memory_order_acq_rel) & DESTROY) != 0)
+	else if ((atomic_fetch_or_explicit(&s->state, SLOT_READ,
+	    memory_order_acq_rel) & SLOT_DESTROY) != 0)
 		block_destroy(q, b, offset + 1);
 	return true;
 }
