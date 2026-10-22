@@ -107,17 +107,32 @@ enforces them.
 
 ### Performance
 
-On the pinned `arrange` benchmark (`bench/experiments/arrange`, same host
-as the Rust build, 25 s runs, medians of four), the port runs within 1.5
-times of the Rust originals: 1.41 times slower on the `count` arm (471K
-against 664K records per second) and 1.34 times slower on the `arrange`
-arm (2.20M against 2.95M), executing 1.48 and 1.46 times the
-instructions per record.  The record and container design (ADR-0001,
-ADR-0002) is unchanged; the gains came from port bugs that kept arranged
-traces from compacting, a benchmark driver that drew deletions from the
-wrong generator, chunk sizes that ignored constant-width records, and
-inline fast paths for 8-byte records, one-word times and 64-bit integer
-differences, each checked against the general path by a test.
+Measured with `dev/bench-ec2` on a dedicated c7i.metal-24xl (Xeon
+Platinum 8488C, one socket, clock pinned at 2.4 GHz, C and Rust runs
+alternated, medians of three), against the pinned Rust build on the same
+host:
+
+| `arrange` benchmark | 1 worker | 4 workers | 16 workers |
+|---|---|---|---|
+| `arrange` arm, C slower by | 1.20x | 1.38x | 1.39x |
+| `count` arm, C slower by | 1.32x | 1.36x | 1.38x |
+
+Throughput is within 1.5 times of Rust at every worker count measured.
+Latency is not yet: in the benchmark's open-loop mode, which schedules
+requests on a fixed clock so a stall delays every request behind it, one
+worker at half the C build's capacity answers in 29 / 39 microseconds
+(p50 / p99) on the `arrange` arm against Rust's 10 / 14, and the cost of
+one step of an idle dataflow is 1.9 times Rust's.  Closing that gap is
+the plan's phase P16 (`dev/PLAN.md` section 10.1).
+
+The record and container design (ADR-0001, ADR-0002) is unchanged; the
+gains came from port bugs that kept arranged traces from compacting, a
+benchmark driver that drew deletions from the wrong generator, chunk
+sizes that ignored constant-width records, a lock-free queue between
+workers in place of a mutex, upstream's chunk recycling and capacity
+reservation, and inline fast paths for 8-byte records, one-word times
+and 64-bit integer differences, each checked against the general path by
+a test.
 
 `bench/experiments/arrange` takes the Rust binary's arguments, so one
 command line runs both: `arrange keys recs rate work comp [-w N ...]
