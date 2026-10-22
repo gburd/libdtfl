@@ -31,6 +31,11 @@ It must be called before libdtfl allocates anything, and at most once.
 Passing
 .Dv NULL
 restores the libc allocator, again only before first use.
+The hooks must return memory aligned as
+.Xr malloc 3
+returns it, for any object type
+.Pq Vt max_align_t ;
+libdtfl stores atomic counters and arbitrary records in it.
 .Pp
 The panic hook is called when a caller violates a library contract,
 for example by using a capability for the wrong output, and when an
