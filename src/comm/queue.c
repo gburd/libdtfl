@@ -1,6 +1,11 @@
 /*
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Greg Burd
+ * Ported from rust 1.99.1 (58cf8f9c3 2026-10-13)
+ *   library/std/src/sync/mpmc/list.rs and utils.rs (the MPSC queue)
+ * Copyright (c) 2019 The Crossbeam Project Developers.
+ * Copyright (c) The Rust Project Developers.
+ * Licensed MIT OR Apache-2.0; used here under the MIT license (COPYING).
  *
  * src/comm/queue.c: the FIFO (VecDeque) and the many-producer,
  * one-consumer queue (std::sync::mpsc::channel) that the typed
@@ -10,6 +15,16 @@
 
 #include <sched.h>
 #include <stddef.h>
+
+/*
+ * Blocks are zeroed by __dtfl_calloc and their atomics used without
+ * atomic_init, as Block::new uses Box::new_zeroed: that needs atomics
+ * that are lock-free, whose all-zero representation is 0 or NULL.
+ */
+_Static_assert(ATOMIC_POINTER_LOCK_FREE == 2,
+    "the MPSC queue needs lock-free pointer atomics");
+_Static_assert(ATOMIC_LONG_LOCK_FREE == 2 || sizeof(size_t) != sizeof(long),
+    "the MPSC queue needs lock-free size_t atomics");
 
 void
 __dtfl_fifo_init(__dtfl_fifo *q, size_t elem)
@@ -59,16 +74,12 @@ __dtfl_fifo_free(__dtfl_fifo *q)
 /* ------------------------------------------------------------------ */
 
 /*
- * Ported from rust 1.99.1 (58cf8f9c3 2026-10-13)
- *   library/std/src/sync/mpmc/list.rs (the list flavor that backs
- *   std::sync::mpsc::channel), and Backoff and CachePadded from
- *   library/std/src/sync/mpmc/utils.rs
- * Copyright (c) 2019 The Crossbeam Project Developers.
- * Copyright (c) The Rust Project Developers.
- * Licensed MIT OR Apache-2.0; used here under the MIT license.
- *
- * The algorithm, constants and memory orders are list.rs's.  The C
- * differences:
+ * The list flavor that backs std::sync::mpsc::channel (list.rs), with
+ * Backoff and CachePadded from utils.rs; provenance at the top of the
+ * file.  The algorithm, constants and memory orders are list.rs's.  The
+ * READ/DESTROY handshake between a reader and Block::destroy serves
+ * upstream's many receivers; with libdtfl's one receiver it never
+ * defers a destroy, and is kept as ported.  The C differences:
  *
  * - T becomes `elem` bytes, moved in and out with memcpy.  A slot is
  *   its state word followed by the payload, so a block is one

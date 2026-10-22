@@ -322,8 +322,11 @@ DTFL_TEST(mpsc_multi_producer_fifo_no_loss)
 				got++;
 		}
 	}
-	for (i = 0; i < MP_PRODUCERS; i++) {
+	/* Join every producer before any assertion can leave this frame. */
+	for (i = 0; i < MP_PRODUCERS; i++)
 		(void)__dtfl_thread_join(t[i]);
+	alarm(0);
+	for (i = 0; i < MP_PRODUCERS; i++) {
 		assert_string_equal(p[i].err, "");
 		assert_uint32(p[i].refused, ==, 0);
 	}
@@ -419,8 +422,10 @@ DTFL_TEST(mpsc_close_races_senders)
 		__dtfl_mpsc_close(q);
 		atomic_store_explicit(&f.closed, 1, memory_order_relaxed);
 		__dtfl_mpsc_release(q);
-		for (i = 0; i < MP_PRODUCERS; i++) {
+		/* Join every producer before any assertion can leave. */
+		for (i = 0; i < MP_PRODUCERS; i++)
 			(void)__dtfl_thread_join(t[i]);
+		for (i = 0; i < MP_PRODUCERS; i++) {
 			assert_string_equal(p[i].err, "");
 			refused += p[i].refused;
 		}

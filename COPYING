@@ -43,7 +43,16 @@ Timely Dataflow Diagnostics (https://github.com/TimelyDataflow/diagnostics):
 
   Copyright (c) 2019 Timely Dataflow Diagnostics contributors
 
-For each of the three notices above the following permission notice applies:
+The Rust standard library's mpsc list channel (library/std/src/sync/mpmc,
+https://github.com/rust-lang/rust), derived from crossbeam-channel
+(https://github.com/crossbeam-rs/crossbeam) and ported in
+src/comm/queue.c; it is dual-licensed MIT OR Apache-2.0 and used here
+under the MIT license:
+
+  Copyright (c) 2019 The Crossbeam Project Developers
+  Copyright (c) The Rust Project Developers
+
+For each of the notices above the following permission notice applies:
 
   Permission is hereby granted, free of charge, to any person obtaining a copy
   of this software and associated documentation files (the "Software"), to deal
