@@ -12,11 +12,14 @@
  * incremental, so re-running at a new epoch retracts the stale output and
  * asserts the new one; the property checks the NET output accumulated at each
  * epoch against the reference, which catches a reduce that re-emits without
- * retracting (it would double).  A final property runs count on three Process
+ * retracting (it would double).  A final property runs count on several
  * workers that exchange by key and checks the summed output converges to the
- * same per-key counts as the single-worker reference.
+ * same per-key counts as the single-worker reference.  It draws its
+ * execution (pbt_sim.h): two to four workers on real threads or on the
+ * simulator, with the simulator's seed and faults drawn too.
  */
 #include "pbt.h"
+#include "pbt_sim.h"
 
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
@@ -375,14 +378,17 @@ prop_distinct(pbt_tc *tc)
 }
 
 /* ------------------------------------------------------------------ */
-/* Multi-worker count: three Process workers exchanging by key.         */
+/* Multi-worker count: workers exchanging by key.                       */
 /* ------------------------------------------------------------------ */
+
+#define MAXW 4
 
 typedef struct mw_ctx {
 	op *ops;
 	size_t nops;
 	dtfl_time_class *tc;
-	collected out[3];	/* per-worker captured output */
+	bool wait;		/* step to each epoch while feeding */
+	collected out[MAXW];	/* per-worker captured output */
 } mw_ctx;
 
 static void
@@ -405,7 +411,10 @@ mw_worker(dtfl_worker *w, void *arg)
 
 	/* Each worker feeds the ops whose index modulo peers is its own, so
 	 * every op is fed exactly once across the workers; count exchanges by
-	 * key, so each key accumulates on one worker regardless. */
+	 * key, so each key accumulates on one worker regardless.  On real
+	 * threads a worker waits for each epoch to complete before feeding
+	 * the next; the simulator runs worker functions one after another,
+	 * so there a worker feeds everything and returns (pbt_sim.h). */
 	for (i = 0; i < e->nops; i++) {
 		unsigned char k[8];
 
@@ -413,8 +422,11 @@ mw_worker(dtfl_worker *w, void *arg)
 			cur = e->ops[i].time;
 			dtfl_input_session_advance_to(c.in, &cur);
 			dtfl_input_session_flush(c.in);
-			{ probe_cond pc = { c.probe, cur };
-			  dtfl_worker_step_while(w, probe_behind, &pc); }
+			if (e->wait) {
+				probe_cond pc = { c.probe, cur };
+
+				dtfl_worker_step_while(w, probe_behind, &pc);
+			}
 		}
 		if ((i % peers) != idx)
 			continue;
@@ -425,29 +437,34 @@ mw_worker(dtfl_worker *w, void *arg)
 			dtfl_input_session_remove(c.in, k, 8);
 	}
 	dtfl_input_session_close(c.in);
-	while (dtfl_worker_step(w))
-		;
 	dtfl_probe_free(c.probe);
 	dtfl_diff_free(r);
+}
+
+static void
+free_tc_ctx(void *e)
+{
+	dtfl_time_class_free(((mw_ctx *)e)->tc);
 }
 
 static void
 prop_count_multiworker(pbt_tc *tc)
 {
 	static op ops[MAXOPS];
+	static mw_ctx e;
 	size_t nops = gen_ops(tc, ops);
-	dtfl_config *cfg = dtfl_config_new();
-	mw_ctx e;
+	pbt_exec x;
 	uint64_t k, q;
 	size_t wi;
 
+	pbt_exec_draw(tc, &x, 2, MAXW);
 	memset(&e, 0, sizeof e);
 	e.ops = ops;
 	e.nops = nops;
 	e.tc = dtfl_time_u64();
-	dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS);
-	dtfl_config_set_threads(cfg, 3);
-	PBT_ASSERT(dtfl_execute(cfg, mw_worker, &e, NULL) == 0);
+	pbt_defer(tc, free_tc_ctx, &e);
+	e.wait = x.mode != DTFL_COMM_SIM;
+	PBT_ASSERT(pbt_exec_run(tc, &x, mw_worker, &e) == 0);
 
 	/* The summed output across workers converges to the reference count
 	 * per key: for each key the count-value equal to the reference sum is
@@ -460,7 +477,7 @@ prop_count_multiworker(pbt_tc *tc)
 			for (v = -(int64_t)MAXOPS; v <= (int64_t)MAXOPS; v++) {
 				int64_t got = 0;
 
-				for (wi = 0; wi < 3; wi++)
+				for (wi = 0; wi < x.threads; wi++)
 					got += out_count(&e.out[wi], k, v, q);
 				if (cnt != 0 && v == cnt)
 					PBT_ASSERT(got == 1);
@@ -468,8 +485,6 @@ prop_count_multiworker(pbt_tc *tc)
 					PBT_ASSERT(got == 0);
 			}
 		}
-	dtfl_time_class_free(e.tc);
-	dtfl_config_free(cfg);
 }
 
 static const pbt_prop props[] = {
