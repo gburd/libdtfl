@@ -19,6 +19,20 @@ curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null 2>&1
 . "$HOME/.cargo/env"
 tar xzf libdtfl.tgz
 tar xzf dd.tgz
+tar xzf timely.tgz
+# The pin builds against timely from crates.io (`timely = "0.31"`), so
+# patch it to the pinned timely tree, and use the committed lockfile so
+# every other dependency resolves the same way on every run.
+cat >> dd/Cargo.toml <<'TOML'
+
+[patch.crates-io]
+timely = { path = "../timely/timely" }
+timely_container = { path = "../timely/container" }
+timely_communication = { path = "../timely/communication" }
+timely_bytes = { path = "../timely/bytes" }
+timely_logging = { path = "../timely/logging" }
+TOML
+cp differential-v0.25.1.Cargo.lock dd/Cargo.lock
 
 log "building"
 (cd libdtfl && ./bootstrap >/dev/null 2>&1)
@@ -29,7 +43,6 @@ mkdir -p b-c
     cargo build --release --bin arrange >../cargo.log 2>&1)
 # The idle-step benchmark (P16.5) is timely's barrier example: one
 # notification per round through a feedback loop, no data.
-tar xzf timely.tgz
 (cd timely/timely && RUSTFLAGS="-C force-frame-pointers=yes" \
     cargo build --release --example barrier >../cargo.log 2>&1)
 CB=$HOME/b-c/examples/timely/.libs/barrier
@@ -87,9 +100,12 @@ run() {
 	v() { awk -F, -v e="$1" '$3 ~ "^"e {print $1}' "$res/$tag.perf"; }
 	echo "$impl,$comp,$w,$mode,$rate,$rep,$tp,$(v instructions),$(v cycles),$(v branch-misses),$(v page-faults),$(v context-switches),$(v syscalls:sys_enter_futex)" >> "$res/runs.csv"
 }
-pair() { # alternate C and Rust; rep 0 is the discarded warm-up
+pair() { # alternate C and Rust, swapping the order on odd reps; rep 0 is the discarded warm-up
 	local rep
-	for ((rep = 0; rep <= reps; rep++)); do run c "$@" "$rep"; run r "$@" "$rep"; done
+	for ((rep = 0; rep <= reps; rep++)); do
+		if ((rep % 2)); then run r "$@" "$rep"; run c "$@" "$rep"
+		else run c "$@" "$rep"; run r "$@" "$rep"; fi
+	done
 }
 
 if [ "$matrix" = quick ]; then workers="1 4 16"; else workers="1 2 4 8 16 $ncores"; fi

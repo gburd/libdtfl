@@ -51,6 +51,8 @@ while [ $# -gt 0 ]; do
 	*) echo "bench-ec2: unknown option $1" >&2; exit 2 ;;
 	esac
 done
+case $matrix in quick|full) ;; *) echo "bench-ec2: --matrix quick|full" >&2; exit 2 ;; esac
+case $reps in ''|*[!0-9]*) echo "bench-ec2: --reps takes a number" >&2; exit 2 ;; esac
 [ -n "$profile" ] && export AWS_PROFILE=$profile
 export AWS_REGION=$region
 
@@ -74,12 +76,27 @@ cleanup() {
 		log "  aws ec2 terminate-instances --instance-ids $id; then delete key $name and group $sg"
 		return
 	fi
+	# An interrupt between run-instances and the id assignment leaves an
+	# instance we have no id for; find it by its unique Name tag.
+	[ -z "$id" ] && id=$(aws ec2 describe-instances \
+	    --filters "Name=tag:Name,Values=$name" \
+	    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+	    --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null)
+	[ "$id" = None ] && id=""
 	if [ -n "$id" ]; then
 		log "terminating $id"
 		aws ec2 terminate-instances --instance-ids "$id" >/dev/null
 		aws ec2 wait instance-terminated --instance-ids "$id"
 	fi
-	[ -n "$sg" ] && aws ec2 delete-security-group --group-id "$sg" >/dev/null && log "security group deleted"
+	# The interface can detach after the instance is gone: retry.
+	if [ -n "$sg" ]; then
+		for _ in $(seq 1 12); do
+			aws ec2 delete-security-group --group-id "$sg" >/dev/null 2>&1 &&
+			    { log "security group deleted"; sg=""; break; }
+			sleep 10
+		done
+		[ -n "$sg" ] && log "WARNING: security group $sg not deleted"
+	fi
 	aws ec2 delete-key-pair --key-name "$name" >/dev/null 2>&1 && log "key pair deleted"
 	left=$(aws ec2 describe-instances --filters "Name=tag:Purpose,Values=libdtfl-bench" \
 	    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
@@ -87,7 +104,8 @@ cleanup() {
 	[ -n "$left" ] && log "WARNING: libdtfl-bench instances still present: $left"
 	find "$work" -mindepth 1 -delete; rmdir "$work"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 # Inputs: the libdtfl tree at $rev and the Rust pin, as tarballs.
 # The pinned tag, from the PLAN section 2 table row for differential-dataflow.
@@ -135,7 +153,9 @@ ssh_opts=(-o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
     -o ServerAliveInterval=30 -i "$key")
 rsh() { ssh "${ssh_opts[@]}" "admin@$ip" "$@"; }
 for _ in $(seq 1 60); do rsh true 2>/dev/null && break; sleep 10; done
-scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$work/timely.tgz" "$src/dev/bench-ec2.d/remote.sh" "admin@$ip:"
+scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$work/timely.tgz" \
+    "$src/dev/bench-ec2.d/remote.sh" \
+    "$src/dev/bench-ec2.d/differential-v0.25.1.Cargo.lock" "admin@$ip:"
 
 log "provisioning, building and running the $matrix matrix"
 rsh "bash remote.sh $matrix $reps" 2>&1 | tee "$out/remote.log"

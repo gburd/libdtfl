@@ -56,14 +56,24 @@ def main():
                 v = [x for x in v if x is not None]
                 return st.median(v) if v else None
             tp = lambda x: num(x['recs_per_s'])
+            # perf counts the whole process, loading included, so per-record
+            # figures are approximate (loading is 100,000 records).
             dur = lambda x: 25.0
             ipr = lambda x: (num(x['instr']) or 0) / dur(x) / tp(x) if tp(x) else None
             fpr = lambda x: (num(x['futex']) or 0) / dur(x) / tp(x) if tp(x) else None
+            c = [x for x in c if tp(x)]
+            r = [x for x in r if tp(x)]
+            if not c or not r:
+                print('| %s | %d | - | - | - | - | - |' % (comp, w))
+                continue
             ct, rt = med(c, tp), med(r, tp)
             spread = '%.2f-%.2f' % (min(tp(x) for x in c) / 1e6, max(tp(x) for x in c) / 1e6)
-            print('| %s | %d | %.2fM [%s] | %.2fM | %.2fx | %.2f | %s |' % (
-                comp, w, ct / 1e6, spread, rt / 1e6, rt / ct, med(c, ipr) / med(r, ipr),
-                '%.4f / %.4f' % (med(c, fpr), med(r, fpr))))
+            ci, ri = med(c, ipr), med(r, ipr)
+            cf, rf = med(c, fpr), med(r, fpr)
+            print('| %s | %d | %.2fM [%s] | %.2fM | %.2fx | %s | %s |' % (
+                comp, w, ct / 1e6, spread, rt / 1e6, rt / ct,
+                '%.2f' % (ci / ri) if ci and ri else '-',
+                '%.4f / %.4f' % (cf, rf) if cf is not None and rf is not None else '-'))
     print('\n## Open-loop latency, one worker\n')
     print('| arm | offered rec/s | C p50 / p99 / p99.9 us | Rust p50 / p99 / p99.9 us |')
     print('|---|---|---|---|')
