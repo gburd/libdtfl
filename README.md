@@ -119,6 +119,13 @@ wrong generator, chunk sizes that ignored constant-width records, and
 inline fast paths for 8-byte records, one-word times and 64-bit integer
 differences, each checked against the general path by a test.
 
+`bench/experiments/arrange` takes the Rust binary's arguments, so one
+command line runs both: `arrange keys recs rate work comp [-w N ...]
+[open-loop]`.  It prints the same `ARRANGE LOADING`, `THROUGHPUT` and
+`LATENCY` lines, in the closed-loop and the open-loop mode, with each
+worker pinned to its own CPU as upstream does.  Its random keys come
+from a different generator than Rust's `StdRng`.
+
 ## Documentation
 
 * The reference manual: `doc/libdtfl.texi` (build with `make html` or
