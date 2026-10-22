@@ -24,7 +24,12 @@
  *   - each worker receives exactly the records routed to it.
  * A progress update lost, duplicated or applied out of order shows up as
  * a late record or a missing notification (a livelock ends at the
- * simulator's step cap).
+ * simulator's step cap).  Between epochs a worker flushes, takes a drawn
+ * number of steps of its own, advances, and steps again.  The production
+ * of messages at a time and the release of that time then travel in
+ * different progress batches; applying a release before an earlier
+ * production lets a frontier pass a time with a message still in
+ * flight, which the late check sees.
  */
 #include "pbt.h"
 #include "pbt_sim.h"
@@ -394,6 +399,8 @@ typedef struct nmw_out {
 typedef struct nmw_env {
 	uint64_t keys[NMW_MAXRECS], epochs[NMW_MAXRECS];
 	size_t n;
+	/* Own steps after the flush and after the advance at each epoch. */
+	uint8_t steps[NMW_MAXW][NMW_EPOCHS][2];
 	const dtfl_type *type;		/* pair(u64, u64): key, index */
 	dtfl_time_class *tc;
 	nmw_out out[NMW_MAXW];
@@ -463,10 +470,18 @@ build_nmw(dtfl_scope *scope, void *arg)
 	    DTFL_CTX(&b->e->out[dtfl_scope_index(scope)], NULL));
 }
 
+static void
+nmw_steps(dtfl_worker *w, unsigned n)
+{
+	while (n-- > 0)
+		(void)dtfl_worker_step(w);
+}
+
 /*
  * Each worker feeds the records whose index modulo peers is its own, in
- * epoch order, then closes its input and returns; dtfl_execute steps the
- * dataflow to completion.
+ * epoch order, stepping only itself between epochs (pbt_sim.h), then
+ * closes its input and returns; dtfl_execute steps the dataflow to
+ * completion.
  */
 static void
 nmw_worker(dtfl_worker *w, void *arg)
@@ -480,9 +495,14 @@ nmw_worker(dtfl_worker *w, void *arg)
 	(void)dtfl_worker_dataflow(w, "notify_mw", e->tc, build_nmw, &b);
 	for (i = idx; i < e->n; i += peers) {
 		unsigned char rec[16];
+		uint64_t now = dtfl_input_time(b.in)[0];
 
-		if (e->epochs[i] > dtfl_input_time(b.in)[0])
+		if (e->epochs[i] > now) {
+			dtfl_input_flush(b.in);
+			nmw_steps(w, e->steps[idx][now][0]);
 			dtfl_input_advance_to(b.in, &e->epochs[i]);
+			nmw_steps(w, e->steps[idx][now][1]);
+		}
 		dtfl_put_u64(rec, e->keys[i]);
 		dtfl_put_u64(rec + 8, i);
 		dtfl_input_send(b.in, rec, sizeof rec);
@@ -516,6 +536,32 @@ prop_notify_multiworker(pbt_tc *tc)
 		e.epochs[i] = epoch;
 	}
 	pbt_exec_draw(tc, &x, 2, NMW_MAXW);
+	for (w = 0; w < x.threads; w++)
+		for (t = 0; t < NMW_EPOCHS; t++) {
+			e.steps[w][t][0] = (uint8_t)pbt_int(tc, 0, 3);
+			e.steps[w][t][1] = (uint8_t)pbt_int(tc, 0, 3);
+		}
+	{
+		char buf[400];
+		size_t off = 0;
+
+		for (i = 0; i < e.n && off + 24 < sizeof buf; i++)
+			off += (size_t)snprintf(buf + off, sizeof buf - off,
+			    " k%llu@%llu", (unsigned long long)e.keys[i],
+			    (unsigned long long)e.epochs[i]);
+		buf[off] = '\0';
+		pbt_note(tc, "records (key@epoch):%s", buf);
+		off = 0;
+		for (w = 0; w < x.threads; w++)
+			for (t = 0; t < NMW_EPOCHS && off + 8 < sizeof buf; t++)
+				if (e.steps[w][t][0] + e.steps[w][t][1] > 0)
+					off += (size_t)snprintf(buf + off,
+					    sizeof buf - off, " w%zu.e%zu:%u+%u",
+					    w, t, e.steps[w][t][0],
+					    e.steps[w][t][1]);
+		buf[off] = '\0';
+		pbt_note(tc, "epoch steps (flush+advance):%s", buf);
+	}
 	e.type = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
 	e.tc = dtfl_time_u64();
 	pbt_defer(tc, nmw_free, &e);

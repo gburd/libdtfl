@@ -309,6 +309,13 @@ pbt_run_one(hegel_context_t *ctx, const char *suite, const pbt_prop *p)
 			(void)hegel_run_result_failure_count(ctx, res, &nf);
 			printf("[PBT] %s/%s FAIL (%zu failure(s))\n", suite,
 			    p->name, nf);
+			if (st == HEGEL_RUN_STATUS_ERROR) {
+				const char *err = NULL;
+
+				(void)hegel_run_result_error(ctx, res, &err);
+				printf("    run error: %s\n",
+				    err != NULL ? err : "?");
+			}
 			for (i = 0; i < nf; i++) {
 				hegel_failure_t *f = NULL;
 				const char *o = NULL, *blob = NULL;

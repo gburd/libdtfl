@@ -388,6 +388,7 @@ typedef struct mw_ctx {
 	size_t nops;
 	dtfl_time_class *tc;
 	bool wait;		/* step to each epoch while feeding */
+	uint8_t steps[MAXW][NEPOCH];	/* own steps at each epoch change */
 	collected out[MAXW];	/* per-worker captured output */
 } mw_ctx;
 
@@ -414,11 +415,14 @@ mw_worker(dtfl_worker *w, void *arg)
 	 * key, so each key accumulates on one worker regardless.  On real
 	 * threads a worker waits for each epoch to complete before feeding
 	 * the next; the simulator runs worker functions one after another,
-	 * so there a worker feeds everything and returns (pbt_sim.h). */
+	 * so there a worker only takes a drawn number of its own steps at
+	 * each epoch change (pbt_sim.h). */
 	for (i = 0; i < e->nops; i++) {
 		unsigned char k[8];
 
 		if (e->ops[i].time > cur) {
+			unsigned n = e->steps[idx][cur];
+
 			cur = e->ops[i].time;
 			dtfl_input_session_advance_to(c.in, &cur);
 			dtfl_input_session_flush(c.in);
@@ -427,6 +431,8 @@ mw_worker(dtfl_worker *w, void *arg)
 
 				dtfl_worker_step_while(w, probe_behind, &pc);
 			}
+			while (n-- > 0)
+				(void)dtfl_worker_step(w);
 		}
 		if ((i % peers) != idx)
 			continue;
@@ -459,6 +465,9 @@ prop_count_multiworker(pbt_tc *tc)
 
 	pbt_exec_draw(tc, &x, 2, MAXW);
 	memset(&e, 0, sizeof e);
+	for (wi = 0; wi < x.threads; wi++)
+		for (q = 0; q < NEPOCH; q++)
+			e.steps[wi][q] = (uint8_t)pbt_int(tc, 0, 3);
 	e.ops = ops;
 	e.nops = nops;
 	e.tc = dtfl_time_u64();

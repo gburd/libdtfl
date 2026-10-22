@@ -5,9 +5,11 @@
 #   check_sim.sh [-n SEEDS] [-j JOBS] [-o DIR] [-s BASE]
 #
 # Runs every simulator-capable property under DTFL_COMM_SIM
-# (DTFL_PBT_COMM=sim) for SEEDS cases each; every case draws its own
-# simulator seed, worker count, progress mode and fault set, so SEEDS is
-# the number of simulated schedules per property.  The cases are split
+# (DTFL_PBT_COMM=sim) with faults on (DTFL_PBT_FAULTS=on) for SEEDS cases
+# each; every case draws its own simulator seed, worker count, progress
+# mode and fault values, so SEEDS is the number of simulated schedules
+# per property.  Set DTFL_PBT_FAULTS=draw to let hegel draw whether the
+# faults are on, or =off to run fault-free schedules only.  The cases are split
 # into JOBS shards that run in parallel; shard k runs hegel with seed
 # BASE + k, so a run is reproducible from (SEEDS, JOBS, BASE).
 #
@@ -75,7 +77,8 @@ while read -r prog prop; do
 		mkdir -p "$d"
 		# Each shard runs in its own directory: hegel keeps its example
 		# database under the working directory.
-		( cd "$d" && DTFL_PBT_COMM=sim DTFL_PBT_ONLY=$prop \
+		( cd "$d" && DTFL_PBT_COMM=sim \
+		    DTFL_PBT_FAULTS=${DTFL_PBT_FAULTS:-on} DTFL_PBT_ONLY=$prop \
 		    DTFL_PBT_CASES=$per DTFL_PBT_SEED=$((base + k)) \
 		    "$build/$prog" > log 2>&1; echo $? > rc ) &
 		k=$((k + 1))

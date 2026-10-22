@@ -17,7 +17,8 @@
  * faults and seed 0.
  *
  * DTFL_PBT_COMM=sim or =process overrides the drawn mode (check-sim
- * sets sim).  Under the simulator a library panic, including a
+ * sets sim), and DTFL_PBT_FAULTS=on or =off whether the faults are
+ * enabled (the fault values are still drawn).  Under the simulator a library panic, including a
  * simulation that exceeds its step cap, ends the case as a failure
  * with the panic message in its note, so hegel can shrink it; under
  * real threads a panic aborts as usual.  A case that panicked leaks the
@@ -52,14 +53,20 @@ static void
 pbt_exec_draw(pbt_tc *tc, pbt_exec *x, size_t min_threads, size_t max_threads)
 {
 	const char *force = getenv("DTFL_PBT_COMM");
-	bool sim = pbt_int(tc, 0, 1) == 0;
+	const char *faults = getenv("DTFL_PBT_FAULTS");
+	bool sim = pbt_int(tc, 0, 1) == 0, on;
 
 	memset(x, 0, sizeof *x);
 	x->threads = (size_t)pbt_int(tc, (int64_t)min_threads,
 	    (int64_t)max_threads);
 	x->seed = (uint64_t)pbt_int(tc, 0, INT64_MAX);
 	x->progress = pbt_bool(tc) ? DTFL_PROGRESS_EAGER : DTFL_PROGRESS_DEMAND;
-	if (pbt_bool(tc)) {
+	on = pbt_bool(tc);
+	if (faults != NULL && strcmp(faults, "on") == 0)
+		on = true;
+	else if (faults != NULL && strcmp(faults, "off") == 0)
+		on = false;
+	if (on) {
 		x->faults.stall_permille = (uint32_t)pbt_int(tc, 0, 500);
 		x->faults.stall_max = (uint32_t)pbt_int(tc, 1, 64);
 		x->faults.delay_max = (uint32_t)pbt_int(tc, 0, 32);
