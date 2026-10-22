@@ -33,11 +33,13 @@ Version 0.1.0 (unreleased)
 	keep each channel's FIFO order; DTFL_SIM_SEEDS and DTFL_SIM_JOBS
 	size the run (see the manual's Installation chapter).
 
-	Known issue, inherited from timely 0.31.0: flushing an input that
-	feeds an exchange, stepping the worker, and then closing or
-	advancing the input can leave the flushed records undelivered,
-	and the dataflow never completes.  Closing or advancing without
-	the intervening flush avoids it.  See dev/upstream-notes.md.
+	Known issue, inherited from timely 0.31.0: if an input that feeds
+	an exchange is flushed, its worker is stepped, and the input is
+	then closed with nothing sent since, the records still buffered
+	in the exchange are never sent and the dataflow never completes.
+	Advancing instead of closing delays them until the next send.
+	Closing or advancing right after the flush, before any step,
+	avoids it.  See dev/upstream-notes.md.
 
 	Throughput within 1.5 times of the Rust originals on the pinned
 	arrange benchmark, at 1, 4 and 16 workers, on a dedicated
