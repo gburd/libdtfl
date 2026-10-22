@@ -25,6 +25,9 @@ Version 0.1.0 (unreleased)
 	operators keep merging their traces while their input is idle,
 	until each trace is a single batch.  Off by default.
 
+	dtfl_trace_stats_get reports a trace's layers, batches, pending
+	batches, merges in progress, updates and bytes, for monitoring.
+
 	Performance within 1.5 times of the Rust originals on the pinned
 	arrange benchmark (same host, 25 s runs): 1.41 times slower on
 	count throughput and 1.34 times slower on the arrange arm, at

@@ -811,6 +811,11 @@ __dtfl_batch_ord **__dtfl_trace_map_batches(__dtfl_trace *t, size_t *nout);
  * holds advance keeps this logarithmic in the number of inserted batches.
  */
 size_t __dtfl_trace_batch_count(const __dtfl_trace *t);
+/* The counts behind dtfl_trace_stats_get. */
+typedef struct __dtfl_trace_counts {
+	size_t layers, batches, pending, merges, updates, bytes;
+} __dtfl_trace_counts;
+void __dtfl_trace_counts_get(const __dtfl_trace *t, __dtfl_trace_counts *c);
 /* The trace's spine, for tests that inspect its layers. */
 const __dtfl_spine *__dtfl_trace_spine(const __dtfl_trace *t);
 /*

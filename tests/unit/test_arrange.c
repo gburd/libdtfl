@@ -729,6 +729,9 @@ typedef struct idle_ctx {
 	enum idle_shape shape;
 	bool pin;			/* hold a reader at physical 0 while loading */
 	dtfl_trace *reader;		/* the pinned reader (pin only) */
+	dtfl_trace *watch;		/* pin: an unpinned handle for stats */
+	dtfl_trace_stats pinned_st;	/* pin: while the reader holds */
+	dtfl_trace_stats final_st;	/* pin: after the idle merges */
 	dtfl_input_session *in;
 	dtfl_probe *probe;
 	__dtfl_trace_box *box[2];	/* retained: traces outlive Arranged */
@@ -788,6 +791,14 @@ build_idle(dtfl_scope *scope, void *arg)
 
 		c->reader = dtfl_arranged_trace(arr);
 		dtfl_trace_set_physical_compaction(c->reader, &zero, 1);
+		/*
+		 * A second reader for the stats.  A reader that never advances
+		 * pins the trace, so this one releases both holds at once (the
+		 * empty frontier), as a monitoring handle should.
+		 */
+		c->watch = dtfl_arranged_trace(arr);
+		dtfl_trace_set_logical_compaction(c->watch, NULL, 0);
+		dtfl_trace_set_physical_compaction(c->watch, NULL, 0);
 	}
 	if (red != NULL) {
 		idle_keep(c, red);
@@ -853,6 +864,9 @@ idle_worker(dtfl_worker *w, void *arg)
 		 */
 		for (i = 0; i < 50; i++)
 			dtfl_worker_step(w);
+		c->pinned_st.size = sizeof c->pinned_st;
+		munit_assert_int(dtfl_trace_stats_get(c->watch, &c->pinned_st),
+		    ==, DTFL_OK);
 		dtfl_trace_free(c->reader);
 		c->reader = NULL;
 	}
@@ -862,6 +876,13 @@ idle_worker(dtfl_worker *w, void *arg)
 		dtfl_worker_step(w);
 	for (i = 0; i < c->nbox; i++)
 		c->idle[i] = __dtfl_trace_batch_count(c->box[i]->trace);
+	if (c->watch != NULL) {
+		c->final_st.size = sizeof c->final_st;
+		munit_assert_int(dtfl_trace_stats_get(c->watch, &c->final_st),
+		    ==, DTFL_OK);
+		dtfl_trace_free(c->watch);
+		c->watch = NULL;
+	}
 	dtfl_input_session_close(c->in);
 	while (dtfl_worker_step(w))
 		;
@@ -973,6 +994,40 @@ DTFL_TEST(arrange__idle_merge_after_release)
 	return MUNIT_OK;
 }
 
+/*
+ * dtfl_trace_stats_get on the pinned run above: while the pinned reader
+ * holds the physical frontier at 0, the four loaded epochs (plus the
+ * empty seals) wait as pending batches holding all 85 updates; after the
+ * release and the idle merges, one batch holds them, nothing is pending
+ * and no merge is in progress.  The byte count covers at least the 85
+ * eight-byte keys.  A bad size is refused.
+ */
+DTFL_TEST(arrange__trace_stats)
+{
+	idle_ctx c;
+	dtfl_trace_stats bad;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.pin = true;
+	run_idle_ctx(IDLE_ARRANGE, 16, &c);
+	munit_assert_size(c.pinned_st.pending, >=, 4);
+	munit_assert_size(c.pinned_st.batches, ==, c.pinned_st.pending);
+	munit_assert_size(c.pinned_st.updates, ==, 85);
+	munit_assert_size(c.pinned_st.merges, ==, 0);
+	munit_assert_size(c.final_st.batches, ==, 1);
+	munit_assert_size(c.final_st.pending, ==, 0);
+	munit_assert_size(c.final_st.merges, ==, 0);
+	munit_assert_size(c.final_st.updates, ==, 85);
+	munit_assert_size(c.final_st.bytes, >=, 85 * 8);
+	munit_assert_size(c.final_st.layers, >=, 1);
+
+	memset(&bad, 0, sizeof bad);
+	bad.size = sizeof bad + 8;
+	munit_assert_int(dtfl_trace_stats_get(NULL, &bad), ==, DTFL_EINVAL);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
@@ -982,6 +1037,7 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__caps_insert_antichain),
 	DTFL_T(arrange__idle_merge_effort),
 	DTFL_T(arrange__idle_merge_after_release),
+	DTFL_T(arrange__trace_stats),
 	DTFL_T_END
 };
 

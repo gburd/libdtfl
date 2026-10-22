@@ -276,7 +276,60 @@ DTFL_TEST(spine__empty_batches_fuse)
 	return MUNIT_OK;
 }
 
+/*
+ * __dtfl_trace_counts_get counts both inputs of a merge in progress, its
+ * updates and their bytes.  Two batches of 300 updates land on level 9,
+ * so the second begins a merge there, and its insertion fuel goes to the
+ * merges below before this one exists: the merge is left in progress,
+ * which the test asserts before checking the counts.
+ */
+DTFL_TEST(trace__counts_merge_inputs)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	const dtfl_type *rt = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+	__dtfl_trace *tr = __dtfl_trace_new(false, dtfl_type_u64(),
+	    dtfl_type_u64(), tc, I64);
+	__dtfl_antichain phys;
+	__dtfl_trace_counts c;
+	const __dtfl_spine *sp;
+	uint64_t far = 100;
+	size_t i, inprogress = 0, upds = 0;
+
+	(void)params; (void)data;
+	__dtfl_antichain_init_elem(&phys, tc, &far);
+	__dtfl_trace_set_physical_compaction(tr, &phys);
+	__dtfl_antichain_free(&phys);
+	__dtfl_trace_insert(tr, mk_batch(tc, rt, 0, 300, 0));
+	__dtfl_trace_insert(tr, mk_batch(tc, rt, 1, 300, 300));
+	sp = __dtfl_trace_spine(tr);
+	for (i = 0; i < sp->merging.len; i++) {
+		const __dtfl_merge_state *m = DTFL_VEC_AT(&sp->merging,
+		    __dtfl_merge_state, i);
+
+		if (m->kind == DTFL_MERGE_INPROGRESS) {
+			inprogress++;
+			upds += __dtfl_batch_ord_len(m->in1) +
+			    __dtfl_batch_ord_len(m->in2);
+		} else if (m->kind != DTFL_MERGE_VACANT && m->present) {
+			upds += __dtfl_batch_ord_len(m->batch);
+		}
+	}
+	/* The state this test needs: one merge left in progress. */
+	munit_assert_size(inprogress, ==, 1);
+	__dtfl_trace_counts_get(tr, &c);
+	munit_assert_size(c.merges, ==, 1);
+	munit_assert_size(c.batches, ==, __dtfl_trace_batch_count(tr));
+	munit_assert_size(c.updates, ==, upds);
+	munit_assert_size(c.updates, ==, 600);
+	munit_assert_size(c.bytes, >=, 600 * 16);
+	__dtfl_trace_free(tr);
+	dtfl_type_free((dtfl_type *)rt);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(trace__counts_merge_inputs),
 	DTFL_T(spine__empty_batches_fuse),
 	DTFL_T(spine__exert_without_logic_only_tidies),
 	DTFL_T(spine__exert_with_logic_reduces_to_one_batch),

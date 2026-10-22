@@ -993,6 +993,32 @@ dtfl_trace_physical_compaction(const dtfl_trace *t, size_t *n)
 	return hold_words(__dtfl_trace_agent_physical(&t->agent), n);
 }
 
+int
+dtfl_trace_stats_get(const dtfl_trace *t, dtfl_trace_stats *out)
+{
+	__dtfl_trace_counts c;
+	dtfl_trace_stats st;
+
+	if (t == NULL || out == NULL)
+		return __dtfl_err(DTFL_EINVAL, "dtfl_trace_stats_get: NULL argument");
+	if (out->size < sizeof(size_t) || out->size > sizeof st)
+		return __dtfl_err(DTFL_EINVAL,
+		    "dtfl_trace_stats_get: size %zu is not a dtfl_trace_stats size",
+		    out->size);
+	memset(&c, 0, sizeof c);
+	if (t->agent.box != NULL && t->agent.box->trace != NULL)
+		__dtfl_trace_counts_get(t->agent.box->trace, &c);
+	st.size = out->size;
+	st.layers = c.layers;
+	st.batches = c.batches;
+	st.pending = c.pending;
+	st.merges = c.merges;
+	st.updates = c.updates;
+	st.bytes = c.bytes;
+	memcpy(out, &st, out->size);
+	return DTFL_OK;
+}
+
 /* The import source operator: drains its replay queue, emitting batches. */
 typedef struct import_ctx {
 	__dtfl_replay_queue *queue;	/* retained (strong reference) */

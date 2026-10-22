@@ -60,6 +60,7 @@ dtfl_trace_set_logical_compaction
 dtfl_trace_set_physical_compaction
 dtfl_trace_logical_compaction
 dtfl_trace_physical_compaction
+dtfl_trace_stats_get
 dtfl_arranged_enter
 dtfl_arranged_leave
 dtfl_arranged_enter_region
