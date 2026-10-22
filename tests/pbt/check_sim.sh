@@ -107,8 +107,8 @@ while read -r prog prop; do
 done < "$out/props"
 echo "check-sim: $(( $(date +%s) - start ))s"
 if [ "$status" -ne 0 ]; then
-	echo "check-sim: FAIL.  Replay a case with the printed DTFL_PBT_ONLY and"
-	echo "check-sim: DTFL_PBT_REPLAY, plus DTFL_PBT_COMM=sim, on its program."
+	echo "check-sim: FAIL.  Run the printed replay line's variables on the"
+	echo "check-sim: property's program (the suite named before the slash)."
 	exit 1
 fi
 [ "$skipped" -ne 0 ] && exit 77

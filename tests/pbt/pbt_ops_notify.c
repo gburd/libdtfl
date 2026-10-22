@@ -30,6 +30,12 @@
  * different progress batches; applying a release before an earlier
  * production lets a frontier pass a time with a message still in
  * flight, which the late check sees.
+ *
+ * DTFL_PBT_FLUSH_STEPS=on also flushes after a drawn subset of records
+ * and steps the worker before closing.  That reaches an upstream hang
+ * (dev/upstream-notes.md, "Counter drops a flush"; tests/corpus/seeds.txt)
+ * and stays off until the pin moves past it.  The draw is made either
+ * way, so a reproduce blob means the same case with or without it.
  */
 #include "pbt.h"
 #include "pbt_sim.h"
@@ -401,6 +407,10 @@ typedef struct nmw_env {
 	size_t n;
 	/* Own steps after the flush and after the advance at each epoch. */
 	uint8_t steps[NMW_MAXW][NMW_EPOCHS][2];
+	/* DTFL_PBT_FLUSH_STEPS: flush after record i, then take this many
+	 * own steps, less one; 0 = no flush. */
+	uint8_t flush_after[NMW_MAXRECS];
+	bool flush_steps;
 	const dtfl_type *type;		/* pair(u64, u64): key, index */
 	dtfl_time_class *tc;
 	nmw_out out[NMW_MAXW];
@@ -506,6 +516,10 @@ nmw_worker(dtfl_worker *w, void *arg)
 		dtfl_put_u64(rec, e->keys[i]);
 		dtfl_put_u64(rec + 8, i);
 		dtfl_input_send(b.in, rec, sizeof rec);
+		if (e->flush_steps && e->flush_after[i] > 0) {
+			dtfl_input_flush(b.in);
+			nmw_steps(w, e->flush_after[i] - 1u);
+		}
 	}
 	dtfl_input_close(b.in);
 }
@@ -534,7 +548,10 @@ prop_notify_multiworker(pbt_tc *tc)
 			epoch++;
 		e.keys[i] = (uint64_t)pbt_int(tc, 0, NMW_KEYS - 1);
 		e.epochs[i] = epoch;
+		e.flush_after[i] = (uint8_t)pbt_int(tc, 0, 3);
 	}
+	e.flush_steps = getenv("DTFL_PBT_FLUSH_STEPS") != NULL &&
+	    strcmp(getenv("DTFL_PBT_FLUSH_STEPS"), "on") == 0;
 	pbt_exec_draw(tc, &x, 2, NMW_MAXW);
 	for (w = 0; w < x.threads; w++)
 		for (t = 0; t < NMW_EPOCHS; t++) {
@@ -547,10 +564,11 @@ prop_notify_multiworker(pbt_tc *tc)
 
 		for (i = 0; i < e.n && off + 24 < sizeof buf; i++)
 			off += (size_t)snprintf(buf + off, sizeof buf - off,
-			    " k%llu@%llu", (unsigned long long)e.keys[i],
-			    (unsigned long long)e.epochs[i]);
+			    " k%llu@%llu/f%u", (unsigned long long)e.keys[i],
+			    (unsigned long long)e.epochs[i],
+			    e.flush_steps ? e.flush_after[i] : 0u);
 		buf[off] = '\0';
-		pbt_note(tc, "records (key@epoch):%s", buf);
+		pbt_note(tc, "records (key@epoch/flush):%s", buf);
 		off = 0;
 		for (w = 0; w < x.threads; w++)
 			for (t = 0; t < NMW_EPOCHS && off + 8 < sizeof buf; t++)

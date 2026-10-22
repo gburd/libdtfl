@@ -22,6 +22,8 @@
  *   DTFL_PBT_ONLY    comma-separated property names; run only those
  *   DTFL_PBT_REPLAY  a reproduce blob printed by a FAIL; replays that one
  *                    case (with DTFL_PBT_ONLY naming its property)
+ * A suite may read more DTFL_PBT_* overrides that change what a case
+ * draws (pbt_sim.h); the replay line a FAIL prints repeats those set.
  *
  * Without --with-hegel each suite prints SKIP with the number of
  * properties left unverified and exits 77 (automake's SKIP status), so
@@ -154,6 +156,22 @@ static inline bool
 pbt_bool(pbt_tc *tc)
 {
 	return pbt_int(tc, 0, 1) != 0;
+}
+
+/* Overrides a replay must repeat: they change what a case draws. */
+static const char *const pbt_draw_env[] = {
+	"DTFL_PBT_COMM", "DTFL_PBT_FAULTS", "DTFL_PBT_FLUSH_STEPS",
+};
+
+static void
+pbt_print_draw_env(void)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof pbt_draw_env / sizeof pbt_draw_env[0]; i++)
+		if (getenv(pbt_draw_env[i]) != NULL)
+			printf("%s=%s ", pbt_draw_env[i],
+			    getenv(pbt_draw_env[i]));
 }
 
 /* True if `name` is one of the comma-separated names in `list`. */
@@ -328,7 +346,9 @@ pbt_run_one(hegel_context_t *ctx, const char *suite, const pbt_prop *p)
 				    &blob);
 				printf("    at %s\n", o != NULL ? o : "?");
 				if (blob != NULL) {
-					printf("    replay: DTFL_PBT_ONLY=%s "
+					printf("    replay: ");
+					pbt_print_draw_env();
+					printf("DTFL_PBT_ONLY=%s "
 					    "DTFL_PBT_REPLAY=%s\n", p->name,
 					    blob);
 					(void)pbt_replay(ctx, settings, suite, p,

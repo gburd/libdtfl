@@ -1,0 +1,22 @@
+# tests/corpus/seeds.txt: failing property-test seeds (PLAN section 6).
+#
+# One entry per finding: the property, how to replay it, what it found,
+# and its state.  An entry stays after its fix, naming the commit, as a
+# regression case.  Replay lines are run from a build directory
+# configured --with-hegel; a blob is tied to the hegel version noted.
+
+## notify_multiworker: Counter drops a flush (open, upstream)
+#
+# Property: tests/pbt/pbt_ops_notify.c notify_multiworker.
+# Found by: make check-sim with DTFL_PBT_FLUSH_STEPS=on, hegel 0.36.5.
+# Minimal case: 2 simulated workers, seed 0, no faults; worker 0 sends
+# one record at epoch 1, flushes, steps once, closes.  The run never
+# completes and stops at the simulator's step cap.
+# Cause: the pinned timely Counter forwards a flush only while its
+# produced batch is undrained (dev/upstream-notes.md, "Counter drops a
+# flush once its produced count is drained").  Reproduces on real
+# threads (DTFL_PBT_COMM=process hangs) and in Rust at timely 0.31.0.
+# State: open.  libdtfl matches the pin; the draw that reaches it is
+# off by default, so check-sim does not run it.  Expected now: REPLAY
+# FAIL (sim) or a hang (process).
+notify_multiworker DTFL_PBT_FLUSH_STEPS=on DTFL_PBT_COMM=sim DTFL_PBT_FAULTS=on DTFL_PBT_ONLY=notify_multiworker DTFL_PBT_REPLAY=AXiczcoxCgAACAJAbewd/f+NCU1B1JqDh2BAcapYoGHLGuF9eUUC8LABtw== tests/pbt/pbt_ops_notify
