@@ -74,18 +74,6 @@ maintain_bounds(__dtfl_change_batch *cb)
 		__dtfl_cb_compact(cb);
 }
 
-/* Adds an update for `key` with `delta`. */
-void
-__dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta)
-{
-	uint64_t *e = __dtfl_vec_push(&cb->updates, NULL);
-
-	if (cb->kw != 0)
-		memcpy(e, key, cb->kw * sizeof(uint64_t));
-	e[cb->kw] = (uint64_t)delta;
-	maintain_bounds(cb);
-}
-
 /* Appends every update of `src` (extend); `src` is unchanged. */
 void
 __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
@@ -129,15 +117,57 @@ sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
 }
 
 /*
+ * Insertion sort by key, for short runs.  Most compactions in the
+ * progress tracker see two to eight entries; Rust's sort_unstable_by
+ * also switches to insertion sort below 20 elements (core::slice::sort
+ * smallsort).
+ */
+#define CB_SMALL_SORT 20
+
+static void
+insertion_sort(__dtfl_change_batch *cb, size_t n)
+{
+	unsigned kw = cb->kw, w;
+	size_t i, j, words = (size_t)kw + 1;
+	uint64_t *base = (uint64_t *)(void *)cb->updates.data, tmp[DTFL_TIME_MAX + 3];
+
+	DTFL_ASSERT(words <= DTFL_TIME_MAX + 3);
+	for (i = 1; i < n; i++) {
+		uint64_t *x = base + i * words;
+
+		if (__dtfl_words_cmp(x - words, x, kw) <= 0)
+			continue;
+		for (w = 0; w < words; w++)
+			tmp[w] = x[w];
+		j = i;
+		do {
+			uint64_t *d = base + j * words;
+
+			for (w = 0; w < words; w++)
+				d[w] = d[w - words];
+		} while (--j > 0 && __dtfl_words_cmp(base + (j - 1) * words,
+		    tmp, kw) > 0);
+		for (w = 0; w < words; w++)
+			base[j * words + w] = tmp[w];
+	}
+}
+
+/*
  * Sorts entries by key only, as upstream's sort_unstable_by on .0.
- * Heapsort, in place and allocation-free because qsort has no context
- * argument for the key width.
+ * The order among equal keys is unspecified, as upstream's: compaction
+ * sums them, so it does not show.  Short runs use insertion sort; longer
+ * ones heapsort, in place and allocation-free because qsort has no
+ * context argument for the key width.
  */
 static void
 sort_by_key(__dtfl_change_batch *cb)
 {
 	size_t n = cb->updates.len, i;
 
+	if (n <= CB_SMALL_SORT) {
+		insertion_sort(cb, n);
+		return;
+	}
 	for (i = n / 2; i-- > 0;)
 		sift_down(cb, i, n);
 	for (i = n; i-- > 1;) {
@@ -201,13 +231,6 @@ __dtfl_cb_len(__dtfl_change_batch *cb)
 {
 	__dtfl_cb_compact(cb);
 	return cb->updates.len;
-}
-
-/* Compacts and returns the entry count, for __dtfl_cb_key/_delta. */
-size_t
-__dtfl_cb_iter(__dtfl_change_batch *cb)
-{
-	return __dtfl_cb_len(cb);
 }
 
 /*
