@@ -226,8 +226,11 @@ Each
 .Fn palloc
 chunk is aligned to
 .Dv MAXALIGN ,
-which libdtfl's own objects need; a user record or difference type
-needing more alignment needs an allocator that provides it.
+which is all libdtfl's own objects need; record and difference values
+are stored unaligned in any case and read with
+.Xr memcpy 3 .
+The context belongs to libdtfl: allocate nothing else in it and make no
+child contexts under it, since the reset frees them too.
 .Sh SEE ALSO
 .Xr dtfl_set_alloc_hooks 3 ,
 .Xr dtfl_set_log_hook 3 ,

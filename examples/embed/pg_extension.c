@@ -50,7 +50,7 @@ static void pg_stub_fatal(const char *what);
 
 /*
  * MemoryContextAllocHuge, repalloc_huge and pfree, in a dedicated
- * long-lived context (dtfl_context below).  The stubs use libc so the
+ * long-lived context (dtfl_cxt below).  The stubs use libc so the
  * example runs standalone, but they enforce the server's contract, so
  * a hook that breaks it fails here as it would crash a backend:
  * repalloc and pfree need a pointer palloc returned (NULL crashes), and
@@ -134,17 +134,26 @@ pg_stub_fatal(const char *what)
  * an older libdtfl.  palloc ereport(ERROR)s on OOM rather than
  * returning NULL, which unwinds like a panic.
  */
+/*
+ * The current context (a MemoryContext in a real extension; the stub
+ * has one context, so a placeholder).  The hooks receive its address.
+ */
+typedef struct pg_context { int unused; } pg_context;
+static pg_context the_context;
+static pg_context *dtfl_cxt = &the_context;
+
 static void *
 hook_malloc(size_t size, void *ctx)
 {
-	(void)ctx;
+	/* MemoryContextAllocHuge(*(MemoryContext *)ctx, size) */
+	(void)*(pg_context **)ctx;
 	return pg_alloc_huge(size);
 }
 
 static void *
 hook_realloc(void *p, size_t size, void *ctx)
 {
-	(void)ctx;
+	(void)*(pg_context **)ctx;
 	return p != NULL ? pg_repalloc_huge(p, size) : pg_alloc_huge(size);
 }
 
@@ -314,7 +323,8 @@ run_dataflow(void)
 int
 main(void)
 {
-	dtfl_alloc_hooks alloc = { hook_malloc, hook_realloc, hook_free, NULL };
+	dtfl_alloc_hooks alloc = { hook_malloc, hook_realloc, hook_free,
+	    &dtfl_cxt };
 	dtfl_thread_hooks threads;
 	int64_t rows;
 

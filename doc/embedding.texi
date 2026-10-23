@@ -49,7 +49,7 @@ dtfl_set_log_hook(pg_log, NULL);
 /* no thread hooks: drive a standalone worker (below) */
 @end example
 
-Three details of the allocation hooks matter:
+Four details of the allocation hooks matter:
 
 @itemize
 @item
@@ -80,16 +80,22 @@ with different contexts.
 @item
 libdtfl's own objects need the alignment of @code{uint64_t},
 @code{double} and pointers, which @code{palloc}'s @code{MAXALIGN}
-provides.  A user record or difference type that needs more
-(@code{long double}, @code{__int128}, vector types) needs an allocator
-that provides it.
+provides.  Record and difference values are stored unaligned at
+arbitrary offsets in any case, so callbacks read them with
+@code{memcpy}; no allocator alignment changes that.
+@item
+The context belongs to libdtfl.  Allocate nothing of the host's own in
+it, and make no child contexts under it: a reset after an error frees
+them too.
 @end itemize
 
-The log levels map straight onto the host's own: @code{DTFL_LOG_DEBUG},
+The log levels map onto the host's own: @code{DTFL_LOG_DEBUG},
 @code{DTFL_LOG_INFO}, @code{DTFL_LOG_WARN} and @code{DTFL_LOG_ERROR}
-become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{ERROR}.  The
-panic hook is expected to @code{longjmp} (via @code{ereport(ERROR)}) out
-of the computation rather than return.
+become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{LOG}.  Not
+@code{ERROR}: the log hook runs inside libdtfl, and an error raised there
+unwinds through it (see below).  The panic hook is expected to
+@code{longjmp} (via @code{ereport(ERROR)}) out of the computation rather
+than return.
 
 @section After a panic, discard the worker
 

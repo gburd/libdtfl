@@ -41,10 +41,9 @@ platforms.
 and PostgreSQL's
 .Fn palloc
 both qualify.
-A user record or difference type that needs more
-.Pq Vt long double , Vt __int128 , vector types
-is stored in that memory, so it needs an allocator that aligns to
-.Vt max_align_t .
+Record and difference values are stored unaligned, at arbitrary offsets,
+whatever the allocator returns; callbacks read them with
+.Xr memcpy 3 .
 .Pp
 libdtfl never calls
 .Fa realloc_fn
