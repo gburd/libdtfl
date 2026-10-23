@@ -548,19 +548,23 @@ nfa_build(dtfl_scope *scope, void *arg)
 	(void)dtfl_stream_probe_with(s, c->probe);
 }
 
+/* arg: a bool, whether worker 0 advances to epoch 1 before it sends. */
 static void
 nfa_worker(dtfl_worker *w, void *arg)
 {
 	nfa_ctx c;
 	dtfl_time_class *tc = dtfl_time_u64();
+	bool advance = *(const bool *)arg;
 
-	(void)arg;
 	c.in = dtfl_input_new(dtfl_type_u64());
 	c.probe = dtfl_probe_new();
 	dtfl_worker_dataflow(w, "nfa", tc, nfa_build, &c);
 	if (dtfl_worker_index(w) == 0) {
 		unsigned char rec[8];
+		const uint64_t one = 1;
 
+		if (advance)
+			dtfl_input_advance_to(c.in, &one);
 		dtfl_put_u64(rec, 0);
 		dtfl_input_send(c.in, rec, sizeof rec);
 		dtfl_input_flush(c.in);
@@ -574,17 +578,38 @@ nfa_worker(dtfl_worker *w, void *arg)
 	dtfl_time_class_free(tc);
 }
 
-DTFL_TEST(input__flush_step_close_completes)
+static void
+nfa_run(bool advance)
 {
 	dtfl_config *cfg = dtfl_config_new();
 
-	(void)params; (void)data;
 	alarm(60);	/* the bug is a hang: fail, do not wait forever */
 	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
 	assert_int(dtfl_config_set_threads(cfg, 2), ==, 0);
-	assert_int(dtfl_execute(cfg, nfa_worker, NULL, NULL), ==, 0);
+	assert_int(dtfl_execute(cfg, nfa_worker, &advance, NULL), ==, 0);
 	alarm(0);
 	dtfl_config_free(cfg);
+}
+
+DTFL_TEST(input__flush_step_close_completes)
+{
+	(void)params; (void)data;
+	nfa_run(false);
+	return MUNIT_OK;
+}
+
+/*
+ * The same with an advance_to(1) first, so the step does run the input
+ * operator and drains its produced counts before the close.  At the pin
+ * the Counter then swallows the close's flush (it forwards one only while
+ * produced is non-empty), the exchange keeps the record, and the dataflow
+ * hangs.  libdtfl diverges: the Counter forwards a flush whenever it
+ * pushed data since the last one (ADR-0012, 2026-10-23).
+ */
+DTFL_TEST(input__advance_flush_step_close_completes)
+{
+	(void)params; (void)data;
+	nfa_run(true);
 	return MUNIT_OK;
 }
 
@@ -656,6 +681,7 @@ static MunitTest tests[] = {
 	DTFL_T(reclock__releases_at_clock_times),
 	DTFL_T(input__multi_worker_multi_round_terminates),
 	DTFL_T(input__flush_step_close_completes),
+	DTFL_T(input__advance_flush_step_close_completes),
 	DTFL_T(unordered_input__sends_at_capability_times),
 	DTFL_T_END
 };

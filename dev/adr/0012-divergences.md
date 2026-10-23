@@ -157,3 +157,34 @@ worker owns the network threads.
 The logging-recv and logging_replay exclusions stand.  The emission adds
 events to the subscriber streams but no public TimelyEvent record type
 that a dataflow could carry.
+
+### 2026-10-23: the Counter forwards a flush after its counts are drained
+
+timely/src/dataflow/channels/pushers/counter.rs (src/timely/push_counter.c)
+diverges from the pin.  At timely-v0.31.0, counter.rs:25-28,
+`Counter::push` forwards a flush (`None`) only while the shared
+`produced` batch is non-empty.  The operator that owns the output
+drains that batch each time it is scheduled (for an input,
+operators/core/input.rs:198-203).  An `Exchange` behind the Counter
+holds a partly filled buffer per peer until the time changes or a
+flush arrives.  So an input advanced, sent to, flushed and stepped
+before it closes has its produced count reported, but the close's
+flush is dropped, the record it counts is never sent, and the dataflow
+never completes.  The bug is still on timely master (3012f8f2) and is
+reported as https://github.com/TimelyDataflow/timely-dataflow/issues/824
+with a Rust reproducer.
+
+The C Counter remembers that it pushed data since the last flush it
+forwarded, and forwards a flush in that case too.  It forwards every
+flush the pin forwards, plus the one after a drain.  This is the fix
+proposed in #824; with it on timely master, the reproducer completes
+and `cargo test -p timely` passes.  Porting the pin literally would
+keep a hang that check-sim reaches with one record, and the cost of
+the extra flush is one pass through the pushers below.  If upstream
+fixes it differently, the port follows upstream when the pin moves.
+
+Tests: tests/unit/test_input.c
+input__advance_flush_step_close_completes (hangs at the pin, passes
+with the fix), and tests/pbt/pbt_ops_notify.c notify_multiworker,
+which now draws the flush-and-step schedule by default (the pinned
+seed in tests/corpus/seeds.txt).  PLAN D12 lists this as divergence 3.

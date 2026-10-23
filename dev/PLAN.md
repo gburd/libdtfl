@@ -656,8 +656,8 @@ needs a before/after benchmark (section 9).
 ### D12. Divergences from the pin
 
 The port matches the pin.  Where it does not, the difference is listed
-here and in the ledger note, and it gets its own ADR.  There are two
-byte/network divergences and one group of examples and emit points that
+here and in the ledger note, and it gets its own ADR.  There are three
+behavior divergences and one group of examples and emit points that
 cannot be ported literally without reversing a decision made elsewhere
 in this section (see the 2026-10-15 amendment in ADR-0012):
 
@@ -671,6 +671,13 @@ in this section (see the 2026-10-15 amendment in ADR-0012):
    (`diagnostics/src/server.rs:154`), which publishes operator names
    and timings to the network with no authentication.  The address is
    a parameter, so the upstream behavior is one argument away.
+3. **Counter flush.** `channels/pushers/counter.rs` forwards a flush
+   only while the shared `produced` batch is non-empty, but the
+   owning operator drains that batch when it runs, so a flush after a
+   step was dropped and an `Exchange` behind the Counter kept its
+   buffered records forever (a hang; timely issue #824).  The C
+   Counter also forwards a flush when it pushed data since the last
+   one, the fix proposed in #824 (ADR-0012, 2026-10-23).
 
 A new divergence needs an entry here, an ADR and a ledger note, all in
 the same commit.
