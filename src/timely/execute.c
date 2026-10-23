@@ -243,11 +243,16 @@ dtfl_worker_dataflow(dtfl_worker *pub, const char *name,
  * step.  A worker is done when its function has returned and it has no
  * dataflows.  Time is virtual: the sim allocator's clock drives both
  * activations and log timestamps, so a seed fully determines the run.
+ *
+ * A stall fault (sim_int.h) makes a picked worker unschedulable for a
+ * drawn number of scheduler turns; the turns still pass, and the clock
+ * still advances, while it is stalled.
  */
 typedef struct sim_worker {
 	dtfl_worker pub;
 	bool started;
 	bool done;
+	uint64_t stalled_until;	/* scheduler turn the stall ends at */
 } sim_worker;
 
 static uint64_t
@@ -263,11 +268,13 @@ __dtfl_sim_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx)
 	__dtfl_allocator_builder **b = __dtfl_calloc(DTFL_MAX(n, 1), sizeof *b);
 	sim_worker *ws = __dtfl_calloc(DTFL_MAX(n, 1), sizeof *ws);
 	void *sim = NULL;
-	uint64_t steps = 0;
+	uint64_t steps = 0, max_steps;
+	const __dtfl_sim_faults *f = __dtfl_config_sim_faults(cfg);
 
 	if (n == 0)
 		n = 1;
-	__dtfl_sim_builders(n, dtfl_config_seed(cfg), b);
+	max_steps = f->max_steps > 0 ? f->max_steps : DTFL_SIM_MAX_STEPS;
+	__dtfl_sim_builders(n, dtfl_config_seed(cfg), f, b);
 	for (i = 0; i < n; i++) {
 		__dtfl_allocator *a = __dtfl_allocator_build(b[i]);
 
@@ -301,10 +308,15 @@ __dtfl_sim_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx)
 		i = (size_t)(__dtfl_sim_rand(sim) % n);
 		if (ws[i].done)
 			continue;
-		if (!__dtfl_worker_step_or_park(ws[i].pub.w, 0))
+		if (f->stall_permille > 0 && steps >= ws[i].stalled_until &&
+		    __dtfl_sim_rand(sim) % 1000 < f->stall_permille)
+			ws[i].stalled_until = steps + 1 + __dtfl_sim_rand(sim) %
+			    DTFL_MAX(f->stall_max, 1);
+		if (steps >= ws[i].stalled_until &&
+		    !__dtfl_worker_step_or_park(ws[i].pub.w, 0))
 			ws[i].done = true;
 		__dtfl_sim_advance(sim, 1000);
-		if (++steps > UINT64_C(100000000))
+		if (++steps > max_steps)
 			__dtfl_panic("simulation made no progress after %llu steps",
 			    (unsigned long long)steps);
 	} while (live > 0);

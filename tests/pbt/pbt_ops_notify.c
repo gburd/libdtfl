@@ -11,8 +11,34 @@
  *   aggregate  sums the values per key within a time; the per-key sums
  *              must match a reference map computed directly.
  * Heap allocations are released with pbt_defer on case teardown.
+ *
+ * notify_multiworker is a progress-tracking property over a drawn
+ * execution (pbt_sim.h): every worker feeds records at non-decreasing
+ * epochs into an exchange followed by a unary_notify that requests a
+ * notification at each time it sees.  A notification at t may fire only
+ * once no record at t can still arrive, so for every worker and time:
+ *   - the records counted when t was notified are all the records at t
+ *     that worker ever receives (none arrives late);
+ *   - t is notified exactly once if any record at t arrived, else never;
+ *   - notifications come in increasing time order;
+ *   - each worker receives exactly the records routed to it.
+ * A progress update lost, duplicated or applied out of order shows up as
+ * a late record or a missing notification (a livelock ends at the
+ * simulator's step cap).  Between epochs a worker flushes, takes a drawn
+ * number of steps of its own, advances, and steps again.  The production
+ * of messages at a time and the release of that time then travel in
+ * different progress batches; applying a release before an earlier
+ * production lets a frontier pass a time with a message still in
+ * flight, which the late check sees.
+ *
+ * DTFL_PBT_FLUSH_STEPS=on also flushes after a drawn subset of records
+ * and steps the worker before closing.  That reaches an upstream hang
+ * (dev/upstream-notes.md, "Counter drops a flush"; tests/corpus/seeds.txt)
+ * and stays off until the pin moves past it.  The draw is made either
+ * way, so a reproduce blob means the same case with or without it.
  */
 #include "pbt.h"
+#include "pbt_sim.h"
 
 #include "dtfl/record.h"
 #include "dtfl/timely.h"
@@ -355,9 +381,234 @@ prop_aggregate_sums(pbt_tc *tc)
 	}
 }
 
+/* ------------------------------------------------------------------ */
+/* notify_multiworker: notifications follow progress across workers    */
+/* ------------------------------------------------------------------ */
+
+#define NMW_MAXW 4
+#define NMW_EPOCHS 6
+#define NMW_MAXRECS 48
+#define NMW_KEYS 8
+
+typedef struct nmw_out {
+	uint64_t got[NMW_EPOCHS];	/* records received at each time */
+	uint64_t at_note[NMW_EPOCHS];	/* got[t] when t was notified */
+	uint32_t notes[NMW_EPOCHS];	/* notifications at t */
+	bool requested[NMW_EPOCHS];
+	bool noted_any;
+	uint64_t last_note;		/* the latest time notified */
+	bool late;			/* a record at a notified time */
+	bool order_bad;			/* a notification out of order */
+	bool bad_time;			/* a time outside [0, NMW_EPOCHS) */
+} nmw_out;
+
+typedef struct nmw_env {
+	uint64_t keys[NMW_MAXRECS], epochs[NMW_MAXRECS];
+	size_t n;
+	/* Own steps after the flush and after the advance at each epoch. */
+	uint8_t steps[NMW_MAXW][NMW_EPOCHS][2];
+	/* DTFL_PBT_FLUSH_STEPS: flush after record i, then take this many
+	 * own steps, less one; 0 = no flush. */
+	uint8_t flush_after[NMW_MAXRECS];
+	bool flush_steps;
+	const dtfl_type *type;		/* pair(u64, u64): key, index */
+	dtfl_time_class *tc;
+	nmw_out out[NMW_MAXW];
+} nmw_env;
+
+static uint64_t
+nmw_route(const void *rec, size_t len, void *ctx)
+{
+	(void)len; (void)ctx;
+	return dtfl_get_u64(rec);
+}
+
+static void
+nmw_logic(void *ctx, dtfl_op *op, dtfl_notificator *note)
+{
+	nmw_out *o = ctx;
+	dtfl_message *m;
+	dtfl_cap *cap;
+	uint64_t count;
+
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		uint64_t t = dtfl_message_time(m)[0];
+
+		if (t >= NMW_EPOCHS) {
+			o->bad_time = true;
+			continue;
+		}
+		if (o->notes[t] > 0 || (o->noted_any && t <= o->last_note))
+			o->late = true;
+		o->got[t] += dtfl_message_len(m);
+		if (!o->requested[t]) {
+			o->requested[t] = true;
+			dtfl_notificator_notify_at(note,
+			    dtfl_op_input_cap(op, 0, 0));
+		}
+	}
+	while (dtfl_notificator_next(note, &cap, &count)) {
+		uint64_t t = dtfl_cap_time(cap)[0];
+
+		if (t >= NMW_EPOCHS) {
+			o->bad_time = true;
+		} else {
+			if (o->noted_any && t <= o->last_note)
+				o->order_bad = true;
+			o->notes[t]++;
+			o->at_note[t] = o->got[t];
+			o->last_note = t;
+			o->noted_any = true;
+		}
+		dtfl_cap_drop(cap);
+	}
+}
+
+typedef struct nmw_build {
+	nmw_env *e;
+	dtfl_input *in;
+} nmw_build;
+
+static void
+build_nmw(dtfl_scope *scope, void *arg)
+{
+	nmw_build *b = arg;
+	dtfl_stream *s = dtfl_input_to_stream(b->in, scope);
+
+	(void)dtfl_stream_unary_notify(s, dtfl_pact_exchange(nmw_route, NULL),
+	    "NotifyCheck", NULL, 0, dtfl_type_unit(), nmw_logic,
+	    DTFL_CTX(&b->e->out[dtfl_scope_index(scope)], NULL));
+}
+
+static void
+nmw_steps(dtfl_worker *w, unsigned n)
+{
+	while (n-- > 0)
+		(void)dtfl_worker_step(w);
+}
+
+/*
+ * Each worker feeds the records whose index modulo peers is its own, in
+ * epoch order, stepping only itself between epochs (pbt_sim.h), then
+ * closes its input and returns; dtfl_execute steps the dataflow to
+ * completion.
+ */
+static void
+nmw_worker(dtfl_worker *w, void *arg)
+{
+	nmw_env *e = arg;
+	size_t idx = dtfl_worker_index(w), peers = dtfl_worker_peers(w), i;
+	nmw_build b;
+
+	b.e = e;
+	b.in = dtfl_input_new(e->type);
+	(void)dtfl_worker_dataflow(w, "notify_mw", e->tc, build_nmw, &b);
+	for (i = idx; i < e->n; i += peers) {
+		unsigned char rec[16];
+		uint64_t now = dtfl_input_time(b.in)[0];
+
+		if (e->epochs[i] > now) {
+			dtfl_input_flush(b.in);
+			nmw_steps(w, e->steps[idx][now][0]);
+			dtfl_input_advance_to(b.in, &e->epochs[i]);
+			nmw_steps(w, e->steps[idx][now][1]);
+		}
+		dtfl_put_u64(rec, e->keys[i]);
+		dtfl_put_u64(rec + 8, i);
+		dtfl_input_send(b.in, rec, sizeof rec);
+		if (e->flush_steps && e->flush_after[i] > 0) {
+			dtfl_input_flush(b.in);
+			nmw_steps(w, e->flush_after[i] - 1u);
+		}
+	}
+	dtfl_input_close(b.in);
+}
+
+static void
+nmw_free(void *arg)
+{
+	nmw_env *e = arg;
+
+	dtfl_type_free(e->type);
+	dtfl_time_class_free(e->tc);
+}
+
+static void
+prop_notify_multiworker(pbt_tc *tc)
+{
+	static nmw_env e;
+	pbt_exec x;
+	uint64_t epoch = 0;
+	size_t i, w, t;
+
+	memset(&e, 0, sizeof e);
+	e.n = (size_t)pbt_int(tc, 0, NMW_MAXRECS);
+	for (i = 0; i < e.n; i++) {
+		if (epoch + 1 < NMW_EPOCHS && pbt_int(tc, 0, 3) == 0)
+			epoch++;
+		e.keys[i] = (uint64_t)pbt_int(tc, 0, NMW_KEYS - 1);
+		e.epochs[i] = epoch;
+		e.flush_after[i] = (uint8_t)pbt_int(tc, 0, 3);
+	}
+	e.flush_steps = getenv("DTFL_PBT_FLUSH_STEPS") != NULL &&
+	    strcmp(getenv("DTFL_PBT_FLUSH_STEPS"), "on") == 0;
+	pbt_exec_draw(tc, &x, 2, NMW_MAXW);
+	for (w = 0; w < x.threads; w++)
+		for (t = 0; t < NMW_EPOCHS; t++) {
+			e.steps[w][t][0] = (uint8_t)pbt_int(tc, 0, 3);
+			e.steps[w][t][1] = (uint8_t)pbt_int(tc, 0, 3);
+		}
+	{
+		char buf[400];
+		size_t off = 0;
+
+		for (i = 0; i < e.n && off + 24 < sizeof buf; i++)
+			off += (size_t)snprintf(buf + off, sizeof buf - off,
+			    " k%llu@%llu/f%u", (unsigned long long)e.keys[i],
+			    (unsigned long long)e.epochs[i],
+			    e.flush_steps ? e.flush_after[i] : 0u);
+		buf[off] = '\0';
+		pbt_note(tc, "records (key@epoch/flush):%s", buf);
+		off = 0;
+		for (w = 0; w < x.threads; w++)
+			for (t = 0; t < NMW_EPOCHS && off + 8 < sizeof buf; t++)
+				if (e.steps[w][t][0] + e.steps[w][t][1] > 0)
+					off += (size_t)snprintf(buf + off,
+					    sizeof buf - off, " w%zu.e%zu:%u+%u",
+					    w, t, e.steps[w][t][0],
+					    e.steps[w][t][1]);
+		buf[off] = '\0';
+		pbt_note(tc, "epoch steps (flush+advance):%s", buf);
+	}
+	e.type = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+	e.tc = dtfl_time_u64();
+	pbt_defer(tc, nmw_free, &e);
+	PBT_ASSERT(pbt_exec_run(tc, &x, nmw_worker, &e) == 0);
+
+	for (w = 0; w < x.threads; w++) {
+		const nmw_out *o = &e.out[w];
+
+		PBT_ASSERT(!o->bad_time);
+		PBT_ASSERT(!o->late);
+		PBT_ASSERT(!o->order_bad);
+		for (t = 0; t < NMW_EPOCHS; t++) {
+			uint64_t want = 0;
+
+			for (i = 0; i < e.n; i++)
+				if (e.epochs[i] == t &&
+				    e.keys[i] % x.threads == w)
+					want++;
+			PBT_ASSERT(o->got[t] == want);
+			PBT_ASSERT(o->notes[t] == (want > 0 ? 1u : 0u));
+			PBT_ASSERT(o->at_note[t] == want);
+		}
+	}
+}
+
 static const pbt_prop props[] = {
 	{ "delay_shift", prop_delay_shift, 0 },
 	{ "aggregate_sums", prop_aggregate_sums, 0 },
+	{ "notify_multiworker", prop_notify_multiworker, 100 },
 };
 
 PBT_MAIN("ops_notify", props)

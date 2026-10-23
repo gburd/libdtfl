@@ -21,6 +21,7 @@
  * flags from what is left.
  */
 #include "comm/init_int.h"
+#include "comm/sim_int.h"
 #include "comm/zc_int.h"
 
 #include <errno.h>
@@ -41,6 +42,7 @@ struct dtfl_config {
 	__dtfl_vec log_subs;		/* __dtfl_log_sub, streams owned */
 	__dtfl_spill_fn *spill;		/* one reference, or NULL */
 	int64_t idle_merge_effort;	/* differential Config; 0 is None */
+	__dtfl_sim_faults sim_faults;	/* DTFL_COMM_SIM only; zero is none */
 };
 
 dtfl_config *
@@ -202,6 +204,21 @@ uint64_t
 dtfl_config_seed(const dtfl_config *cfg)
 {
 	return cfg->seed;
+}
+
+void
+__dtfl_config_set_sim_faults(dtfl_config *cfg, const __dtfl_sim_faults *faults)
+{
+	if (faults != NULL)
+		cfg->sim_faults = *faults;
+	else
+		memset(&cfg->sim_faults, 0, sizeof cfg->sim_faults);
+}
+
+const __dtfl_sim_faults *
+__dtfl_config_sim_faults(const dtfl_config *cfg)
+{
+	return &cfg->sim_faults;
 }
 
 /*

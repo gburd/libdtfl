@@ -11,10 +11,13 @@
  * time max(t1, t2) for the output record key||val1||val2, then drops the
  * (record, time) pairs whose diffs sum to zero.  The property asserts the
  * operator's consolidated output multiset equals the model, over single
- * worker runs and a multi-worker (Process, 3) run that exchanges by key and
- * must converge to the same result.
+ * worker runs and a multi-worker run that exchanges by key and must
+ * converge to the same result.  The multi-worker run draws its execution
+ * (pbt_sim.h): two to four workers on real threads or on the simulator,
+ * with the simulator's seed and faults drawn too.
  */
 #include "pbt.h"
+#include "pbt_sim.h"
 
 #include "dtfl/arrange.h"
 #include "dtfl/collection.h"
@@ -264,15 +267,17 @@ prop_join_model(pbt_tc *tc)
 }
 
 /* ------------------------------------------------------------------ */
-/* Multi-worker (Process, 3) join converges to the same result.        */
+/* Multi-worker join converges to the same result.                     */
 /* ------------------------------------------------------------------ */
+
+#define MAXW 4
 
 typedef struct mw_env {
 	const op *a;
 	size_t na;
 	const op *b;
 	size_t nb;
-	collected out[3];
+	collected out[MAXW];
 	const dtfl_type *out_type;
 	const dtfl_time_class *tc;
 } mw_env;
@@ -294,15 +299,17 @@ mw_worker(dtfl_worker *w, void *arg)
 	c.out_type = e->out_type;
 	(void)dtfl_worker_dataflow(w, "pjmw", e->tc, build_join, &c);
 
-	/* Worker 0 feeds all the data; the exchange routes by key. */
+	/*
+	 * Worker 0 feeds all the data; the exchange routes by key.  The
+	 * worker returns without stepping, so dtfl_execute runs the
+	 * dataflow to completion (required under the simulator; pbt_sim.h).
+	 */
 	if (idx == 0) {
 		feed(c.in1, e->a, e->na);
 		feed(c.in2, e->b, e->nb);
 	}
 	dtfl_input_session_close(c.in1);
 	dtfl_input_session_close(c.in2);
-	while (dtfl_worker_step(w))
-		;
 	dtfl_probe_free(c.probe);
 	dtfl_diff_free(r);
 	dtfl_type_free(t1);
@@ -313,7 +320,7 @@ prop_join_multiworker(pbt_tc *tc)
 {
 	static op a[MAXOPS], b[MAXOPS];
 	size_t na, nb, i;
-	dtfl_config *cfg;
+	pbt_exec x;
 	dtfl_time_class *tcl;
 	const dtfl_type *out_type;
 	static mw_env e;
@@ -322,6 +329,7 @@ prop_join_multiworker(pbt_tc *tc)
 
 	na = gen_ops(tc, a);
 	nb = gen_ops(tc, b);
+	pbt_exec_draw(tc, &x, 2, MAXW);
 	memset(&e, 0, sizeof e);
 	e.a = a; e.na = na; e.b = b; e.nb = nb;
 	tcl = dtfl_time_u64();
@@ -336,15 +344,11 @@ prop_join_multiworker(pbt_tc *tc)
 	e.out_type = out_type;
 	e.tc = tcl;
 
-	cfg = dtfl_config_new();
-	PBT_ASSERT(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS) == 0);
-	PBT_ASSERT(dtfl_config_set_threads(cfg, 3) == 0);
-	PBT_ASSERT(dtfl_execute(cfg, mw_worker, &e, NULL) == 0);
-	dtfl_config_free(cfg);
+	PBT_ASSERT(pbt_exec_run(tc, &x, mw_worker, &e) == 0);
 
-	/* Merge the three workers' outputs; each key is owned by one. */
+	/* Merge the workers' outputs; each key is owned by one. */
 	memset(&merged, 0, sizeof merged);
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < x.threads; i++) {
 		size_t j;
 
 		for (j = 0; j < e.out[i].n && merged.n < 256; j++)

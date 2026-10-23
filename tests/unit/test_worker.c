@@ -14,6 +14,7 @@
  * complete.  Run on the Thread, Process and Sim allocators.
  */
 #include "dtfl_test.h"
+#include "comm/sim_int.h"
 #include "timely/scope_int.h"
 
 #include <stdlib.h>
@@ -265,7 +266,8 @@ worker_main(dtfl_worker *pub, void *arg)
 }
 
 static void
-run_mode(dtfl_comm_mode mode, size_t threads, uint64_t seed, uint64_t rounds)
+run_faults(dtfl_comm_mode mode, size_t threads, uint64_t seed, uint64_t rounds,
+    const __dtfl_sim_faults *faults)
 {
 	dtfl_config *cfg = dtfl_config_new();
 	run_ctx rc;
@@ -278,6 +280,7 @@ run_mode(dtfl_comm_mode mode, size_t threads, uint64_t seed, uint64_t rounds)
 	if (mode != DTFL_COMM_THREAD)
 		assert_int(dtfl_config_set_threads(cfg, threads), ==, 0);
 	dtfl_config_set_seed(cfg, seed);
+	__dtfl_config_set_sim_faults(cfg, faults);
 	assert_int(dtfl_execute(cfg, worker_main, &rc, NULL), ==, 0);
 	for (i = 0; i < threads; i++) {
 		assert_size(rc.r[i].index, ==, i);
@@ -287,6 +290,12 @@ run_mode(dtfl_comm_mode mode, size_t threads, uint64_t seed, uint64_t rounds)
 	}
 	dtfl_time_class_free(rc.tc);
 	dtfl_config_free(cfg);
+}
+
+static void
+run_mode(dtfl_comm_mode mode, size_t threads, uint64_t seed, uint64_t rounds)
+{
+	run_faults(mode, threads, seed, rounds, NULL);
 }
 
 /*
@@ -316,10 +325,12 @@ DTFL_TEST(progress_on_process)
 /*
  * The simulator: one worker advancing through all ROUNDS over twenty
  * seeds (multi-step progression), then three workers at rounds == 1
- * (seeded cross-worker exchange and termination).
+ * (seeded cross-worker exchange and termination), then both again with
+ * stall and delay faults (sim_int.h).
  */
 DTFL_TEST(progress_on_sim)
 {
+	__dtfl_sim_faults f;
 	uint64_t seed;
 
 	(void)params; (void)data;
@@ -327,6 +338,15 @@ DTFL_TEST(progress_on_sim)
 		run_mode(DTFL_COMM_SIM, 1, seed, ROUNDS);
 	for (seed = 1; seed <= 20; seed++)
 		run_mode(DTFL_COMM_SIM, 3, seed, 1);
+	memset(&f, 0, sizeof f);
+	f.stall_permille = 300;
+	f.stall_max = 40;
+	f.delay_max = 16;
+	f.max_steps = 1000000;
+	for (seed = 1; seed <= 20; seed++) {
+		run_faults(DTFL_COMM_SIM, 1, seed, ROUNDS, &f);
+		run_faults(DTFL_COMM_SIM, 3, seed, 1, &f);
+	}
 	return MUNIT_OK;
 }
 
