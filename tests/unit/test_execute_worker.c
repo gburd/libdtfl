@@ -40,6 +40,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -707,6 +708,101 @@ DTFL_TEST(execute_forked_rejects_cluster_and_sim)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* A dtfl_sync_activator from another thread wakes a parked worker     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The operator holds its capability until a thread of its own fires a
+ * sync activator, 200 ms in.  Until then the worker has nothing to do
+ * and parks in the transport's wait, so only the activator's wake,
+ * through the parker to the transport's wake, can end that park.
+ */
+typedef struct act_state {
+	dtfl_cap *cap;
+	dtfl_sync_activator *act;
+	atomic_bool fired;
+	pthread_t th;
+	bool started;
+} act_state;
+
+static void *
+act_fire(void *arg)
+{
+	act_state *s = arg;
+	struct timespec d = { 0, 200000000 };
+
+	nanosleep(&d, NULL);
+	atomic_store(&s->fired, true);
+	(void)dtfl_sync_activator_activate(s->act);
+	return NULL;
+}
+
+static bool
+act_logic(dtfl_op *op, void *ctx)
+{
+	act_state *s = ctx;
+
+	if (!s->started) {
+		s->started = true;
+		s->cap = dtfl_op_initial_cap(op, 0);
+		s->act = dtfl_op_sync_activator(op);
+		if (pthread_create(&s->th, NULL, act_fire, s) != 0)
+			_exit(8);
+		return false;
+	}
+	if (s->cap != NULL && atomic_load(&s->fired)) {
+		dtfl_cap_drop(s->cap);
+		s->cap = NULL;
+		pthread_join(s->th, NULL);
+		dtfl_sync_activator_free(s->act);
+	}
+	return false;
+}
+
+static void
+act_build(dtfl_scope *scope, void *arg)
+{
+	dtfl_op_builder *b = dtfl_op_builder_new(scope, "act");
+
+	(void)dtfl_op_builder_output(b, dtfl_type_u64());
+	dtfl_op_builder_build(b, act_logic, arg, NULL);
+}
+
+static void
+act_worker(dtfl_worker *w, void *arg)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	act_state s;
+
+	(void)arg;
+	alarm(20);	/* a lost wake hangs this child; let it die */
+	memset(&s, 0, sizeof s);
+	dtfl_worker_dataflow(w, "act", tc, act_build, &s);
+	while (dtfl_worker_step_or_park(w, UINT64_MAX))
+		;
+	dtfl_time_class_free(tc);
+	if (s.cap != NULL || !atomic_load(&s.fired))
+		_exit(9);
+}
+
+DTFL_TEST(execute_worker_sync_activator_wakes_transport_wait)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	alarm(60);
+	dtfl_set_panic_hook(quiet_panic, NULL);
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, 2), ==, 0);
+	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
+	if (dtfl_execute(cfg, act_worker, NULL, NULL) != 0)
+		munit_errorf("dtfl_execute: %s", dtfl_last_error_detail());
+	dtfl_config_free(cfg);
+	alarm(0);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(execute_worker_two_processes_socketpair),
 	DTFL_T(execute_worker_four_processes_socketpair),
@@ -718,6 +814,7 @@ static MunitTest tests[] = {
 	DTFL_T(execute_forked_process_mode),
 	DTFL_T(execute_forked_reports_a_failed_child),
 	DTFL_T(execute_forked_rejects_cluster_and_sim),
+	DTFL_T(execute_worker_sync_activator_wakes_transport_wait),
 	DTFL_T_END
 };
 
