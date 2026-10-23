@@ -409,6 +409,7 @@ __dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
 	c->current = __dtfl_batch_new(tw, (unsigned)dc->width);
 	c->spare = __dtfl_batch_new(tw, (unsigned)dc->width);
 	__dtfl_vec_init(&c->scratch, 1);
+	__dtfl_vec_init(&c->empty, sizeof(__dtfl_batch *));
 	__dtfl_vec_init(&c->outbound, sizeof(__dtfl_batch *));
 	c->cap = default_capacity(rt, tw, dc->width);
 	{
@@ -439,8 +440,15 @@ flush_through(__dtfl_consolidator *c, size_t multiple)
 	/* Pre-size each output chunk: cap rows and their arena bytes. */
 	avg = n != 0 ? cur->arena.len / n : 0;
 	for (i = 0; i < end; i += run) {
-		out = __dtfl_batch_new_reserved(cur->tw, cur->dw, c->cap,
-		    c->cap * avg);
+		/* self.empty.pop().unwrap_or_else(|| with_capacity(preferred)) */
+		if (c->empty.len != 0) {
+			out = *DTFL_VEC_AT(&c->empty, __dtfl_batch *,
+			    c->empty.len - 1);
+			__dtfl_vec_truncate(&c->empty, c->empty.len - 1);
+			__dtfl_batch_reserve(out, c->cap, c->cap * avg);
+		} else
+			out = __dtfl_batch_new_reserved(cur->tw, cur->dw,
+			    c->cap, c->cap * avg);
 		run = DTFL_MIN(c->cap, end - i);
 		__dtfl_batch_push_run(out, cur, i, run);
 		__dtfl_vec_push(&c->outbound, &out);
@@ -488,6 +496,28 @@ __dtfl_consolidator_finish(__dtfl_consolidator *c)
 	return __dtfl_consolidator_extract(c);
 }
 
+/*
+ * The most batches the empty stash keeps.  shortcut: a fixed cap, about
+ * one wave of the arrange benchmark's chunks; size it from the flush
+ * rate if a workload churns more.
+ */
+#define CONSOLIDATOR_EMPTY_MAX 16
+
+void
+__dtfl_consolidator_recycle(__dtfl_consolidator *c, __dtfl_batch *b)
+{
+	if (b == NULL)
+		return;
+	if (c->empty.len < CONSOLIDATOR_EMPTY_MAX &&
+	    __dtfl_arc_count(&b->ref) == 1 && b->elem_drop == NULL &&
+	    b->elem_retain == NULL && b->tw == c->current->tw &&
+	    b->dw == c->current->dw) {
+		__dtfl_batch_clear(b);
+		__dtfl_vec_push(&c->empty, &b);
+	} else
+		__dtfl_batch_release(b);
+}
+
 /* Releases the buffer and any batches not yet extracted. */
 void
 __dtfl_consolidator_free(__dtfl_consolidator *c)
@@ -498,6 +528,10 @@ __dtfl_consolidator_free(__dtfl_consolidator *c)
 		__dtfl_batch_release(*DTFL_VEC_AT(&c->outbound,
 		    __dtfl_batch *, i));
 	__dtfl_vec_free(&c->outbound);
+	for (i = 0; i < c->empty.len; i++)
+		__dtfl_batch_release(*DTFL_VEC_AT(&c->empty,
+		    __dtfl_batch *, i));
+	__dtfl_vec_free(&c->empty);
 	__dtfl_batch_release(c->current);
 	c->current = NULL;
 	__dtfl_batch_release(c->spare);

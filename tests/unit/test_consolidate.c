@@ -568,7 +568,8 @@ reuse_round(const dtfl_type *rt, bool strings)
 			assert_size(__dtfl_batch_len(c), <=, ccb.cap);
 			for (j = 0; j < __dtfl_batch_len(c); j++)
 				__dtfl_batch_push_from(got, c, j);
-			__dtfl_batch_release(c);
+			/* Hand it back full; it must come back empty. */
+			__dtfl_consolidator_recycle(&ccb, c);
 		}
 	}
 	while ((c = __dtfl_consolidator_finish(&ccb)) != NULL) {
@@ -596,6 +597,39 @@ reuse_round(const dtfl_type *rt, bool strings)
 	__dtfl_consolidator_free(&ccb);
 }
 
+/*
+ * A batch someone else still holds is never taken into the stash: after
+ * recycling a shared batch it is unchanged, the stash did not grow, and
+ * the holder's reference is still the only other one.
+ */
+DTFL_TEST(consolidator_shared_batch_is_not_recycled)
+{
+	__dtfl_consolidator ccb;
+	__dtfl_batch *b = __dtfl_batch_new(1, 8);
+	uint64_t t = 0;
+	int64_t one = 1;
+	unsigned char rec[8];
+	size_t i;
+
+	(void)params; (void)data;
+	__dtfl_consolidator_init(&ccb, dtfl_type_u64(), 1, I64);
+	for (i = 0; i < 5; i++) {
+		dtfl_put_u64(rec, i);
+		__dtfl_batch_push(b, rec, 8, &t, &one);
+	}
+	__dtfl_consolidator_recycle(&ccb, __dtfl_batch_retain(b));
+	assert_size(ccb.empty.len, ==, 0);
+	assert_size(__dtfl_arc_count(&b->ref), ==, 1);
+	assert_size(__dtfl_batch_len(b), ==, 5);
+	assert_uint64(dtfl_get_u64(__dtfl_batch_rec(b, 4, &i)), ==, 4);
+	/* Uniquely held, it is taken and cleared. */
+	__dtfl_consolidator_recycle(&ccb, b);
+	assert_size(ccb.empty.len, ==, 1);
+	assert_size(__dtfl_batch_len(b), ==, 0);
+	__dtfl_consolidator_free(&ccb);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(consolidator_reuses_target_and_remainder)
 {
 	(void)params; (void)data;
@@ -615,6 +649,7 @@ static MunitTest tests[] = {
 	DTFL_T(consolidate_packed_matches_index_sort),
 	DTFL_T(consolidate_packed_rejects_mixed_lengths),
 	DTFL_T(consolidator_reuses_target_and_remainder),
+	DTFL_T(consolidator_shared_batch_is_not_recycled),
 	DTFL_T(description_basics),
 	DTFL_T_END
 };

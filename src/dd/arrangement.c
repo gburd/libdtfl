@@ -132,8 +132,13 @@ seal_batch(arrange_ctx *c, const __dtfl_antichain *upper)
 	{
 		size_t i;
 
+		/*
+		 * Upstream drops the consumed chain here.  Its chunks are
+		 * uniquely held, so they go back to the chunker, which
+		 * fills them again instead of allocating new chunks.
+		 */
 		for (i = 0; i < nchain; i++)
-			__dtfl_batch_release(chain[i]);
+			__dtfl_chunker_recycle(&c->chunker, chain[i]);
 		if (chain != NULL)
 			__dtfl_free(chain);
 	}
@@ -321,7 +326,7 @@ arrange_logic(dtfl_op *op, void *vctx)
 		__dtfl_merge_batcher_seal(&c->batcher, front, &chain, &nchain,
 		    &desc);
 		for (bi = 0; bi < nchain; bi++)
-			__dtfl_batch_release(chain[bi]);
+			__dtfl_chunker_recycle(&c->chunker, chain[bi]);
 		if (chain != NULL)
 			__dtfl_free(chain);
 		__dtfl_description_free(&desc);
