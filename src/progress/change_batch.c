@@ -184,13 +184,15 @@ sort_by_key(__dtfl_change_batch *cb)
 void
 __dtfl_cb_compact(__dtfl_change_batch *cb)
 {
-	size_t i, n = cb->updates.len, kept = 0;
-	unsigned kw = cb->kw;
+	size_t i, n = cb->updates.len, kept = 0, words = (size_t)cb->kw + 1;
+	unsigned kw = cb->kw, w;
+	uint64_t *base;
 
 	if (cb->clean < n && n > 1) {
 		sort_by_key(cb);
+		base = (uint64_t *)(void *)cb->updates.data;
 		for (i = 0; i + 1 < n; i++) {
-			uint64_t *x = entry(cb, i), *y = entry(cb, i + 1);
+			uint64_t *x = base + i * words, *y = x + words;
 
 			if (__dtfl_words_cmp(x, y, kw) == 0) {
 				y[kw] += x[kw];
@@ -199,15 +201,20 @@ __dtfl_cb_compact(__dtfl_change_batch *cb)
 		}
 		/* retain(|x| x.1 != 0), order preserving */
 		for (i = 0; i < n; i++) {
-			uint64_t *x = entry(cb, i);
+			const uint64_t *x = base + i * words;
 
 			if (x[kw] == 0)
 				continue;
-			if (kept != i)
-				memcpy(entry(cb, kept), x, cb->updates.elem);
+			if (kept != i) {
+				uint64_t *d = base + kept * words;
+
+				for (w = 0; w < words; w++)
+					d[w] = x[w];
+			}
 			kept++;
 		}
-		__dtfl_vec_truncate(&cb->updates, kept);
+		/* Shrinking: no element destructor, no reallocation. */
+		cb->updates.len = kept;
 	}
 	cb->clean = cb->updates.len;
 }
