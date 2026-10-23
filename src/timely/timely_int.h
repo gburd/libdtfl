@@ -272,6 +272,13 @@ __dtfl_operate *__dtfl_op_core_new(__dtfl_worker *w, const char *name,
     size_t inputs, size_t outputs, const __dtfl_frontier_interest *notify,
     __dtfl_connectivity *summary, __dtfl_raw_logic_fn logic, void *ctx,
     void (*ctx_free)(void *));
+/*
+ * Skips the activation at initialize, for the Input operator: upstream's
+ * input.rs Operator::initialize does not ask to be scheduled; its handle
+ * activates it when an epoch closes (advance_to and close).  Call before
+ * the operator is installed.
+ */
+void __dtfl_op_core_no_initial_activation(__dtfl_operate *op);
 
 /* ------------------------------------------------------------------ */
 /* Operator handle (handles.rs)                                        */

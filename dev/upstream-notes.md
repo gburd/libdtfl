@@ -89,12 +89,13 @@ Each entry gives the pinned path, what looks wrong, and a reproducer.
 
 - Harm at the pin: a dataflow that flushes an input feeding an exchange
   and is stepped before the epoch closes can hang.  libdtfl ports the
-  Counter as it is (`src/timely/push_counter.c`).  It reaches the hang
-  in more programs than Rust does, without the `advance_to`, because
-  its input operator requests a first schedule when it is built (the
-  shared op_core in `src/timely/builder_raw.c`), which upstream's input
-  operator does not, so `produced` is drained before the first epoch
-  closes as well.
+  Counter as it is (`src/timely/push_counter.c`), so it hangs in the
+  same programs Rust does.  It used to hang in more: its input operator
+  asked for a first schedule when built (the shared op_core in
+  `src/timely/builder_raw.c`), which upstream's does not, so `produced`
+  was drained before the first epoch closed even without an
+  `advance_to`.  The input no longer does
+  (`tests/unit/test_input.c` input__flush_step_close_completes).
 - Found by `make check-sim` (notify_multiworker with
   `DTFL_PBT_FLUSH_STEPS=on`); the pinned case is in
   `tests/corpus/seeds.txt`.
