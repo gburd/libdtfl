@@ -127,15 +127,7 @@ split_hostport(const char *addr, char *host, size_t hostcap, char *port,
 #define CONNECT_DEADLINE_NS (UINT64_C(30) * 1000000000)
 #define RETRY_SLEEP_NS (UINT64_C(20) * 1000000)
 
-static void
-sleep_ns(uint64_t ns)
-{
-	struct timespec ts;
-
-	ts.tv_sec = (time_t)(ns / UINT64_C(1000000000));
-	ts.tv_nsec = (long)(ns % UINT64_C(1000000000));
-	(void)nanosleep(&ts, NULL);
-}
+#define sleep_ns __dtfl_sleep_ns
 
 typedef struct connect_arg {
 	char *const *addresses;

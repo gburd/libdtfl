@@ -52,15 +52,7 @@ typedef struct ws_client {
 	int fd;
 } ws_client;
 
-static void
-sleep_ns(uint64_t ns)
-{
-	struct timespec ts;
-
-	ts.tv_sec = (time_t)(ns / 1000000000ULL);
-	ts.tv_nsec = (long)(ns % 1000000000ULL);
-	(void)nanosleep(&ts, NULL);
-}
+#define sleep_ns __dtfl_sleep_ns
 
 /*
  * Binds a listening socket on iface:port.  port 0 lets the kernel pick;
@@ -187,9 +179,9 @@ __dtfl_diag_server_loop(void *arg)
 			{
 				char *snap;
 
-				pthread_mutex_lock(&sh->lock);
+				__dtfl_mutex_lock(&sh->lock);
 				snap = snapshot_frame(sh);
-				pthread_mutex_unlock(&sh->lock);
+				__dtfl_mutex_unlock(&sh->lock);
 				if (snap != NULL) {
 					(void)__dtfl_ws_send_text(cfd, snap,
 					    strlen(snap));
@@ -205,13 +197,13 @@ __dtfl_diag_server_loop(void *arg)
 
 		/* Drain the pending Frame queue under the lock. */
 		__dtfl_vec_init(&batch, sizeof(char *));
-		pthread_mutex_lock(&sh->lock);
+		__dtfl_mutex_lock(&sh->lock);
 		if (sh->queue.len > 0) {
 			__dtfl_vec_push_n(&batch, sh->queue.data,
 			    sh->queue.len);
 			__dtfl_vec_clear(&sh->queue);
 		}
-		pthread_mutex_unlock(&sh->lock);
+		__dtfl_mutex_unlock(&sh->lock);
 
 		/* Forward each payload to every client; drop dead ones. */
 		for (i = 0; i < batch.len; i++) {

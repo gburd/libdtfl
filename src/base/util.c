@@ -2,13 +2,10 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Greg Burd
  *
- * src/base/util.c: __dtfl_vec, FNV-1a, monotonic clock.
+ * src/base/util.c: __dtfl_vec and FNV-1a.  The monotonic clock is in
+ * os_sync.c, behind the sync hooks.
  */
-#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
-
 #include "base_int.h"
-
-#include <time.h>
 
 void
 __dtfl_vec_init(__dtfl_vec *v, size_t elem)
@@ -125,13 +122,4 @@ uint64_t
 __dtfl_fnv1a(const void *p, size_t len)
 {
 	return __dtfl_fnv1a_extend(UINT64_C(0xcbf29ce484222325), p, len);
-}
-
-uint64_t
-__dtfl_clock_ns(void)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
 }

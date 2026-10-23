@@ -45,7 +45,6 @@
 #include "base/sock_int.h"
 
 #include <errno.h>
-#include <sched.h>
 #include <sys/socket.h>
 
 /*
@@ -146,7 +145,7 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 			 * The worker always posts before stepping.  A spin is
 			 * acceptable: the post is near-immediate at build time.
 			 */
-			sched_yield();
+			__dtfl_yield();
 		}
 		queues[i] = h.queue;
 		__dtfl_vec_init(&stageds[i], sizeof(__dtfl_bytes));

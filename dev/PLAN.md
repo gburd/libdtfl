@@ -727,9 +727,9 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
    - `dtfl_event_link_sync`, the `link_sync::EventLink` port;
    - `dtfl_guards` (join and status);
    - the global setters (`dtfl_set_alloc_hooks()`,
-     `dtfl_set_panic_hook()`, `dtfl_set_log_hook()` and
-     `dtfl_set_thread_hooks()`).  The global setters must be called
-     before the first `dtfl_execute()`.
+     `dtfl_set_panic_hook()`, `dtfl_set_log_hook()`,
+     `dtfl_set_thread_hooks()` and `dtfl_set_sync_hooks()`).  The
+     global setters must be called before the first `dtfl_execute()`.
 
    Upstream's `ProbeHandle` holds an `Rc<RefCell<MutableAntichain>>`
    (`probe.rs:147-149`), so it is worker-owned like everything else in
@@ -744,11 +744,13 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
    the same worker.
 5. **No hidden global state.** All state lives in the worker or the
    execution.  There are two kinds of exception:
-   - the four host hooks in rule 2 (allocation, panic, logging and
-     thread spawning), each a process-wide setter that must be called
-     before the first `dtfl_execute()`.  Their backing globals are
-     `hooks`, `hooks_used`, `panic_fn`, `panic_ctx`, `log_fn`,
-     `log_ctx`, `thread_hooks` and `thread_hooks_set`;
+   - the five host hooks in rule 2 (allocation, panic, logging,
+     thread spawning and synchronization, ADR-0013), each a
+     process-wide setter that must be called before the first
+     `dtfl_execute()`.  Their backing globals are `hooks`,
+     `hooks_used`, `panic_fn`, `panic_ctx`, `log_fn`, `log_ctx`,
+     `thread_hooks`, `thread_hooks_set`, `sync_hooks`,
+     `sync_hooks_set` and `sync_used`;
    - the thread-local error-detail buffer behind
      `dtfl_last_error_detail()` (D6).
 

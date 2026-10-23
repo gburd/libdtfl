@@ -24,8 +24,6 @@
 #ifndef DTFL_ZC_INT_H
 #define DTFL_ZC_INT_H
 
-#include <pthread.h>
-
 #include "comm/comm_int.h"
 
 /* ------------------------------------------------------------------ */

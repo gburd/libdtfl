@@ -1,0 +1,183 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 23, 2026
+.Dt DTFL_SET_SYNC_HOOKS 3
+.Os
+.Sh NAME
+.Nm dtfl_set_sync_hooks
+.Nd route libdtfl's locks, waits and clock through the host
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft int
+.Fn dtfl_set_sync_hooks "const dtfl_sync_hooks *hooks"
+.Sh DESCRIPTION
+Every lock and every wait libdtfl makes goes through one internal layer,
+and these hooks replace it.
+A host whose threads of execution are fibers or tasks, which must yield
+to the host's scheduler instead of blocking a carrier thread in the
+kernel, installs versions that do so.
+.Bd -literal -offset indent
+typedef struct dtfl_sync_hooks {
+	int (*mutex_init)(void **mutex, void *ctx);
+	void (*mutex_destroy)(void *mutex, void *ctx);
+	void (*mutex_lock)(void *mutex, void *ctx);
+	void (*mutex_unlock)(void *mutex, void *ctx);
+	int (*cond_init)(void **cond, void *ctx);
+	void (*cond_destroy)(void *cond, void *ctx);
+	void (*cond_wait)(void *cond, void *mutex,
+	    uint64_t timeout_ns, void *ctx);
+	void (*cond_signal)(void *cond, void *ctx);
+	void (*cond_broadcast)(void *cond, void *ctx);
+	void (*wait)(const uint32_t *word, uint32_t expect,
+	    uint64_t timeout_ns, void *ctx);
+	void (*wake)(const uint32_t *word, void *ctx);
+	void (*yield)(void *ctx);
+	void (*sleep)(uint64_t ns, void *ctx);
+	uint64_t (*clock)(void *ctx);
+	uintptr_t (*self)(void *ctx);
+	void *ctx;
+} dtfl_sync_hooks;
+.Ed
+.Pp
+The members come in groups.
+A group is all set or all
+.Dv NULL ;
+a
+.Dv NULL
+group keeps the default, which is pthreads, and
+.Xr futex 2
+on Linux.
+.Bl -tag -width "mutex_init ..."
+.It Fa mutex_init ... mutex_unlock
+.Fa mutex_init
+stores an opaque handle in
+.Fa *mutex
+and returns 0 or a
+.Dv DTFL_E*
+code.
+Mutexes are not recursive.
+libdtfl never holds one across a call into user code or another hook
+but
+.Fa cond_wait .
+.It Fa cond_init ... cond_broadcast
+Needs the mutex group, since a condition waits on a hooked mutex.
+.Fa cond_wait
+releases
+.Fa mutex ,
+waits until signalled or
+.Fa timeout_ns
+nanoseconds pass
+.Pf ( Dv UINT64_MAX
+is no limit), and reacquires it.
+Early and spurious returns are allowed.
+.It Fa wait , wake
+A futex-style wait on a 32-bit word.
+.Fa wait
+sleeps while
+.Fa *word
+equals
+.Fa expect ,
+for at most
+.Fa timeout_ns ,
+and may return early.
+.Fa wake
+wakes a thread waiting on
+.Fa word .
+Each worker parks on one of these words.
+Without this group the parker uses the condition group if it is set,
+and
+.Xr futex 2
+or a pthread condition if not.
+.It Fa yield
+Back-off inside a short spin (default
+.Xr sched_yield 2 ) .
+.It Fa sleep
+Sleeps about
+.Fa ns
+nanoseconds (default
+.Xr nanosleep 2 ) ,
+used by the cluster connect retry and the diagnostics server's accept
+loop.
+.It Fa clock
+Monotonic nanoseconds (default
+.Dv CLOCK_MONOTONIC ) .
+It drives
+.Fn dtfl_activator_activate_after ,
+timed parks, and the timestamps of the timely and differential log
+streams.
+.It Fa self
+An identifier of the calling thread of execution, stable for its life
+(default
+.Xr pthread_self 3 ) .
+Debug builds use it to check that a worker is used only by the thread
+that runs it.
+A fiber that migrates between carrier threads keeps its identity, so
+.Fa self
+should name the fiber, not the carrier.
+.El
+.Pp
+Each callback may run on any libdtfl thread, with
+.Fa ctx
+as its last argument, and must be thread-safe.
+C11 atomics are not hooked: they never block.
+Socket I/O is not hooked either.
+.Pp
+The hooks are process-wide and fixed before first use.
+The first mutex, condition, parker or clock read libdtfl makes latches
+them, so install them before any libdtfl call other than the hook
+setters.
+.Dv NULL
+restores the defaults, also only before first use.
+.Sh RETURN VALUES
+Returns 0 on success, or a
+.Dv DTFL_E*
+code.
+.Sh EXAMPLES
+A fiber runtime with an asynchronous mutex and a notifier per worker
+maps its primitives like this (the
+.Li rt_
+names are the host's):
+.Bd -literal -offset indent
+static int mi(void **m, void *c) { return rt_mutex_create((rt_mutex **)m); }
+static void md(void *m, void *c) { rt_mutex_destroy(m); }
+static void ml(void *m, void *c) { rt_mutex_lock(m, -1); }
+static void mu(void *m, void *c) { rt_mutex_unlock(m); }
+static void cw(void *cv, void *m, uint64_t ns, void *c)
+{ rt_cond_wait(cv, m, ns == UINT64_MAX ? -1 : (int64_t)ns); }
+static void yl(void *c) { rt_yield(); }
+static void sl(uint64_t ns, void *c) { rt_sleep((int64_t)ns); }
+static uintptr_t me(void *c) { return (uintptr_t)rt_self(); }
+
+dtfl_sync_hooks h = { mi, md, ml, mu, ci, cd, cw, cs, cb,
+    NULL, NULL, yl, sl, NULL, me, NULL };
+dtfl_set_sync_hooks(&h);
+.Ed
+.Pp
+With no
+.Fa wait
+and
+.Fa wake ,
+each worker parks on the runtime's condition, so a parked worker yields
+its carrier instead of sleeping in
+.Xr futex 2 .
+.Sh ERRORS
+.Bl -tag -width DTFL_ESTATE
+.It Bq Er DTFL_EINVAL
+A group is partly set, or the condition group is set without the mutex
+group.
+.It Bq Er DTFL_ESTATE
+libdtfl has already locked, waited or read the clock.
+.El
+.Sh SEE ALSO
+.Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl 7 ,
+.Xr dtfl_embedding 7
+.Sh HISTORY
+Rust's timely dataflow blocks through
+.Ql std::sync
+and
+.Ql std::thread::park ,
+fixed at link time.
+These hooks give a C host the same choice at run time.

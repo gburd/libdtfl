@@ -84,19 +84,27 @@ tests_pbt_pbt_batch_SOURCES = tests/pbt/pbt_batch.c
 tests_pbt_pbt_batch_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_batch_LDADD = $(INTERNAL_PBT_LIBS)
 
-# Thread creation (the one pthread_create; AGENTS.md section 5).
-os_thread_sources = src/base/os_thread.h src/base/os_thread.c
+# Thread creation (the one pthread_create; AGENTS.md section 5) and the
+# sync layer every lock and wait goes through (ADR-0013).
+os_thread_sources = src/base/os_thread.h src/base/os_thread.c \
+	src/base/os_sync.h src/base/os_sync.c
 libdtfl_la_SOURCES += $(os_thread_sources)
 libdtfl_internal_la_SOURCES += $(os_thread_sources)
 
 # Embedding host hooks: logging sink and thread spawn (dtfl_embedding(7)).
 dist_man_MANS += man/man3/dtfl_set_log_hook.3 man/man3/dtfl_set_thread_hooks.3 \
+	man/man3/dtfl_set_sync_hooks.3 \
 	man/man7/dtfl_embedding.7
 check_PROGRAMS += tests/unit/test_hooks
 TESTS += tests/unit/test_hooks
 tests_unit_test_hooks_SOURCES = tests/unit/test_hooks.c
 tests_unit_test_hooks_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_hooks_LDADD = $(INTERNAL_LIBS)
+check_PROGRAMS += tests/unit/test_sync_hooks
+TESTS += tests/unit/test_sync_hooks
+tests_unit_test_sync_hooks_SOURCES = tests/unit/test_sync_hooks.c
+tests_unit_test_sync_hooks_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_sync_hooks_LDADD = $(TEST_LIBS)
 
 # USDT probes (src/base/probes_int.h): the built library carries every
 # probe the manual lists (SKIP when configured without them).

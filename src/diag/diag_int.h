@@ -16,7 +16,7 @@
 #ifndef DTFL_DIAG_INT_H
 #define DTFL_DIAG_INT_H
 
-#include <pthread.h>
+#include "base/os_sync.h"
 #include <stdatomic.h>
 
 #include "base/base_int.h"
@@ -138,7 +138,7 @@ void __dtfl_ws_send_close(int fd);
  * session enqueued; the server drains and frees them.
  */
 typedef struct __dtfl_diag_shared {
-	pthread_mutex_t lock;
+	__dtfl_mutex lock;
 
 	/* Live state, for replaying the full snapshot to a new client. */
 	__dtfl_vec operators;	/* __dtfl_diag_operator */

@@ -166,7 +166,7 @@ typedef struct mq_shared {
 	__dtfl_arc ref;		/* struct lifetime; one per handle */
 	atomic_size_t handles;	/* live handles (Arc::strong_count) */
 	atomic_bool panic;	/* poisons the queue */
-	pthread_mutex_t lock;
+	__dtfl_mutex lock;
 	__dtfl_queue_entries entries;	/* guarded by lock */
 	void (*buzz)(void *ctx);	/* awakens the receiver thread */
 	void *ctx;
@@ -194,15 +194,14 @@ mq_lock(mq_shared *s)
 	 * Upstream spins on try_lock to avoid yielding; a plain lock is
 	 * equivalent in behavior.
 	 */
-	if (pthread_mutex_lock(&s->lock) != 0)
-		__dtfl_panic("MergeQueue mutex poisoned.");
+	__dtfl_mutex_lock(&s->lock);
 }
 
 /* Releases the entries lock. */
 static void
 mq_unlock(mq_shared *s)
 {
-	(void)pthread_mutex_unlock(&s->lock);
+	__dtfl_mutex_unlock(&s->lock);
 }
 
 /*
@@ -223,8 +222,7 @@ __dtfl_merge_queue_new_pair(void (*buzz)(void *ctx), void *ctx,
 	__dtfl_arc_retain(&s->ref);
 	atomic_init(&s->handles, 2);
 	atomic_init(&s->panic, false);
-	if (pthread_mutex_init(&s->lock, NULL) != 0)
-		__dtfl_panic("MergeQueue: pthread_mutex_init failed");
+	__dtfl_mutex_init(&s->lock);
 	__dtfl_qe_init(&s->entries);
 	s->buzz = buzz;
 	s->ctx = ctx;
@@ -386,7 +384,7 @@ __dtfl_merge_queue_drop(__dtfl_merge_queue *q, bool panicking)
 		return;
 	/* Last handle: no other thread can reach s. */
 	__dtfl_qe_free(&s->entries);
-	(void)pthread_mutex_destroy(&s->lock);
+	__dtfl_mutex_destroy(&s->lock);
 	if (s->ctx_drop != NULL)
 		s->ctx_drop(s->ctx);
 	__dtfl_free(s);

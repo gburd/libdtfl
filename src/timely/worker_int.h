@@ -19,7 +19,6 @@
 #ifndef DTFL_WORKER_INT_H
 #define DTFL_WORKER_INT_H
 
-#include <pthread.h>
 
 #include "base/log_int.h"
 #include "comm/comm_int.h"
@@ -110,7 +109,7 @@ struct __dtfl_worker {
 	 * effort the default exert logic applies; 0 is None.
 	 */
 	size_t idle_merge_effort;
-	pthread_t owner;		/* debug owner-thread check */
+	uintptr_t owner;		/* debug owner check (__dtfl_thread_self) */
 	int stepping;			/* reentrancy guard (PLAN section 5, rule 6) */
 };
 
@@ -219,7 +218,7 @@ void __dtfl_worker_drop_dataflow(__dtfl_worker *w, size_t index);
 #ifdef DTFL_DEBUG
 #define DTFL_WORKER_CHECK(w)						\
 	do {								\
-		if (!pthread_equal((w)->owner, pthread_self()))		\
+		if ((w)->owner != __dtfl_thread_self())			\
 			__dtfl_panic("worker used from a thread that "	\
 			    "does not own it");				\
 	} while (0)

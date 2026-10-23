@@ -32,8 +32,6 @@
  * changes no result, and keeps peek's closed-past snapshot exact.  A
  * compaction knob is a follow-up, as noted in src/ddir/server.c.
  */
-#define _POSIX_C_SOURCE 200809L	/* clock_gettime */
-
 #include "dd/dd_int.h"
 
 #include "base/base_int.h"
@@ -241,11 +239,7 @@ struct dtfl_dd_server {
 static uint64_t
 now_ns(void)
 {
-	struct timespec ts;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-		return 0;
-	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+	return __dtfl_clock_ns();
 }
 
 static reg_plugin *

@@ -123,7 +123,7 @@ __dtfl_diag_on_batch(const dtfl_log_batch *batch, void *ctx)
 		return;	/* flush notification only */
 
 	__dtfl_diag_frame_begin(&frame);
-	pthread_mutex_lock(&sh->lock);
+	__dtfl_mutex_lock(&sh->lock);
 
 	for (i = 0; i < n; i++) {
 		dtfl_log_event_kind kind = dtfl_log_event_kind_at(batch, i);
@@ -369,5 +369,5 @@ __dtfl_diag_on_batch(const dtfl_log_batch *batch, void *ctx)
 	payload = __dtfl_diag_frame_finish(&frame, ts_us);
 	if (payload != NULL)
 		__dtfl_vec_push(&sh->queue, &payload);
-	pthread_mutex_unlock(&sh->lock);
+	__dtfl_mutex_unlock(&sh->lock);
 }

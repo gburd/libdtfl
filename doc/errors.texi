@@ -58,11 +58,11 @@ PostgreSQL extension that calls @code{ereport(ERROR)} to @code{longjmp}
 out of the computation.  Allocation failure also goes through the panic
 hook.
 
-@section The four host hooks
+@section The five host hooks
 
-The panic hook is one of four process-wide hooks that route libdtfl's
-boundaries through a host program.  All four have defaults, so a
-standalone program needs none of them, and all four must be installed
+The panic hook is one of five process-wide hooks that route libdtfl's
+boundaries through a host program.  All five have defaults, so a
+standalone program needs none of them, and all five must be installed
 before the first @code{dtfl_execute}.
 
 @table @code
@@ -90,4 +90,12 @@ thread in the same process, since the workers of one execution share
 memory.  A host that cannot spawn threads at all, such as a PostgreSQL
 backend, drives a single worker cooperatively instead
 (@pxref{Embedding}).
+
+@item dtfl_set_sync_hooks
+Mutexes, condition variables, the futex-style wait and wake each worker
+parks on, yield, sleep, the monotonic clock and the thread identity.
+Every lock and wait libdtfl makes goes through these, so a fiber runtime
+can keep its carrier threads out of the kernel.  The defaults are
+pthreads and, on Linux, @code{futex}.  The hooks latch on the first lock
+or clock read, so set them before any other libdtfl call.
 @end table

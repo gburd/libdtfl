@@ -142,7 +142,8 @@ allocation failure; these hooks are the C equivalent of both.
 .Sh THREAD SAFETY
 Both functions must be called before the first
 .Fn dtfl_execute .
-They are two of the four process-wide host hooks; the others install a
-diagnostic log sink and thread-spawn callbacks.
+They are two of the five process-wide host hooks; the others install a
+diagnostic log sink, thread-spawn callbacks and synchronization
+primitives.
 See
 .Xr dtfl_embedding 7 .

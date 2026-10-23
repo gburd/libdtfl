@@ -32,7 +32,7 @@ __dtfl_diag_shared_new(void)
 {
 	__dtfl_diag_shared *sh = __dtfl_calloc(1, sizeof *sh);
 
-	pthread_mutex_init(&sh->lock, NULL);
+	__dtfl_mutex_init(&sh->lock);
 	__dtfl_vec_init(&sh->operators, sizeof(__dtfl_diag_operator));
 	__dtfl_vec_init(&sh->channels, sizeof(__dtfl_diag_channel));
 	__dtfl_vec_init(&sh->stats, sizeof(__dtfl_diag_stat));
@@ -78,7 +78,7 @@ __dtfl_diag_shared_release(__dtfl_diag_shared *sh)
 	__dtfl_vec_free(&sh->stats);
 	__dtfl_vec_free(&sh->sched_starts);
 	__dtfl_vec_free(&sh->queue);
-	pthread_mutex_destroy(&sh->lock);
+	__dtfl_mutex_destroy(&sh->lock);
 	__dtfl_free(sh);
 }
 

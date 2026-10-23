@@ -59,7 +59,7 @@ link_new(const dtfl_time_class *tc, const dtfl_type *type, bool sync)
 	l->type = dtfl_type_retain(type);
 	l->sync = sync;
 	if (sync)
-		pthread_mutex_init(&l->lock, NULL);
+		__dtfl_mutex_init(&l->lock);
 	/*
 	 * A sentinel head carries no event, matching upstream's first link
 	 * element.  read starts at the sentinel; next advances past it.
@@ -100,7 +100,7 @@ dtfl_event_link_free(dtfl_event_link *l)
 		n = next;
 	}
 	if (l->sync)
-		pthread_mutex_destroy(&l->lock);
+		__dtfl_mutex_destroy(&l->lock);
 	dtfl_time_class_free(l->tc);
 	dtfl_type_free(l->type);
 	__dtfl_free(l);
@@ -114,11 +114,11 @@ __dtfl_event_link_push(dtfl_event_link *l, dtfl_event *e)
 	node->event = *e;
 	node->next = NULL;
 	if (l->sync)
-		pthread_mutex_lock(&l->lock);
+		__dtfl_mutex_lock(&l->lock);
 	l->tail->next = node;
 	l->tail = node;
 	if (l->sync)
-		pthread_mutex_unlock(&l->lock);
+		__dtfl_mutex_unlock(&l->lock);
 }
 
 const dtfl_event *
@@ -127,12 +127,12 @@ __dtfl_event_link_next(dtfl_event_link *l)
 	dtfl_event_node *next;
 
 	if (l->sync)
-		pthread_mutex_lock(&l->lock);
+		__dtfl_mutex_lock(&l->lock);
 	next = l->read->next;
 	if (next != NULL)
 		l->read = next;
 	if (l->sync)
-		pthread_mutex_unlock(&l->lock);
+		__dtfl_mutex_unlock(&l->lock);
 	return next != NULL ? &next->event : NULL;
 }
 

@@ -35,9 +35,8 @@
 #ifndef DTFL_COMM_INT_H
 #define DTFL_COMM_INT_H
 
-#include <pthread.h>
-
 #include "base/base_int.h"
+#include "base/os_sync.h"
 #include "base/batch_int.h"
 
 /* ------------------------------------------------------------------ */
@@ -266,7 +265,8 @@ void __dtfl_canary_drop(__dtfl_canary *c);
  * A parker owned by one worker thread.  Any thread may buzz it; only
  * the owner parks.  A buzz before park makes the next park return
  * immediately (the semantics of std::thread::park/unpark).
- * Shared by reference count across threads.  Linux uses a futex;
+ * Shared by reference count across threads.  Sleeps through the sync
+ * layer (src/base/os_sync.h): a futex-style word wait where one exists,
  * elsewhere a mutex and condition variable.
  */
 

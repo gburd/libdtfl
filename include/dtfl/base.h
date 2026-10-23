@@ -5,10 +5,10 @@
  * dtfl/base.h: errors, hooks and version for libdtfl.
  *
  * Every other public header includes this one.  It declares the error
- * codes returned by fallible functions, the four process-wide host
- * hooks (allocation, panic, logging and thread spawning), and the
- * library version.  See dtfl(7), dtfl_embedding(7) and
- * dtfl_set_alloc_hooks(3).
+ * codes returned by fallible functions, the five process-wide host
+ * hooks (allocation, panic, logging, thread spawning and
+ * synchronization), and the library version.  See dtfl(7),
+ * dtfl_embedding(7) and dtfl_set_alloc_hooks(3).
  */
 #ifndef DTFL_BASE_H
 #define DTFL_BASE_H
@@ -141,6 +141,64 @@ typedef struct dtfl_thread_hooks {
  * pointers is set.
  */
 DTFL_API int dtfl_set_thread_hooks(const dtfl_thread_hooks *hooks);
+
+/*
+ * Synchronization hooks (ADR-0013).  Every lock and wait libdtfl makes
+ * goes through these, so a host whose threads are fibers or tasks (a
+ * runtime that must not block its carrier threads in the kernel) can
+ * supply versions that yield to its scheduler.  Atomics are not hooked;
+ * they never block.  Each group is all or nothing, and a NULL group
+ * keeps the default (pthreads, and futex(2) on Linux):
+ *
+ *   mutex_*      init stores an opaque handle in *mutex and returns 0
+ *                or a DTFL_E* code.  Not recursive.
+ *   cond_*       needs the mutex group.  cond_wait releases `mutex`,
+ *                waits for a signal or timeout_ns (UINT64_MAX: no
+ *                limit) and reacquires it; spurious returns are allowed.
+ *   wait, wake   wait sleeps while *word == expect, for at most
+ *                timeout_ns; it may return early.  wake wakes a
+ *                thread waiting on word.  The worker parker sleeps on
+ *                these; without them it uses the condition group if
+ *                set, else futex(2) or a pthread condition.
+ *   yield        a spin's back-off (default sched_yield).
+ *   sleep        sleeps about ns nanoseconds (default nanosleep).
+ *   clock        monotonic nanoseconds (default CLOCK_MONOTONIC); drives
+ *                activate_after, timed parks and log timestamps.
+ *   self         an identifier of the calling thread of execution,
+ *                stable for its life, for the debug check that a
+ *                worker is used only by its owner (default
+ *                pthread_self).
+ *
+ * Every callback may run on any libdtfl thread and must be thread-safe.
+ */
+typedef struct dtfl_sync_hooks {
+	int (*mutex_init)(void **mutex, void *ctx);
+	void (*mutex_destroy)(void *mutex, void *ctx);
+	void (*mutex_lock)(void *mutex, void *ctx);
+	void (*mutex_unlock)(void *mutex, void *ctx);
+	int (*cond_init)(void **cond, void *ctx);
+	void (*cond_destroy)(void *cond, void *ctx);
+	void (*cond_wait)(void *cond, void *mutex, uint64_t timeout_ns,
+	    void *ctx);
+	void (*cond_signal)(void *cond, void *ctx);
+	void (*cond_broadcast)(void *cond, void *ctx);
+	void (*wait)(const uint32_t *word, uint32_t expect, uint64_t timeout_ns,
+	    void *ctx);
+	void (*wake)(const uint32_t *word, void *ctx);
+	void (*yield)(void *ctx);
+	void (*sleep)(uint64_t ns, void *ctx);
+	uint64_t (*clock)(void *ctx);
+	uintptr_t (*self)(void *ctx);
+	void *ctx;
+} dtfl_sync_hooks;
+
+/*
+ * Installs synchronization hooks; NULL restores the defaults.  Must be
+ * called before libdtfl first locks, waits or reads the clock (in
+ * practice, before any other libdtfl call but the hook setters);
+ * returns DTFL_ESTATE after that, and DTFL_EINVAL for a partial group.
+ */
+DTFL_API int dtfl_set_sync_hooks(const dtfl_sync_hooks *hooks);
 
 /* Library version. */
 #define DTFL_VERSION_MAJOR 0

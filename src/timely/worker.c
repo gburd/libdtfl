@@ -67,7 +67,7 @@ __dtfl_worker_new(__dtfl_allocator *a, dtfl_progress_mode mode, bool timer,
 	__dtfl_vec_init(&w->paths, sizeof(path_entry));
 	__dtfl_vec_init(&w->temp_channel_ids, sizeof(size_t));
 	__dtfl_vec_init(&w->active_dataflows, sizeof(size_t));
-	w->owner = pthread_self();
+	w->owner = __dtfl_thread_self();
 	return w;
 }
 

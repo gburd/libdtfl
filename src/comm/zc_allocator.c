@@ -38,8 +38,6 @@
  */
 #include "comm/zc_int.h"
 
-#include <sched.h>
-
 /* ------------------------------------------------------------------ */
 /* TcpAllocator                                                        */
 /* ------------------------------------------------------------------ */
@@ -413,7 +411,7 @@ tcp_builder_build(__dtfl_allocator_builder *bb)
 
 		while (!__dtfl_mpsc_recv(b->futures[i], &h)) {
 			/* The send thread posts at startup; a brief spin. */
-			sched_yield();
+			__dtfl_yield();
 		}
 		p->sends[i] = __dtfl_send_endpoint_new(h.queue);
 		__dtfl_mpsc_release(b->futures[i]);

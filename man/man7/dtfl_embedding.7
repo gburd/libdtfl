@@ -15,14 +15,16 @@
 .Fn dtfl_set_log_hook "dtfl_log_fn fn" "void *ctx"
 .Ft int
 .Fn dtfl_set_thread_hooks "const dtfl_thread_hooks *hooks"
+.Ft int
+.Fn dtfl_set_sync_hooks "const dtfl_sync_hooks *hooks"
 .Sh DESCRIPTION
 libdtfl is built to run inside a host program, such as a database
 server, that supplies its own memory, error reporting, logging and
 threads.
-Four process-wide hooks route each of those boundaries through the
+Five process-wide hooks route each of those boundaries through the
 host.
 Each has a default, so a standalone program needs none of them.
-.Ss The four host hooks
+.Ss The five host hooks
 .Bl -tag -width "dtfl_set_thread_hooks()"
 .It Fn dtfl_set_alloc_hooks
 All memory libdtfl allocates comes from these.
@@ -58,12 +60,21 @@ The default is
 .Xr pthread_create 3 .
 See
 .Xr dtfl_set_thread_hooks 3 .
+.It Fn dtfl_set_sync_hooks
+Mutexes, condition variables, the word wait and wake a worker parks on,
+yield, sleep, the clock and the thread identity.
+Every lock and wait libdtfl makes goes through these.
+The defaults are pthreads and, on Linux,
+.Xr futex 2 .
+See
+.Xr dtfl_set_sync_hooks 3 .
 .El
 .Pp
-All four hooks are process-wide.
+All five hooks are process-wide.
 They must be installed before the first
 .Fn dtfl_execute ,
-and the allocation hook before any libdtfl call allocates.
+the allocation hook before any libdtfl call allocates, and the sync
+hooks before any libdtfl call locks or reads the clock.
 Because the hooks are the whole of libdtfl's writable global state, two
 independent
 .Fn dtfl_execute
@@ -235,6 +246,7 @@ child contexts under it, since the reset frees them too.
 .Xr dtfl_set_alloc_hooks 3 ,
 .Xr dtfl_set_log_hook 3 ,
 .Xr dtfl_set_panic_hook 3 ,
+.Xr dtfl_set_sync_hooks 3 ,
 .Xr dtfl_set_thread_hooks 3 ,
 .Xr dtfl 7
 .Sh HISTORY
@@ -243,9 +255,9 @@ and thread library at link time.
 These hooks give a C host the same control at run time, so libdtfl can
 live inside a program that owns those facilities.
 .Sh THREAD SAFETY
-Install all four hooks before the first
+Install all five hooks before the first
 .Fn dtfl_execute .
-Once installed, the panic, log and thread callbacks may run on any
+Once installed, the panic, log, thread and sync callbacks may run on any
 worker thread and must be thread-safe.
 Everything else libdtfl exposes follows the per-thread ownership
 contract in
