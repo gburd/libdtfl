@@ -187,6 +187,12 @@ __dtfl_batch_len(const __dtfl_batch *b)
 }
 
 void __dtfl_batch_clear(__dtfl_batch *b);
+/*
+ * Vec::drain(..k): removes the first k records and moves the rest to the
+ * front in place, keeping the storage.  b is uniquely held and has no
+ * element hooks.
+ */
+void __dtfl_batch_drain_front(__dtfl_batch *b, size_t k);
 
 /*
  * Appends a record of len uninitialized bytes and returns them; the

@@ -220,8 +220,49 @@ DTFL_TEST(batch_decode_rejects_malformed)
 	return MUNIT_OK;
 }
 
+/*
+ * drain_front keeps the records after k, in order, with every column
+ * moved to the front and the storage kept.
+ */
+DTFL_TEST(batch_drain_front_keeps_tail)
+{
+	__dtfl_batch *b = sample(), *c;
+	static const size_t bytes[4] = { 4, 3, 3, 0 };
+	const unsigned char *arena;
+	size_t k, len;
+
+	(void)params; (void)data;
+	for (k = 0; k <= 3; k++) {
+		c = __dtfl_batch_copy(b);
+		arena = c->arena.data;
+		__dtfl_batch_drain_front(c, k);
+		assert_size(__dtfl_batch_len(c), ==, 3 - k);
+		assert_size(c->times.len, ==, (3 - k) * 2);
+		assert_size(c->diffs.len, ==, (3 - k) * 4);
+		assert_ptr_equal(c->arena.data, arena);
+		assert_size(((const size_t *)(void *)c->offs.data)[0], ==, 0);
+		if (k <= 2) {
+			const void *r = __dtfl_batch_rec(c, 2 - k, &len);
+
+			assert_size(len, ==, 3);
+			assert_memory_equal(3, r, "xyz");
+			assert_uint64(__dtfl_batch_time(c, 2 - k)[1], ==, 6);
+		}
+		if (k <= 1) {
+			(void)__dtfl_batch_rec(c, 1 - k, &len);
+			assert_size(len, ==, 0);
+			assert_uint64(__dtfl_batch_time(c, 1 - k)[0], ==, 3);
+		}
+		assert_size(__dtfl_batch_bytes(c), ==, bytes[k]);
+		__dtfl_batch_release(c);
+	}
+	__dtfl_batch_release(b);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(batch_push_read),
+	DTFL_T(batch_drain_front_keeps_tail),
 	DTFL_T(batch_make_mut_copy_on_write),
 	DTFL_T(batch_encode_decode_round_trip),
 	DTFL_T(batch_decode_rejects_malformed),

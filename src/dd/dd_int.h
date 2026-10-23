@@ -233,6 +233,14 @@ typedef struct __dtfl_consolidator {
 	const dtfl_type *rt;
 	const __dtfl_diff_class *dc;
 	__dtfl_batch *current;	/* owned; uniquely held */
+	/*
+	 * Owned, uniquely held and empty between calls: the consolidation
+	 * target, which swaps storage with current on every flush, and the
+	 * sort's byte scratch.  Both keep their capacity, so a steady
+	 * builder consolidates without allocating.
+	 */
+	__dtfl_batch *spare;
+	__dtfl_vec scratch;
 	__dtfl_vec outbound;	/* __dtfl_batch *, owned, FIFO */
 	size_t cap;		/* records per emitted batch */
 } __dtfl_consolidator;

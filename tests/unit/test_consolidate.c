@@ -519,6 +519,91 @@ DTFL_TEST(consolidate_packed_rejects_mixed_lengths)
 	return MUNIT_OK;
 }
 
+/*
+ * The consolidator keeps its consolidation target and its remainder
+ * storage across flushes.  Over many flushes of variable-length records
+ * (the index sort) and of u64 records (the packed sort), everything it
+ * emits must equal one consolidation of everything pushed, its spare
+ * target must be empty after every push, and no emitted batch may be the
+ * buffer or the spare (each is a fresh, uniquely held batch).
+ */
+static void
+reuse_round(const dtfl_type *rt, bool strings)
+{
+	__dtfl_consolidator ccb;
+	__dtfl_batch *all = __dtfl_batch_new(1, 8), *got = __dtfl_batch_new(1, 8);
+	__dtfl_batch *c;
+	uint64_t rng = 0x9e3779b97f4a7c15ULL;
+	size_t i, j;
+
+	__dtfl_consolidator_init(&ccb, rt, 1, I64);
+	for (i = 0; i < 20 * ccb.cap; i++) {
+		unsigned char rec[16];
+		uint64_t t, key;
+		int64_t r;
+		size_t len;
+
+		rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+		key = rng % (ccb.cap / 2 + 1);
+		t = (rng >> 20) % 3;
+		r = (int64_t)((rng >> 30) % 3) - 1;
+		if (strings) {
+			char s[8];
+			size_t sl = 1 + (size_t)(key % 5);
+
+			memset(s, 'a' + (int)(key % 26), sl);
+			len = dtfl_put_bytes(rec, s, sl);
+		} else {
+			dtfl_put_u64(rec, key);
+			len = 8;
+		}
+		__dtfl_batch_push(all, rec, len, &t, &r);
+		__dtfl_consolidator_push(&ccb, rec, len, &t, &r);
+		assert_size(__dtfl_batch_len(ccb.spare), ==, 0);
+		assert_size(ccb.spare->arena.len, ==, 0);
+		while ((c = __dtfl_consolidator_extract(&ccb)) != NULL) {
+			assert_ptr_not_equal(c, ccb.current);
+			assert_ptr_not_equal(c, ccb.spare);
+			assert_size(__dtfl_arc_count(&c->ref), ==, 1);
+			assert_size(__dtfl_batch_len(c), <=, ccb.cap);
+			for (j = 0; j < __dtfl_batch_len(c); j++)
+				__dtfl_batch_push_from(got, c, j);
+			__dtfl_batch_release(c);
+		}
+	}
+	while ((c = __dtfl_consolidator_finish(&ccb)) != NULL) {
+		for (j = 0; j < __dtfl_batch_len(c); j++)
+			__dtfl_batch_push_from(got, c, j);
+		__dtfl_batch_release(c);
+	}
+	assert_size(__dtfl_batch_len(ccb.spare), ==, 0);
+	__dtfl_consolidate_batch(all, rt, I64);
+	__dtfl_consolidate_batch(got, rt, I64);
+	assert_size(__dtfl_batch_len(got), ==, __dtfl_batch_len(all));
+	assert_memory_equal(all->offs.len * sizeof(size_t), all->offs.data,
+	    got->offs.data);
+	if (all->arena.len != 0)
+		assert_memory_equal(all->arena.len, all->arena.data,
+		    got->arena.data);
+	if (all->times.len != 0)
+		assert_memory_equal(all->times.len * 8, all->times.data,
+		    got->times.data);
+	if (all->diffs.len != 0)
+		assert_memory_equal(all->diffs.len, all->diffs.data,
+		    got->diffs.data);
+	__dtfl_batch_release(all);
+	__dtfl_batch_release(got);
+	__dtfl_consolidator_free(&ccb);
+}
+
+DTFL_TEST(consolidator_reuses_target_and_remainder)
+{
+	(void)params; (void)data;
+	reuse_round(dtfl_type_string(), true);
+	reuse_round(dtfl_type_u64(), false);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(consolidation__test_consolidate),
 	DTFL_T(consolidation__test_consolidate_updates),
@@ -529,6 +614,7 @@ static MunitTest tests[] = {
 	DTFL_T(consolidate_then_push),
 	DTFL_T(consolidate_packed_matches_index_sort),
 	DTFL_T(consolidate_packed_rejects_mixed_lengths),
+	DTFL_T(consolidator_reuses_target_and_remainder),
 	DTFL_T(description_basics),
 	DTFL_T_END
 };
