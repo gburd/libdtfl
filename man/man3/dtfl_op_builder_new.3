@@ -98,6 +98,14 @@ operators with many ports.
 sets the frontier interest of an input: whether the operator is
 scheduled on a frontier change always, only while it holds a
 capability, or never.
+The default is
+.Dv DTFL_NOTIFY_ALWAYS .
+An operator that neither reads its input frontier nor holds a
+capability between calls, such as a per-record map, should set
+.Dv DTFL_NOTIFY_NEVER ,
+as timely's
+.Fn Operator::unary
+does; otherwise it runs on every frontier change.
 .Pp
 .Fn dtfl_op_builder_build
 installs the operator and consumes the builder.

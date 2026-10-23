@@ -34,6 +34,16 @@ Version 0.1.0 (unreleased)
 	cannot back them; the earlier documentation said it could.
 	man dtfl_set_panic_hook now finds its page.
 
+	The record operators that upstream builds on Operator::unary or
+	::binary (flat_map, filter, exchange, and differential's map,
+	flat_map, explode, negate, enter, leave, delay, results_in and
+	as_collection) no longer run on every frontier change, only when
+	data arrives, as upstream's FrontierInterest::Never makes them.
+	Advancing an input past a chain of such operators no longer costs
+	time in the length of the chain: examples/timely/event_driven at
+	10 dataflows of 1000 maps runs 1000 rounds in about 0.1 s where it
+	took 1.4 s.
+
 	dtfl_config_set_idle_merge_effort (differential's
 	Config::idle_merge_effort) lets arrangement, reduce and upsert
 	operators keep merging their traces while their input is idle,
