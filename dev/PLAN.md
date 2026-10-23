@@ -689,6 +689,26 @@ drew it.  The comm and differential log emission, the reduce reference
 tactic, and the progress and spill_compare examples, once listed here,
 are done (ADR-0012, 2026-10-18).
 
+### D13. Host runtime: sync hooks, byte transports, process-hosted workers
+
+ADR-0013 holds the decision in full.  In brief:
+
+- `dtfl_set_sync_hooks()` is a fifth process-wide hook covering every
+  lock and wait libdtfl uses (mutexes, condition variables, a
+  futex-style wait/wake on a word, yield, sleep, the clock, and the
+  thread identity of the owner check).  All of them go through
+  `src/base/os_sync.c`; the defaults stay pthreads and futex.
+- `dtfl_transport` ports upstream's `Stream` trait
+  (`zero_copy/stream.rs`) as a vtable: send, receive, wait, wake.
+  `dtfl_transport_socket()` is the built-in one over connected
+  sockets, and the cluster's send and receive loops run on it.
+- `dtfl_execute_worker()` runs worker i of n on the calling thread
+  over a transport and starts no thread: the worker's own step moves
+  the bytes.  This is how PostgreSQL backends and background workers
+  join one computation.
+- `dtfl_config_set_workers(DTFL_WORKERS_PROCESSES)` makes
+  `dtfl_execute()` fork one child per worker over a socketpair mesh.
+
 ## 5. Thread-safety contract
 
 The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
