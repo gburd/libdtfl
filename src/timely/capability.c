@@ -19,18 +19,33 @@
  */
 #include "timely/timely_int.h"
 
+/*
+ * Upstream's Capability is a value (time plus an Rc to the internal
+ * batch), so minting one allocates nothing; a pooled block here comes
+ * from the worker's free list.  Every field is set: a recycled block is
+ * stale.
+ */
 dtfl_cap *
-__dtfl_cap_new(const dtfl_time_class *tc, const uint64_t *time,
-    __dtfl_change_batch *internal, size_t port)
+__dtfl_cap_new_pooled(__dtfl_freelist *pool, const dtfl_time_class *tc,
+    const uint64_t *time, __dtfl_change_batch *internal, size_t port)
 {
-	dtfl_cap *c = __dtfl_alloc(sizeof *c);
+	dtfl_cap *c = pool != NULL ? __dtfl_freelist_get(pool) :
+	    __dtfl_alloc(sizeof *c);
 
 	c->tc = tc;
 	__dtfl_time_copy(tc, c->time, time);
 	c->internal = internal;
 	c->port = port;
+	c->pool = pool;
 	__dtfl_cb_update(internal, time, 1);
 	return c;
+}
+
+dtfl_cap *
+__dtfl_cap_new(const dtfl_time_class *tc, const uint64_t *time,
+    __dtfl_change_batch *internal, size_t port)
+{
+	return __dtfl_cap_new_pooled(NULL, tc, time, internal, port);
 }
 
 const uint64_t *
@@ -50,7 +65,7 @@ dtfl_cap_try_delayed(const dtfl_cap *c, const uint64_t *t)
 {
 	if (!dtfl_time_less_equal(c->tc, c->time, t))
 		return NULL;
-	return __dtfl_cap_new(c->tc, t, c->internal, c->port);
+	return __dtfl_cap_new_pooled(c->pool, c->tc, t, c->internal, c->port);
 }
 
 dtfl_cap *
@@ -97,7 +112,8 @@ dtfl_cap_downgrade(dtfl_cap *c, const uint64_t *t)
 dtfl_cap *
 dtfl_cap_clone(const dtfl_cap *c)
 {
-	return __dtfl_cap_new(c->tc, c->time, c->internal, c->port);
+	return __dtfl_cap_new_pooled(c->pool, c->tc, c->time, c->internal,
+	    c->port);
 }
 
 void
@@ -106,5 +122,8 @@ dtfl_cap_drop(dtfl_cap *c)
 	if (c == NULL)
 		return;
 	__dtfl_cb_update(c->internal, c->time, -1);
-	__dtfl_free(c);
+	if (c->pool != NULL)
+		__dtfl_freelist_put(c->pool, c);
+	else
+		__dtfl_free(c);
 }

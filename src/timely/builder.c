@@ -226,6 +226,7 @@ input_port_new(dtfl_op_builder *b, dtfl_stream *in, dtfl_pact pact)
 
 	__dtfl_cb_init(&slot.consumed, b->tc->depth);
 	slot.pull = __dtfl_pull_counter_new(puller, &slot.consumed);
+	__dtfl_pull_counter_set_pool(slot.pull, &w->msg_pool);
 	__dtfl_mantichain_init(&slot.frontier, b->tc);
 	__dtfl_port_conn_init(&slot.summary, b->tc);
 	__dtfl_vec_push(&b->inslots, &slot);
@@ -307,6 +308,7 @@ output_port_new(dtfl_op_builder *b, const dtfl_type *type)
 	slot.out.port = port;
 	slot.out.tc = b->tc;
 	slot.out.type = type;
+	slot.out.msg_pool = &b->scope->worker->msg_pool;
 	__dtfl_vec_push(&b->outslots, &slot);
 	b->outputs++;
 	return slot.stream;

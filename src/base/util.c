@@ -138,6 +138,73 @@ __dtfl_vec_copy(__dtfl_vec *dst, const __dtfl_vec *src)
 	__dtfl_vec_push_n(dst, src->data, src->len);
 }
 
+#if defined(__SANITIZE_ADDRESS__)
+#define DTFL_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define DTFL_ASAN 1
+#endif
+#endif
+#ifdef DTFL_ASAN
+#include <sanitizer/asan_interface.h>
+#define FL_POISON(p, n) ASAN_POISON_MEMORY_REGION((p), (n))
+#define FL_UNPOISON(p, n) ASAN_UNPOISON_MEMORY_REGION((p), (n))
+#else
+#define FL_POISON(p, n) ((void)(p), (void)(n))
+#define FL_UNPOISON(p, n) ((void)(p), (void)(n))
+#endif
+
+void
+__dtfl_freelist_init(__dtfl_freelist *f, size_t size, size_t max)
+{
+	DTFL_ASSERT(size >= sizeof(void *));
+	f->head = NULL;
+	f->len = 0;
+	f->max = max;
+	f->size = size;
+}
+
+void *
+__dtfl_freelist_get(__dtfl_freelist *f)
+{
+	void *p = f->head;
+
+	if (p == NULL)
+		return __dtfl_alloc(f->size);
+	FL_UNPOISON(p, f->size);
+	memcpy(&f->head, p, sizeof(void *));
+	f->len--;
+	return p;
+}
+
+void
+__dtfl_freelist_put(__dtfl_freelist *f, void *p)
+{
+	if (p == NULL)
+		return;
+	if (f->len >= f->max) {
+		__dtfl_free(p);
+		return;
+	}
+	memcpy(p, &f->head, sizeof(void *));
+	FL_POISON(p, f->size);
+	f->head = p;
+	f->len++;
+}
+
+void
+__dtfl_freelist_free(__dtfl_freelist *f)
+{
+	while (f->head != NULL) {
+		void *p = f->head;
+
+		FL_UNPOISON(p, f->size);
+		memcpy(&f->head, p, sizeof(void *));
+		__dtfl_free(p);
+	}
+	f->len = 0;
+}
+
 uint64_t
 __dtfl_fnv1a_extend(uint64_t h, const void *p, size_t len)
 {

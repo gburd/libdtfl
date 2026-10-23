@@ -221,6 +221,29 @@ __dtfl_vec_last(const __dtfl_vec *v)
 
 #define DTFL_VEC_AT(v, type, i) ((type *)__dtfl_vec_at((v), (i)))
 
+/*
+ * __dtfl_freelist: up to `max` spare blocks of `size` bytes, each its own
+ * hook allocation, linked through their first word.  It belongs to one
+ * worker and only that worker's thread gets from or puts to it, so it
+ * needs no synchronization.  Every block is an ordinary hook allocation,
+ * so a block taken from a list may instead be released with __dtfl_free
+ * anywhere; a block that crossed to another thread must be (never put it
+ * on that thread's list).  get returns uninitialized memory.  Under ASan
+ * a spare block is poisoned, so a use after put is still reported.
+ */
+typedef struct __dtfl_freelist {
+	void *head;
+	size_t len;
+	size_t max;
+	size_t size;
+} __dtfl_freelist;
+
+void __dtfl_freelist_init(__dtfl_freelist *f, size_t size, size_t max);
+void *__dtfl_freelist_get(__dtfl_freelist *f);
+void __dtfl_freelist_put(__dtfl_freelist *f, void *p);
+/* Frees every spare block; the list may be reused afterwards. */
+void __dtfl_freelist_free(__dtfl_freelist *f);
+
 /* Atomic reference count, for objects shared across threads. */
 typedef struct __dtfl_arc {
 	atomic_size_t count;

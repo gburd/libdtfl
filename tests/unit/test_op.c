@@ -834,7 +834,50 @@ DTFL_TEST(capability__downgrade_backwards_panics)
 	return MUNIT_OK;
 }
 
+/*
+ * A pooled message: freed on its own worker it goes back on that
+ * worker's list, comes back with every field reset, and freed on
+ * another worker (another list) it goes to the hooks instead of that
+ * worker's list.  A clone is never a pooled block.
+ */
+DTFL_TEST(message_pool_stays_with_its_worker)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_freelist mine, theirs;
+	dtfl_message *m, *m2, *c;
+	const __dtfl_msg_class *mc = __dtfl_message_class();
+	uint64_t t = 5;
+
+	(void)params; (void)data;
+	__dtfl_freelist_init(&mine, sizeof(dtfl_message), 4);
+	__dtfl_freelist_init(&theirs, sizeof(dtfl_message), 4);
+	m = __dtfl_message_new_pooled(&mine, tc, &t, __dtfl_batch_new(0, 0));
+	m->from = 7;
+	m->seq = 9;
+	c = mc->clone(mc, m);
+	assert_true(c->pool == 0);
+	__dtfl_message_free_local(c, &mine);	/* not mine: to the hooks */
+	assert_size(mine.len, ==, 0);
+	__dtfl_message_free_local(m, &mine);
+	assert_size(mine.len, ==, 1);
+	t = 6;
+	m2 = __dtfl_message_new_pooled(&mine, tc, &t, __dtfl_batch_new(0, 0));
+	assert_ptr_equal(m2, m);
+	assert_size(m2->from, ==, 0);
+	assert_size(m2->seq, ==, 0);
+	assert_uint64(m2->time[0], ==, 6);
+	assert_size(__dtfl_batch_len(m2->data), ==, 0);
+	__dtfl_message_free_local(m2, &theirs);
+	assert_size(theirs.len, ==, 0);
+	assert_size(mine.len, ==, 0);
+	__dtfl_freelist_free(&mine);
+	__dtfl_freelist_free(&theirs);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(message_pool_stays_with_its_worker),
 	DTFL_T(builder__map_pipeline),
 	DTFL_T(tee__fan_out),
 	DTFL_T(session__shared_forwarding_keeps_records),
