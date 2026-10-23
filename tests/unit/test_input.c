@@ -16,6 +16,8 @@
  */
 #include "dtfl_test.h"
 
+#include <unistd.h>
+
 #include "dtfl/record.h"
 #include "dtfl/time.h"
 #include "dtfl/timely.h"
@@ -510,6 +512,83 @@ DTFL_TEST(input__multi_worker_multi_round_terminates)
 }
 
 /* ------------------------------------------------------------------ */
+/* Test: flush, step, close without advancing completes                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * upstream input.rs: the Input operator's initialize reserves its
+ * capabilities and does not ask to be scheduled, unlike a generic
+ * operator (builder_raw.rs initialize).  So in Rust, sending one record,
+ * flushing, stepping and closing (with no advance_to) completes: the
+ * step does not run the input operator, its produced counts are still
+ * pending at close, and the exchange's buffered record is sent.  The C
+ * Input used to self-activate, the step drained the counts, and the
+ * close dropped the flush (the Counter only forwards a flush while its
+ * counts are dirty), so the dataflow never completed.
+ */
+typedef struct nfa_ctx {
+	dtfl_input *in;
+	dtfl_probe *probe;
+} nfa_ctx;
+
+static uint64_t
+nfa_route(const void *rec, size_t len, void *ctx)
+{
+	(void)len; (void)ctx;
+	return dtfl_get_u64(rec);
+}
+
+static void
+nfa_build(dtfl_scope *scope, void *arg)
+{
+	nfa_ctx *c = arg;
+	dtfl_stream *s = dtfl_input_to_stream(c->in, scope);
+
+	s = dtfl_stream_exchange(s, nfa_route, NULL);
+	(void)dtfl_stream_probe_with(s, c->probe);
+}
+
+static void
+nfa_worker(dtfl_worker *w, void *arg)
+{
+	nfa_ctx c;
+	dtfl_time_class *tc = dtfl_time_u64();
+
+	(void)arg;
+	c.in = dtfl_input_new(dtfl_type_u64());
+	c.probe = dtfl_probe_new();
+	dtfl_worker_dataflow(w, "nfa", tc, nfa_build, &c);
+	if (dtfl_worker_index(w) == 0) {
+		unsigned char rec[8];
+
+		dtfl_put_u64(rec, 0);
+		dtfl_input_send(c.in, rec, sizeof rec);
+		dtfl_input_flush(c.in);
+		(void)dtfl_worker_step(w);
+	}
+	dtfl_input_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	assert_true(dtfl_probe_done(c.probe));
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+}
+
+DTFL_TEST(input__flush_step_close_completes)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	alarm(60);	/* the bug is a hang: fail, do not wait forever */
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, 2), ==, 0);
+	assert_int(dtfl_execute(cfg, nfa_worker, NULL, NULL), ==, 0);
+	alarm(0);
+	dtfl_config_free(cfg);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /* Test: unordered input sends under caller-managed capabilities       */
 /* ------------------------------------------------------------------ */
 
@@ -576,6 +655,7 @@ static MunitTest tests[] = {
 	DTFL_T(feedback__bounded_loop_terminates),
 	DTFL_T(reclock__releases_at_clock_times),
 	DTFL_T(input__multi_worker_multi_round_terminates),
+	DTFL_T(input__flush_step_close_completes),
 	DTFL_T(unordered_input__sends_at_capability_times),
 	DTFL_T_END
 };
