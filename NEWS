@@ -28,6 +28,17 @@ Version 0.1.0 (unreleased)
 	dtfl_trace_stats_get reports a trace's layers, batches, pending
 	batches, merges in progress, updates and bytes, for monitoring.
 
+	USDT static probes under the provider dtfl, for DTrace, SystemTap,
+	bpftrace and perf: operator_start and operator_end, park,
+	park_end and unpark, batch_seal, and merge_begin and merge_end.
+	configure builds them when sys/sdt.h is present (--enable-usdt,
+	--disable-usdt); otherwise they compile to nothing.  The manual's
+	Diagnostics chapter lists their arguments.
+
+	The library keeps frame pointers by default, release builds
+	included, so profilers can walk its stack without DWARF unwinding.
+	--disable-frame-pointers turns this off.
+
 	Throughput within 1.5 times of the Rust originals on the pinned
 	arrange benchmark, at 1, 4 and 16 workers, on a dedicated
 	bare-metal host with the clock pinned: 1.20 to 1.39 times slower on
