@@ -61,15 +61,19 @@ msort(const row_cmp *c, size_t *v, size_t *tmp, size_t n)
 	memcpy(v, tmp, k * sizeof *v);	/* v[j..n) is already in place */
 }
 
-/* Moves out's storage into b (whose old storage out takes) and frees out. */
+/*
+ * Consolidate::consolidate_into's swap: moves out's storage into b and
+ * b's old storage into out, which is left empty with its capacity, so a
+ * caller that keeps out reuses it as the next target.
+ */
 static void
-replace_storage(__dtfl_batch *b, __dtfl_batch *out)
+swap_storage(__dtfl_batch *b, __dtfl_batch *out)
 {
 	__dtfl_vec_swap(&b->arena, &out->arena);
 	__dtfl_vec_swap(&b->offs, &out->offs);
 	__dtfl_vec_swap(&b->times, &out->times);
 	__dtfl_vec_swap(&b->diffs, &out->diffs);
-	__dtfl_batch_release(out);
+	__dtfl_batch_clear(out);
 }
 
 /*
@@ -169,11 +173,12 @@ radix_packed(packed_row *v, packed_row *tmp, size_t n)
  * bytes, and at most one time word.  A record left-aligned in a
  * big-endian word then orders as memcmp does, the lengths tie, and
  * msort_packed is the same stable merge as msort, so the row order comes
- * out identical.  Returns NULL otherwise.  The caller frees the array,
- * which has room for 2n rows (the second half is scratch).
+ * out identical.  Returns NULL otherwise.  The array lives in `scratch`
+ * (a byte vector the caller owns) and has room for 2n rows (the second
+ * half is sort scratch); it is valid until scratch next grows.
  */
 static packed_row *
-sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
+sort_packed(const __dtfl_batch *b, const dtfl_type *rt, __dtfl_vec *scratch)
 {
 	size_t n = __dtfl_batch_len(b), i, len, len0;
 	packed_row *v;
@@ -183,16 +188,16 @@ sort_packed(const __dtfl_batch *b, const dtfl_type *rt)
 	(void)__dtfl_batch_rec(b, 0, &len0);
 	if (len0 > sizeof(uint64_t))
 		return NULL;
-	v = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *v));
+	__dtfl_vec_clear(scratch);
+	__dtfl_vec_reserve(scratch, __dtfl_mul_size(n, 2 * sizeof *v));
+	v = (packed_row *)(void *)scratch->data;
 	for (i = 0; i < n; i++) {
 		const unsigned char *rec = __dtfl_batch_rec(b, i, &len);
 		uint64_t k = 0;
 		size_t j;
 
-		if (len != len0) {
-			__dtfl_free(v);
+		if (len != len0)
 			return NULL;
-		}
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
     (defined(__GNUC__) || defined(__clang__))
 		if (len == 8) {
@@ -275,26 +280,37 @@ fold_packed_t1_int8(__dtfl_batch *out, const __dtfl_batch *b,
 /*
  * consolidate_updates_slice_slow: sort, then accumulate each run of
  * equal (record, time) into its first diff and keep the run only if the
- * sum is non-zero.  b must be uniquely held (it is rewritten).
+ * sum is non-zero.  b must be uniquely held (it is rewritten).  The runs
+ * are rebuilt in `out` (uniquely held, empty, b's tw and dw), whose
+ * storage then replaces b's; out is left empty holding b's old storage.
+ * `scratch` is a byte vector for the sort.  Both are the caller's, so a
+ * caller that keeps them consolidates without allocating once they have
+ * grown (upstream's consolidate_into target).
  */
-void
-__dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
-    const __dtfl_diff_class *dc)
+static void
+consolidate_into(__dtfl_batch *b, const dtfl_type *rt,
+    const __dtfl_diff_class *dc, __dtfl_batch *out, __dtfl_vec *scratch)
 {
 	size_t n = __dtfl_batch_len(b), i, k;
 	size_t *idx, *tmp;
 	row_cmp c = { b, rt };
+	union {
+		max_align_t align;
+		unsigned char bytes[64];
+	} abuf;
 	unsigned char *accum;
-	__dtfl_batch *out;
 	packed_row *v;
 
 	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
 	DTFL_ASSERT(dc->width == b->dw);
+	DTFL_ASSERT(__dtfl_arc_count(&out->ref) == 1 &&
+	    __dtfl_batch_len(out) == 0 && out->arena.len == 0 &&
+	    out->tw == b->tw && out->dw == b->dw && out->elem_drop == NULL);
 	if (n == 0)
 		return;
-	accum = __dtfl_alloc(DTFL_MAX(b->dw, 1u));
-	out = __dtfl_batch_new_reserved(b->tw, b->dw, n, b->arena.len);
-	if ((v = sort_packed(b, rt)) != NULL) {
+	accum = b->dw <= sizeof abuf.bytes ? abuf.bytes : __dtfl_alloc(b->dw);
+	__dtfl_batch_reserve(out, n, b->arena.len);
+	if ((v = sort_packed(b, rt, scratch)) != NULL) {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
     (defined(__GNUC__) || defined(__clang__))
 		if (b->tw == 1 && b->arena.len == 8 * n &&
@@ -314,9 +330,10 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 				    __dtfl_batch_diff(b, v[k].i));
 			push_folded(out, b, v[i].i, dc, accum);
 		}
-		__dtfl_free(v);
 	} else {
-		idx = __dtfl_alloc(__dtfl_mul_size(n, 2 * sizeof *idx));
+		__dtfl_vec_clear(scratch);
+		__dtfl_vec_reserve(scratch, __dtfl_mul_size(n, 2 * sizeof *idx));
+		idx = (size_t *)(void *)scratch->data;
 		tmp = idx + n;
 		for (i = 0; i < n; i++)
 			idx[i] = i;
@@ -332,10 +349,30 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 				    __dtfl_batch_diff(b, idx[k]));
 			push_folded(out, b, idx[i], dc, accum);
 		}
-		__dtfl_free(idx);
 	}
-	replace_storage(b, out);
-	__dtfl_free(accum);
+	swap_storage(b, out);
+	if (accum != abuf.bytes)
+		__dtfl_free(accum);
+}
+
+/* consolidate_updates over a batch, with a target made for the call. */
+void
+__dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
+    const __dtfl_diff_class *dc)
+{
+	__dtfl_batch *out;
+	__dtfl_vec scratch;
+
+	/* Checked before allocating, so a panic leaves nothing behind. */
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	DTFL_ASSERT(dc->width == b->dw);
+	if (__dtfl_batch_len(b) == 0)
+		return;
+	out = __dtfl_batch_new(b->tw, b->dw);
+	__dtfl_vec_init(&scratch, 1);
+	consolidate_into(b, rt, dc, out, &scratch);
+	__dtfl_vec_free(&scratch);
+	__dtfl_batch_release(out);
 }
 
 /* ------------------------------------------------------------------ */
@@ -373,6 +410,9 @@ __dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
 	c->rt = rt;
 	c->dc = dc;
 	c->current = __dtfl_batch_new(tw, (unsigned)dc->width);
+	c->spare = __dtfl_batch_new(tw, (unsigned)dc->width);
+	__dtfl_vec_init(&c->scratch, 1);
+	__dtfl_vec_init(&c->empty, sizeof(__dtfl_batch *));
 	__dtfl_vec_init(&c->outbound, sizeof(__dtfl_batch *));
 	c->cap = default_capacity(rt, tw, dc->width);
 	{
@@ -386,42 +426,45 @@ __dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
 /*
  * consolidate_and_flush_through: consolidates current, then moves its
  * first (len / multiple) * multiple rows to outbound in batches of at
- * most cap rows.  The remainder stays in current.
+ * most cap rows.  The remainder stays in current, moved to its front in
+ * place as drain(..k) leaves it, so current keeps its storage; the
+ * consolidation target is the builder's spare, as Consolidate's
+ * consolidate_into swaps into a kept target.
  */
 static void
 flush_through(__dtfl_consolidator *c, size_t multiple)
 {
-	__dtfl_batch *cur = c->current, *rest, *out;
-	size_t n, end, i, j;
+	__dtfl_batch *cur = c->current, *out;
+	size_t n, end, i, run, avg, len;
 
-	__dtfl_consolidate_batch(cur, c->rt, c->dc);
+	consolidate_into(cur, c->rt, c->dc, c->spare, &c->scratch);
 	n = __dtfl_batch_len(cur);
 	end = n / multiple * multiple;
-	{
-		/* Pre-size each output chunk: cap rows and their arena bytes. */
-		size_t avg = n != 0 ? cur->arena.len / n : 0;
-
-		for (i = 0; i < end; i = j) {
-			size_t run;
-
-			out = __dtfl_batch_new_reserved(cur->tw, cur->dw, c->cap,
-			    c->cap * avg);
-			run = DTFL_MIN(c->cap, end - i);
-			__dtfl_batch_push_run(out, cur, i, run);
-			j = i + run;
-			__dtfl_vec_push(&c->outbound, &out);
-		}
-		if (end == 0)
-			return;
-		/*
-		 * push_into keeps current's capacity at 2 * preferred, so the
-		 * buffer refills without growing.
-		 */
-		rest = __dtfl_batch_new_reserved(cur->tw, cur->dw, 2 * c->cap,
-		    2 * c->cap * avg);
-		__dtfl_batch_push_run(rest, cur, end, n - end);
-		replace_storage(cur, rest);
+	/* Pre-size each output chunk: cap rows and their arena bytes. */
+	avg = n != 0 ? cur->arena.len / n : 0;
+	for (i = 0; i < end; i += run) {
+		/* self.empty.pop().unwrap_or_else(|| with_capacity(preferred)) */
+		if (c->empty.len != 0) {
+			out = *DTFL_VEC_AT(&c->empty, __dtfl_batch *,
+			    c->empty.len - 1);
+			__dtfl_vec_truncate(&c->empty, c->empty.len - 1);
+			__dtfl_batch_reserve(out, c->cap, c->cap * avg);
+		} else
+			out = __dtfl_batch_new_reserved(cur->tw, cur->dw,
+			    c->cap, c->cap * avg);
+		run = DTFL_MIN(c->cap, end - i);
+		__dtfl_batch_push_run(out, cur, i, run);
+		__dtfl_vec_push(&c->outbound, &out);
 	}
+	__dtfl_batch_drain_front(cur, end);
+	/*
+	 * push_into keeps current's capacity at 2 * preferred, so the
+	 * buffer refills without growing.
+	 */
+	len = __dtfl_batch_len(cur);
+	if (len < 2 * c->cap)
+		__dtfl_batch_reserve(cur, 2 * c->cap - len,
+		    (2 * c->cap - len) * avg);
 }
 
 /* push_into: buffers one update; flushes full batches at 2 * cap rows. */
@@ -456,6 +499,28 @@ __dtfl_consolidator_finish(__dtfl_consolidator *c)
 	return __dtfl_consolidator_extract(c);
 }
 
+/*
+ * The most batches the empty stash keeps.  shortcut: a fixed cap, about
+ * one wave of the arrange benchmark's chunks; size it from the flush
+ * rate if a workload churns more.
+ */
+#define CONSOLIDATOR_EMPTY_MAX 16
+
+void
+__dtfl_consolidator_recycle(__dtfl_consolidator *c, __dtfl_batch *b)
+{
+	if (b == NULL)
+		return;
+	if (c->empty.len < CONSOLIDATOR_EMPTY_MAX &&
+	    __dtfl_arc_count(&b->ref) == 1 && b->elem_drop == NULL &&
+	    b->elem_retain == NULL && b->tw == c->current->tw &&
+	    b->dw == c->current->dw) {
+		__dtfl_batch_clear(b);
+		__dtfl_vec_push(&c->empty, &b);
+	} else
+		__dtfl_batch_release(b);
+}
+
 /* Releases the buffer and any batches not yet extracted. */
 void
 __dtfl_consolidator_free(__dtfl_consolidator *c)
@@ -466,6 +531,13 @@ __dtfl_consolidator_free(__dtfl_consolidator *c)
 		__dtfl_batch_release(*DTFL_VEC_AT(&c->outbound,
 		    __dtfl_batch *, i));
 	__dtfl_vec_free(&c->outbound);
+	for (i = 0; i < c->empty.len; i++)
+		__dtfl_batch_release(*DTFL_VEC_AT(&c->empty,
+		    __dtfl_batch *, i));
+	__dtfl_vec_free(&c->empty);
 	__dtfl_batch_release(c->current);
 	c->current = NULL;
+	__dtfl_batch_release(c->spare);
+	c->spare = NULL;
+	__dtfl_vec_free(&c->scratch);
 }

@@ -233,6 +233,20 @@ typedef struct __dtfl_consolidator {
 	const dtfl_type *rt;
 	const __dtfl_diff_class *dc;
 	__dtfl_batch *current;	/* owned; uniquely held */
+	/*
+	 * Owned, uniquely held and empty between calls: the consolidation
+	 * target, which swaps storage with current on every flush, and the
+	 * sort's byte scratch.  Both keep their capacity, so a steady
+	 * builder consolidates without allocating.
+	 */
+	__dtfl_batch *spare;
+	__dtfl_vec scratch;
+	/*
+	 * empty: cleared, uniquely held batches handed back through
+	 * __dtfl_consolidator_recycle, taken before allocating an output
+	 * batch.  Owned.
+	 */
+	__dtfl_vec empty;
 	__dtfl_vec outbound;	/* __dtfl_batch *, owned, FIFO */
 	size_t cap;		/* records per emitted batch */
 } __dtfl_consolidator;
@@ -245,6 +259,13 @@ void __dtfl_consolidator_push(__dtfl_consolidator *c, const void *rec,
 __dtfl_batch *__dtfl_consolidator_extract(__dtfl_consolidator *c);
 /* Flushes everything buffered, then extract(). */
 __dtfl_batch *__dtfl_consolidator_finish(__dtfl_consolidator *c);
+/*
+ * Returns a batch the caller is done with (consumes the reference).  It
+ * is cleared and kept for a later output batch only if it is uniquely
+ * held, has no element hooks, matches the builder's time and diff
+ * widths and the stash has room; otherwise it is released.
+ */
+void __dtfl_consolidator_recycle(__dtfl_consolidator *c, __dtfl_batch *b);
 void __dtfl_consolidator_free(__dtfl_consolidator *c);
 
 /* ------------------------------------------------------------------ */

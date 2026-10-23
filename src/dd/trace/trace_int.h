@@ -626,6 +626,8 @@ void __dtfl_chunker_push(__dtfl_chunker *ch, const void *rec, size_t len,
 /* A finished chunk, owned by the caller, or NULL. */
 __dtfl_batch *__dtfl_chunker_extract(__dtfl_chunker *ch);
 __dtfl_batch *__dtfl_chunker_finish(__dtfl_chunker *ch);
+/* Hands a consumed chunk back for reuse (__dtfl_consolidator_recycle). */
+void __dtfl_chunker_recycle(__dtfl_chunker *ch, __dtfl_batch *b);
 
 /* ------------------------------------------------------------------ */
 /* Spine (spine_fueled.rs): a fuelled geometric stack of batches.      */
