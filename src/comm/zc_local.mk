@@ -12,6 +12,7 @@ zc_sources = \
 	src/comm/spill_file.c \
 	src/comm/zc_push_pull.c \
 	src/comm/zc_tcp.c \
+	src/comm/transport_socket.c \
 	src/comm/zc_allocator.c \
 	src/comm/zc_initialize.c \
 	src/comm/zc_allocator_process.c
@@ -36,3 +37,11 @@ TESTS += tests/pbt/pbt_wire
 tests_pbt_pbt_wire_SOURCES = tests/pbt/pbt_wire.c
 tests_pbt_pbt_wire_CFLAGS = $(PBT_CFLAGS)
 tests_pbt_pbt_wire_LDADD = $(INTERNAL_PBT_LIBS)
+
+# The byte transport (ADR-0013): dtfl_transport_socket.
+dist_man_MANS += man/man3/dtfl_transport.3
+check_PROGRAMS += tests/unit/test_transport
+TESTS += tests/unit/test_transport
+tests_unit_test_transport_SOURCES = tests/unit/test_transport.c
+tests_unit_test_transport_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_transport_LDADD = $(TEST_LIBS)

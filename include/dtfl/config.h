@@ -96,6 +96,59 @@ DTFL_API dtfl_progress_mode dtfl_config_progress_mode(const dtfl_config *cfg);
 DTFL_API uint64_t dtfl_config_seed(const dtfl_config *cfg);
 
 /*
+ * A byte transport between the workers of one execution (ADR-0013): the
+ * port of upstream's Stream trait (zero_copy/stream.rs), which the
+ * network loops are generic over.  One ordered byte stream per peer,
+ * peers numbered 0 .. n-1 as the workers are.  The framing on it is the
+ * cluster's (48-byte MessageHeaders, a zero-length header at the end);
+ * the transport only moves bytes.
+ *
+ *   send      takes up to len bytes for `peer`, storing how many in
+ *             *sent; 0 means "not now".  After a short send, libdtfl next
+ *             offers that peer exactly the unsent rest of the same buffer.
+ *   recv      copies up to cap bytes from `peer` into buf, storing how
+ *             many in *got; 0 means none now.  Returns DTFL_EOF once the
+ *             peer will send nothing more.
+ *   wait      blocks until a peer may have bytes, a peer whose last send
+ *             was short may take more, wake was called, or timeout_ns
+ *             passes (UINT64_MAX: no limit).  Spurious returns are fine.
+ *   wake      makes the current or next wait return.  Any thread may
+ *             call it, at any time until the call using the transport
+ *             returns.
+ *   shutdown  (optional) the end-of-stream header has gone to `peer`.
+ *   destroy   (optional) frees ctx; libdtfl never calls it, the owner
+ *             does.
+ *
+ * send, recv and shutdown return 0 or a DTFL_E* code (DTFL_EIO with
+ * dtfl_last_error_detail() for a failure); a failure panics the worker
+ * with upstream's "timely communication error" message.  See
+ * dtfl_transport(3).
+ */
+typedef struct dtfl_transport {
+	int (*send)(void *ctx, size_t peer, const void *buf, size_t len,
+	    size_t *sent);
+	int (*recv)(void *ctx, size_t peer, void *buf, size_t cap,
+	    size_t *got);
+	void (*wait)(void *ctx, uint64_t timeout_ns);
+	void (*wake)(void *ctx);
+	int (*shutdown)(void *ctx, size_t peer);
+	void (*destroy)(void *ctx);
+	void *ctx;
+} dtfl_transport;
+
+/*
+ * The built-in transport over connected stream sockets: fds[p] reaches
+ * peer p, fds[self] is ignored (pass -1).  socketpair(2) before fork(2)
+ * and TCP sockets the host connected both work.  The descriptors are
+ * made non-blocking and wait uses poll(2) with a self-pipe; the
+ * transport owns the descriptors from now on and its destroy closes
+ * them.  Fails with DTFL_EINVAL or DTFL_EIO, leaving the descriptors
+ * open.
+ */
+DTFL_API int dtfl_transport_socket(const int *fds, size_t nfds, size_t self,
+    dtfl_transport *out);
+
+/*
  * Parses timely's command-line flags at the pin:
  *   -w, --threads NUM     worker threads per process (default 1)
  *   -p, --process IDX     this process's index (default 0)

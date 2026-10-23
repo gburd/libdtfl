@@ -357,7 +357,7 @@ __dtfl_create_sockets(char *const *addresses, size_t processes,
 /* ------------------------------------------------------------------ */
 
 typedef struct net_thread_arg {
-	int fd;
+	const dtfl_transport *t;	/* the guard's; outlives the thread */
 	bool is_send;
 	size_t worker_offset;
 	__dtfl_mpsc **queues;	/* owned by the loop: targets or sources */
@@ -378,6 +378,7 @@ struct __dtfl_comms_guard {
 	size_t n;		/* send/recv thread count (processes - 1) */
 	int *fds;		/* [processes]; closed at join */
 	size_t processes;
+	dtfl_transport t;	/* blocking, over fds; freed at join */
 	net_thread_arg *args;	/* 2 * n */
 	__dtfl_comm_log_hook log_hook;	/* ctx freed after the join */
 };
@@ -398,12 +399,12 @@ net_thread_main(void *v)
 		logger = a->log_hook.log_fn(a->log_hook.ctx, &setup);
 	}
 	if (a->is_send) {
-		__dtfl_tcp_send_loop(a->fd, a->queues, a->nqueues, a->process,
+		__dtfl_tcp_send_loop(a->t, a->queues, a->nqueues, a->process,
 		    a->remote, logger, a->spill);
 		__dtfl_spill_fn_release(a->spill);
 		a->spill = NULL;
 	} else
-		__dtfl_tcp_recv_loop(a->fd, a->queues, a->nqueues,
+		__dtfl_tcp_recv_loop(a->t, a->queues, a->nqueues,
 		    a->worker_offset, a->process, a->remote, logger);
 	return NULL;
 }
@@ -444,6 +445,7 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 	g->n = nremote;
 	g->processes = processes;
 	g->fds = fds;
+	__dtfl_transport_socket_blocking(fds, processes, my_index, &g->t);
 	g->sends = __dtfl_calloc(DTFL_MAX(nremote, 1), sizeof *g->sends);
 	g->recvs = __dtfl_calloc(DTFL_MAX(nremote, 1), sizeof *g->recvs);
 	g->args = __dtfl_calloc(DTFL_MAX(2 * nremote, 1), sizeof *g->args);
@@ -465,12 +467,12 @@ __dtfl_tcp_initialize(__dtfl_allocator_builder **inner, size_t threads,
 		sa = &g->args[2 * started];
 		ra = &g->args[2 * started + 1];
 
-		sa->fd = fds[i];
+		sa->t = &g->t;
 		sa->is_send = true;
 		sa->queues = net_futures[started];	/* send drains these */
 		sa->nqueues = threads;
 		sa->spill = __dtfl_spill_fn_retain(spill);
-		ra->fd = fds[i];
+		ra->t = &g->t;
 		ra->is_send = false;
 		ra->queues = net_promises[started];	/* recv fills these */
 		ra->nqueues = threads;
@@ -513,6 +515,7 @@ __dtfl_comms_guard_join(__dtfl_comms_guard *g)
 		(void)__dtfl_thread_join(g->sends[i]);
 	for (i = 0; i < g->n; i++)
 		(void)__dtfl_thread_join(g->recvs[i]);
+	g->t.destroy(g->t.ctx);
 	for (i = 0; i < g->processes; i++)
 		if (g->fds[i] >= 0)
 			(void)close(g->fds[i]);

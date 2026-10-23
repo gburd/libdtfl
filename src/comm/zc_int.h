@@ -25,6 +25,7 @@
 #define DTFL_ZC_INT_H
 
 #include "comm/comm_int.h"
+#include "dtfl/config.h"
 
 /* ------------------------------------------------------------------ */
 /* networking.rs: MessageHeader                                        */
@@ -363,7 +364,8 @@ typedef struct __dtfl_mq_handoff {
 } __dtfl_mq_handoff;
 
 /*
- * recv_loop: read framed messages from socket `fd` and route the
+ * recv_loop: read framed messages from peer `remote` of transport `t`
+ * (borrowed) and route the
  * payload bytes to the target worker's queue.  `targets` is a vector of
  * __dtfl_mpsc * (one per local worker, size_t threads); each yields the
  * writer handle its worker posted.  Byte views for a message whose
@@ -371,30 +373,40 @@ typedef struct __dtfl_mq_handoff {
  * each t in the range.  A zero-length header is end of stream; a short
  * or malformed frame, a zero read, or data after a clean shutdown
  * panics (upstream's tcp_panic).  Takes ownership of the `targets`
- * vector's storage and the mpsc references in it; does not close `fd`.
+ * vector's storage and the mpsc references in it.
  * `logger` (may be NULL; owned, released at the end) receives the
  * StateEvent start/stop and a MessageEvent per received header.
  */
 struct __dtfl_logger;
-void __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
-    size_t worker_offset, size_t process, size_t remote,
+void __dtfl_tcp_recv_loop(const dtfl_transport *t, __dtfl_mpsc **targets,
+    size_t ntargets, size_t worker_offset, size_t process, size_t remote,
     struct __dtfl_logger *logger);
 
 /*
- * send_loop: drain each local worker's outgoing queue to socket `fd` as
- * framed messages, then write a final zero-length header and shut down
- * the write half.  `sources` is a vector of __dtfl_mpsc * (one per local
+ * send_loop: drain each local worker's outgoing queue to peer `remote`
+ * of transport `t` (borrowed) as framed messages, then write a final
+ * zero-length header and shut down the write half.  `sources` is a vector of __dtfl_mpsc * (one per local
  * worker); the loop creates a MergeQueue pair per source, posts the
  * writer to the worker, and drains the reader.  Each pair's policies
  * come from `spill` (borrowed for the call; NULL for none).  A write
  * failure panics.  Takes ownership of the `sources` vector's storage and
- * references; does not close `fd`.  `logger` (may be NULL; owned,
+ * references.  `logger` (may be NULL; owned,
  * released at the end) receives the StateEvent start/stop and a
  * MessageEvent per sent header.
  */
-void __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
-    size_t process, size_t remote, struct __dtfl_logger *logger,
-    __dtfl_spill_fn *spill);
+void __dtfl_tcp_send_loop(const dtfl_transport *t, __dtfl_mpsc **sources,
+    size_t nsources, size_t process, size_t remote,
+    struct __dtfl_logger *logger, __dtfl_spill_fn *spill);
+
+/*
+ * transport_socket.c: the blocking flavor of the socket transport, for
+ * the cluster's network threads.  fds[p] reaches process p (fds[self]
+ * ignored); the descriptors stay the caller's to close.  The transport's
+ * destroy frees only the struct.  Immutable after creation, so a send
+ * thread and a receive thread may share it.
+ */
+void __dtfl_transport_socket_blocking(const int *fds, size_t nfds,
+    size_t self, dtfl_transport *out);
 
 /* ------------------------------------------------------------------ */
 /* allocator.rs: the TcpAllocator and its builders                     */

@@ -1,0 +1,245 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 23, 2026
+.Dt DTFL_TRANSPORT 3
+.Os
+.Sh NAME
+.Nm dtfl_transport ,
+.Nm dtfl_transport_socket
+.Nd byte streams between the workers of one execution
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/config.h
+.Bd -literal
+typedef struct dtfl_transport {
+	int (*send)(void *ctx, size_t peer, const void *buf,
+	    size_t len, size_t *sent);
+	int (*recv)(void *ctx, size_t peer, void *buf,
+	    size_t cap, size_t *got);
+	void (*wait)(void *ctx, uint64_t timeout_ns);
+	void (*wake)(void *ctx);
+	int (*shutdown)(void *ctx, size_t peer);	/* optional */
+	void (*destroy)(void *ctx);			/* optional */
+	void *ctx;
+} dtfl_transport;
+.Ed
+.Ft int
+.Fn dtfl_transport_socket "const int *fds" "size_t nfds" "size_t self" "dtfl_transport *out"
+.Sh DESCRIPTION
+A
+.Vt dtfl_transport
+carries bytes between one worker and every other worker of an execution
+whose workers live in different processes.
+It is the C form of the
+.Ql Stream
+trait that timely's network layer is generic over: one ordered,
+reliable byte stream to each peer, the way a connected socket is.
+Peers are numbered as the workers are,
+.Li 0
+to
+.Li n \- 1 .
+libdtfl writes the cluster's wire framing on it (48-byte message headers
+and their bodies, ending with a zero-length header); the transport only
+moves the bytes and never looks at them.
+.Pp
+A host supplies its own transport to run workers over the
+interprocess channel it already has, such as PostgreSQL's
+.Ql shm_mq ,
+a ring in shared memory, or a runtime's asynchronous sockets.
+.Bl -tag -width "shutdown"
+.It Fa send
+Takes up to
+.Fa len
+bytes for
+.Fa peer
+and stores how many it took in
+.Fa *sent .
+Zero means
+.Dq not now ,
+not an error.
+After a short send libdtfl offers that peer exactly the unsent rest of
+the same buffer before anything else, which is what
+.Ql shm_mq_send
+with
+.Ql nowait
+requires.
+.It Fa recv
+Copies up to
+.Fa cap
+bytes from
+.Fa peer
+into
+.Fa buf
+and stores the count in
+.Fa *got ;
+zero means none now.
+It returns
+.Dv DTFL_EOF
+once the peer will send nothing more.
+.It Fa wait
+Blocks until a peer may have bytes to receive, a peer whose last
+.Fa send
+was short may take more,
+.Fa wake
+was called, or
+.Fa timeout_ns
+nanoseconds pass
+.Pf ( Dv UINT64_MAX
+is no limit).
+Spurious returns are allowed: libdtfl polls every peer after each
+return.
+.It Fa wake
+Makes the current or the next
+.Fa wait
+return.
+It may be called from any thread, at any time until the call that uses
+the transport returns: libdtfl calls it when a
+.Vt dtfl_sync_activator
+fires from another thread.
+.It Fa shutdown
+Optional.
+Called once per peer after libdtfl has written the end-of-stream header
+to it, so a socket transport can shut down its write half.
+.It Fa destroy
+Optional.
+Frees
+.Fa ctx .
+libdtfl never calls it; the transport belongs to whoever created it, who
+calls it after the execution returns.
+.El
+.Pp
+.Fa send ,
+.Fa recv
+and
+.Fa shutdown
+return 0, or a
+.Dv DTFL_E*
+code with detail for
+.Xr dtfl_last_error_detail 3 .
+An error makes the worker panic with upstream's
+.Dq timely communication error
+message.
+.Pp
+.Fn dtfl_transport_socket
+fills
+.Fa out
+with the built-in transport over connected stream sockets:
+.Fa fds Ns Bq p
+reaches peer
+.Fa p ,
+and
+.Fa fds Ns Bq Fa self
+is ignored (pass \-1).
+Sockets from
+.Xr socketpair 2
+made before
+.Xr fork 2 ,
+and TCP sockets the host connected, both work.
+The descriptors are made non-blocking and close-on-exec;
+.Fa wait
+uses
+.Xr poll 2
+on them and on a self-pipe that
+.Fa wake
+writes.
+From a successful call on, the transport owns the descriptors, and its
+.Fa destroy
+closes them and frees the transport.
+.Sh RETURN VALUES
+.Fn dtfl_transport_socket
+returns 0 on success, or a
+.Dv DTFL_E*
+code, leaving the descriptors open.
+.Sh EXAMPLES
+A transport over PostgreSQL's shared-memory queues, one
+.Ql shm_mq
+in each direction per peer.
+Each queue carries length-prefixed messages, so the transport sends
+what it is given as one message and keeps a partly read message until
+it is used up:
+.Bd -literal -offset indent
+typedef struct pgx {
+	shm_mq_handle **out, **in;  /* [n]; NULL at MyIndex */
+	char **cur; Size *left;     /* the message being read, per peer */
+} pgx;
+
+static int pgx_send(void *c, size_t p, const void *b, size_t len,
+    size_t *sent)
+{
+	shm_mq_result r = shm_mq_send(((pgx *)c)->out[p], len, b,
+	    true, true);  /* nowait; keeps its place on WOULD_BLOCK */
+	if (r == SHM_MQ_DETACHED)
+		return DTFL_EIO;
+	*sent = r == SHM_MQ_SUCCESS ? len : 0;
+	return 0;
+}
+static int pgx_recv(void *c, size_t p, void *buf, size_t cap,
+    size_t *got)
+{
+	pgx *x = c;
+	if (x->left[p] == 0) {
+		Size n; void *d;
+		shm_mq_result r = shm_mq_receive(x->in[p], &n, &d, true);
+		if (r == SHM_MQ_DETACHED)
+			return DTFL_EOF;
+		if (r == SHM_MQ_WOULD_BLOCK) { *got = 0; return 0; }
+		x->cur[p] = d; x->left[p] = n;
+	}
+	*got = Min(cap, x->left[p]);
+	memcpy(buf, x->cur[p], *got);
+	x->cur[p] += *got; x->left[p] -= *got;
+	return 0;
+}
+static void pgx_wait(void *c, uint64_t ns)
+{
+	(void)WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH |
+	    (ns == UINT64_MAX ? 0 : WL_TIMEOUT),
+	    ns == UINT64_MAX ? -1 : (long)(ns / 1000000), PG_WAIT_EXTENSION);
+	ResetLatch(MyLatch);
+	CHECK_FOR_INTERRUPTS();
+}
+static void pgx_wake(void *c) { SetLatch(MyLatch); }
+.Ed
+.Pp
+.Ql shm_mq
+sets the receiver's latch when it writes and the sender's when it
+reads, so the latch wait covers both conditions
+.Fa wait
+must cover.
+.Fn CHECK_FOR_INTERRUPTS
+may
+.Xr longjmp 3
+out, with the consequences described under
+.Sx After a panic
+in
+.Xr dtfl_embedding 7 .
+.Sh ERRORS
+.Bl -tag -width DTFL_EINVAL
+.It Bq Er DTFL_EINVAL
+.Fa fds
+or
+.Fa out
+is
+.Dv NULL ,
+.Fa self
+is not below
+.Fa nfds ,
+or a peer's descriptor is negative.
+.It Bq Er DTFL_EIO
+The self-pipe could not be created or a descriptor's flags set.
+.El
+.Sh SEE ALSO
+.Xr dtfl_config 3 ,
+.Xr dtfl_embedding 7
+.Sh HISTORY
+Timely's network threads are generic over a
+.Ql Stream
+trait implemented for
+.Ql TcpStream
+and
+.Ql UnixStream
+.Pq Pa communication/src/allocator/zero_copy/stream.rs .
+libdtfl's cluster threads run over the socket transport above, in a
+blocking variant; a host's transport serves a worker that moves its own
+bytes, with no network threads.
