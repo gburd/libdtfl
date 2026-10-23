@@ -39,6 +39,20 @@ Version 0.1.0 (unreleased)
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
+	Portability.  The full suite, with ASan, UBSan and TSan, passes on
+	FreeBSD 14 amd64 (clang 21 and gcc 14) and on Linux arm64 (gcc 14
+	and clang 19), as well as Linux x86_64.  FreeBSD fixes: the build
+	with gcc and GNU ld no longer falls back to the Apple
+	exported-symbols list (configure's version-script probe hid
+	environ, which crt1.o exports); two sources that used usleep and
+	INADDR_LOOPBACK, which POSIX.1-2008 lacks, now build.  On FreeBSD a
+	sanitizer build's tests run under proccontrol -m aslr -s disable
+	(gcc's libasan will not start with ASLR on), tests/tsan.supp
+	silences a libthr-internal TSan report, and configure stops on
+	--enable-tsan with gcc, which has no TSan runtime there.  The USDT
+	probes are off on FreeBSD, whose sys/sdt.h is the kernel's.  See
+	"Platform notes" in the manual.
+
 	Embedding fixes.  The allocation hooks never receive a NULL
 	pointer in realloc_fn or free_fn: an empty buffer grows through
 	malloc_fn.  The PostgreSQL hooks in dtfl_embedding(7) used
@@ -78,17 +92,20 @@ Version 0.1.0 (unreleased)
 	keep each channel's FIFO order; DTFL_SIM_SEEDS and DTFL_SIM_JOBS
 	size the run (see the manual's Installation chapter).
 
-	Known issue, inherited from timely 0.31.0: if an input that feeds
-	an exchange is advanced past its first epoch, sent to, flushed,
-	its worker stepped, and the input then closed with nothing sent
-	since, the records still buffered in the exchange are never sent
-	and the dataflow never completes.  Advancing instead of closing
-	delays them until the next send.  Closing or advancing right after
-	the flush, before any step, avoids it.  See dev/upstream-notes.md.
+	Fixed a hang inherited from timely 0.31.0 (timely-dataflow issue
+	#824): if an input that feeds an exchange was advanced, sent to,
+	flushed, its worker stepped, and the input then closed with
+	nothing sent since, the records still buffered in the exchange
+	were never sent and the dataflow never completed.  Advancing
+	instead of closing delayed them until the next send.  The pushing
+	Counter now forwards a flush whenever data went through it since
+	the last flush, where timely forwards one only while the
+	operator's produced counts are undrained.  This is a deliberate
+	divergence from the pin; see dev/upstream-notes.md.
 
 	The input operator no longer asks to be scheduled when it is built,
 	as upstream's does not.  It used to, which made the hang above
-	reachable without the first advance.
+	reachable without an advance.
 
 	USDT static probes under the provider dtfl, for DTrace, SystemTap,
 	bpftrace and perf: operator_start and operator_end, park,

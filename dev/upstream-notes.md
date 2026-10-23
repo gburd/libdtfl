@@ -1,8 +1,9 @@
 # Upstream notes
 
 Things at the pins that look odd, ported as they are
-(`.kiro/steering/porting.md`, "When upstream does something odd").
-Each entry gives the pinned path, what looks wrong, and a reproducer.
+(`.kiro/steering/porting.md`, "When upstream does something odd"),
+unless the entry says libdtfl diverges.  Each entry gives the pinned
+path, what looks wrong, and a reproducer.
 
 ## ChangeBatch::compact keeps a lone zero update
 
@@ -88,14 +89,22 @@ Each entry gives the pinned path, what looks wrong, and a reproducer.
   ```
 
 - Harm at the pin: a dataflow that flushes an input feeding an exchange
-  and is stepped before the epoch closes can hang.  libdtfl ports the
-  Counter as it is (`src/timely/push_counter.c`), so it hangs in the
-  same programs Rust does.  It used to hang in more: its input operator
+  and is stepped before the epoch closes can hang.  It is still on
+  timely master (3012f8f2), and is reported upstream as
+  https://github.com/TimelyDataflow/timely-dataflow/issues/824.
+- libdtfl diverges here (ADR-0012, 2026-10-23; PLAN D12 item 3): a hang
+  reachable with one record is a bug to fix, not behavior to match.
+  `src/timely/push_counter.c` also forwards a flush when it pushed data
+  since the last flush it forwarded, the fix proposed in #824.  It
+  forwards every flush the pin forwards.  `tests/unit/test_input.c`
+  input__advance_flush_step_close_completes is the case above, and
+  hangs without the fix.
+- libdtfl used to reach the hang in more programs: its input operator
   asked for a first schedule when built (the shared op_core in
   `src/timely/builder_raw.c`), which upstream's does not, so `produced`
   was drained before the first epoch closed even without an
   `advance_to`.  The input no longer does
   (`tests/unit/test_input.c` input__flush_step_close_completes).
-- Found by `make check-sim` (notify_multiworker with
-  `DTFL_PBT_FLUSH_STEPS=on`); the pinned case is in
-  `tests/corpus/seeds.txt`.
+- Found by `make check-sim` (notify_multiworker, then behind
+  `DTFL_PBT_FLUSH_STEPS=on`, now drawn by default); the pinned case is
+  in `tests/corpus/seeds.txt`.

@@ -10,8 +10,7 @@
  * (dtfl_config_set_spill_file) end to end on the ProcessBinary and
  * Cluster allocators.
  */
-#define _DEFAULT_SOURCE	/* usleep */
-#define _POSIX_C_SOURCE 200809L	/* opendir in count_fds */
+#define _POSIX_C_SOURCE 200809L	/* opendir in count_fds, nanosleep */
 
 #include "dtfl_test.h"
 #include "comm/zc_int.h"
@@ -29,6 +28,7 @@
 #include <sched.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 /* dtfl_test.h's panic hook is unused here: no spill test expects a panic. */
@@ -447,7 +447,9 @@ spill_worker_fn(dtfl_worker *w, void *ctx)
 			    run->wait_spill[sw->index]), &ss);
 			if (ss.files > 0)
 				break;
-			(void)usleep(1000);
+			struct timespec nap = { 0, 1000000L };
+
+			(void)nanosleep(&nap, NULL);
 		} while (__dtfl_clock_ns() - t0 < UINT64_C(20000000000));
 	}
 	while (dtfl_worker_step_or_park(w, UINT64_MAX))
@@ -587,7 +589,8 @@ pick_port(void)
 		return -1;
 	memset(&sa, 0, sizeof sa);
 	sa.sin_family = AF_INET;
-	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	/* 127.0.0.1: POSIX.1-2008 has no INADDR_LOOPBACK (FreeBSD hides it). */
+	sa.sin_addr.s_addr = htonl(0x7f000001);
 	if (bind(fd, (struct sockaddr *)&sa, sizeof sa) != 0 ||
 	    getsockname(fd, (struct sockaddr *)&sa, &len) != 0) {
 		(void)close(fd);

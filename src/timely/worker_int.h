@@ -109,6 +109,15 @@ struct __dtfl_worker {
 	 * effort the default exert logic applies; 0 is None.
 	 */
 	size_t idle_merge_effort;
+	/*
+	 * Spare messages, capabilities and sessions, reused by this worker's
+	 * operators (handles.c, push_progress.c, pull_counter.c).  Only this
+	 * worker's thread touches them.  A message that reaches another
+	 * worker is freed there through the hooks, never put on its list.
+	 */
+	__dtfl_freelist msg_pool;
+	__dtfl_freelist cap_pool;
+	__dtfl_freelist session_pool;
 	uintptr_t owner;		/* debug owner check (__dtfl_thread_self) */
 	int stepping;			/* reentrancy guard (PLAN section 5, rule 6) */
 };

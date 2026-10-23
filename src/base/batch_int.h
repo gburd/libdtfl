@@ -164,9 +164,21 @@ typedef struct __dtfl_batch {
 } __dtfl_batch;
 
 __dtfl_batch *__dtfl_batch_new(unsigned time_words, unsigned diff_bytes);
-/* A new batch with room for `rows` records and `bytes` arena bytes. */
+/*
+ * A new batch with room for `rows` records and `bytes` arena bytes, in
+ * one allocation: the struct and the reserved columns share a block, and
+ * freeing it is one free.  Pushing past the reservation still works (the
+ * column that outgrows its share moves to its own allocation, once).
+ */
 __dtfl_batch *__dtfl_batch_new_reserved(unsigned time_words,
     unsigned diff_bytes, size_t rows, size_t bytes);
+/*
+ * Replaces dst's rows with src's and leaves src empty, both uniquely held
+ * with the same tw and dw and no element hooks.  dst's old storage passes
+ * to src where it can (separately allocated columns trade places); a
+ * column in a one-block batch's block stays there and is copied into.
+ */
+void __dtfl_batch_move_rows(__dtfl_batch *dst, __dtfl_batch *src);
 /*
  * Marks an arena as holding owning record pointers: release runs `drop`
  * on each record (and clear/make_mut keep the invariant), `retain` is run
@@ -242,6 +254,20 @@ __dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
 }
 /* Reserves room for `rows` more records and `bytes` more arena bytes. */
 void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
+/*
+ * ensure_capacity for a buffer that flushes once it holds `cap_bytes` of
+ * records (no time or diff columns), made at the first push of a record
+ * of `len` bytes: one block with room for that many records of that size
+ * (counting each as at least a word) and the bytes of one record past
+ * the threshold, so a buffer of like-sized records never regrows.
+ */
+static inline __dtfl_batch *
+__dtfl_batch_new_buffer(size_t cap_bytes, size_t len)
+{
+	return __dtfl_batch_new_reserved(0, 0,
+	    cap_bytes / (len > sizeof(size_t) ? len : sizeof(size_t)) + 1,
+	    cap_bytes + len);
+}
 /* Appends record i of src. */
 void __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i);
 /* Appends records [i, i + count) of src in bulk (b != src). */

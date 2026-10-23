@@ -6,8 +6,9 @@
 # a stalled make.  DTFL_TEST_TIMEOUT sets the limit in seconds (default
 # 600; 0 disables it).  A test that exceeds it is killed, its log says
 # so, and it exits 124, which the automake driver reports as FAIL.  Any
-# DTFL_TEST_WRAPPER configure chose (setarch -R under TSan) still runs
-# inside the limit.  Exit 77 (SKIP) and 99 (hard error) pass through.
+# DTFL_TEST_WRAPPER configure chose (setarch -R under TSan on Linux,
+# proccontrol -m aslr -s disable under any sanitizer on FreeBSD) still
+# runs inside the limit.  Exit 77 (SKIP) and 99 (hard error) pass through.
 limit="${DTFL_TEST_TIMEOUT:-600}"
 case $limit in
 ''|*[!0-9]*) echo "run-test: DTFL_TEST_TIMEOUT must be a number of seconds" >&2; exit 99 ;;

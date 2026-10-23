@@ -101,7 +101,8 @@ input_cap_delayed(dtfl_op *op, size_t input, size_t output, const uint64_t *t)
 		if (dtfl_summary_results_in(op->tc, summaries + (size_t)k * sw,
 		    op->cur_time, result) &&
 		    dtfl_time_less_equal(op->tc, result, t))
-			return __dtfl_cap_new(op->tc, t, op->internals[output], output);
+			return __dtfl_cap_new_pooled(&op->worker->cap_pool,
+			    op->tc, t, op->internals[output], output);
 	}
 	__dtfl_panic("Attempted to delay to a time not greater or equal to the "
 	    "operator's input-output summary applied to the capability's time");
@@ -158,12 +159,19 @@ dtfl_op_frontier_less_than(const dtfl_op *op, size_t input, const uint64_t *t)
 struct dtfl_session {
 	dtfl_output *out;		/* not owned */
 	uint64_t time[DTFL_TIME_MAX];
-	__dtfl_batch *buffer;		/* records at `time`; owned */
+	__dtfl_batch *buffer;		/* records at `time`; owned; NULL until a push */
 	size_t cap_bytes;		/* flush threshold */
 	/* Owning-record hooks propagated to every flushed buffer (NULL off). */
 	void (*elem_drop)(void *rec);
 	void (*elem_retain)(void *rec);
+	__dtfl_freelist *pool;		/* the worker's; close returns s here */
 };
+
+size_t
+__dtfl_session_size(void)
+{
+	return sizeof(dtfl_session);
+}
 
 dtfl_session *
 dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
@@ -176,10 +184,12 @@ dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
 	o = &op->outputs_arr[output];
 	if (!__dtfl_output_valid(o, cap))
 		__dtfl_panic("Attempted to open output session with invalid capability");
-	s = __dtfl_alloc(sizeof *s);
+	/* A session lives within one logic call; reuse the worker's spare. */
+	s = __dtfl_freelist_get(&op->worker->session_pool);
+	s->pool = &op->worker->session_pool;
 	s->out = o;
 	__dtfl_time_copy(o->tc, s->time, dtfl_cap_time(cap));
-	s->buffer = __dtfl_batch_new(0, 0);
+	s->buffer = NULL;
 	s->cap_bytes = DTFL_BUFFER_SIZE_BYTES;
 	s->elem_drop = NULL;
 	s->elem_retain = NULL;
@@ -199,26 +209,26 @@ __dtfl_session_set_batch_ptr_hooks(dtfl_session *s, void (*drop)(void *rec),
 {
 	s->elem_drop = drop;
 	s->elem_retain = retain;
-	__dtfl_batch_set_elem_hooks(s->buffer, drop, retain);
+	if (s->buffer != NULL)
+		__dtfl_batch_set_elem_hooks(s->buffer, drop, retain);
 }
 
+/* Sends the buffer, if any; the next push starts a new one. */
 static void
 session_flush(dtfl_session *s)
 {
-	if (__dtfl_batch_len(s->buffer) == 0)
+	if (s->buffer == NULL)
 		return;
 	__dtfl_output_give(s->out, s->time, s->buffer);	/* consumes buffer */
-	s->buffer = __dtfl_batch_new(0, 0);
-	if (s->elem_drop != NULL || s->elem_retain != NULL)
-		__dtfl_batch_set_elem_hooks(s->buffer, s->elem_drop,
-		    s->elem_retain);
+	s->buffer = NULL;
 }
 
 /*
  * ensure_capacity (container/src/lib.rs): before a push into an empty
  * buffer, reserve the flush threshold's worth of record bytes, as the
- * container builder reserves its preferred capacity.  A session that
- * never pushes reserves no record bytes.
+ * container builder reserves its preferred capacity.  The buffer is made
+ * here, at the first push, as one block of that size, so a session that
+ * never pushes allocates no buffer.
  */
 static inline void
 session_ensure_capacity(dtfl_session *s, size_t len)
@@ -226,13 +236,14 @@ session_ensure_capacity(dtfl_session *s, size_t len)
 	/*
 	 * Room for the flush threshold's worth of records of the first
 	 * record's size (default_capacity::<T>() for a fixed-size T), so the
-	 * offset column does not regrow either.  Records count as at least
-	 * a word, which keeps the offsets no larger than the arena.
+	 * offset column does not regrow either.
 	 */
-	if (s->buffer->arena.cap == 0)
-		__dtfl_batch_reserve(s->buffer,
-		    s->cap_bytes / DTFL_MAX(len, sizeof(size_t)) + 1,
-		    s->cap_bytes);
+	if (s->buffer == NULL) {
+		s->buffer = __dtfl_batch_new_buffer(s->cap_bytes, len);
+		if (s->elem_drop != NULL || s->elem_retain != NULL)
+			__dtfl_batch_set_elem_hooks(s->buffer, s->elem_drop,
+			    s->elem_retain);
+	}
 }
 
 void
@@ -248,7 +259,7 @@ void *
 __dtfl_session_reserve(dtfl_session *s, size_t len)
 {
 	/* Flush first so the returned record stays in a stable buffer. */
-	if (__dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
+	if (s->buffer != NULL && __dtfl_batch_bytes(s->buffer) >= s->cap_bytes)
 		session_flush(s);
 	session_ensure_capacity(s, len);
 	return __dtfl_batch_push_uninit(s->buffer, len, NULL, NULL);
@@ -295,7 +306,7 @@ dtfl_session_close(dtfl_session *s)
 	session_flush(s);
 	__dtfl_batch_release(s->buffer);
 	__dtfl_output_done(s->out);	/* ProgressSession drop: flush the chain */
-	__dtfl_free(s);
+	__dtfl_freelist_put(s->pool, s);
 }
 
 /* ------------------------------------------------------------------ */

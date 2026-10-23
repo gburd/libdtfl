@@ -50,11 +50,27 @@ struct dtfl_message {
 	size_t from;
 	size_t seq;
 	unsigned depth;	/* words in time */
+	/*
+	 * The address of the worker free list this block came from, as an
+	 * integer (0: a plain hook allocation).  Only compared, never
+	 * dereferenced: the message may outlive that worker.
+	 */
+	uintptr_t pool;
 };
 
 dtfl_message *__dtfl_message_new(const dtfl_time_class *tc, const uint64_t *time,
     __dtfl_batch *data);
+/* As __dtfl_message_new, the block taken from the worker's free list. */
+dtfl_message *__dtfl_message_new_pooled(__dtfl_freelist *pool,
+    const dtfl_time_class *tc, const uint64_t *time, __dtfl_batch *data);
+/* Releases m's batch and frees m through the hooks.  Any thread. */
 void __dtfl_message_free(dtfl_message *m);
+/*
+ * As __dtfl_message_free, on the thread of the worker that owns `pool`:
+ * m goes back on `pool` only if it came from it, so a message from
+ * another worker never enters this worker's list.
+ */
+void __dtfl_message_free_local(dtfl_message *m, __dtfl_freelist *pool);
 
 /*
  * The static message class for data channels.  The time depth is encoded
@@ -111,6 +127,9 @@ __dtfl_pull_counter *__dtfl_pull_counter_new(__dtfl_pull *inner,
 /* Repoints the consumed batch after the builder relocates it. */
 void __dtfl_pull_counter_set_consumed(__dtfl_pull_counter *c,
     __dtfl_change_batch *consumed);
+/* The free list of the worker running this counter (NULL: none). */
+void __dtfl_pull_counter_set_pool(__dtfl_pull_counter *c,
+    __dtfl_freelist *pool);
 void __dtfl_pull_counter_free(__dtfl_pull_counter *c);
 /*
  * Pulls the next message, recording the previous message's consumption
@@ -155,6 +174,7 @@ struct dtfl_output {
 	size_t port;
 	const dtfl_time_class *tc;	/* not retained */
 	const dtfl_type *type;		/* record type, not retained */
+	__dtfl_freelist *msg_pool;	/* the worker's; NULL: plain allocation */
 };
 
 /* True if `cap` is valid for this output (progress.rs valid). */
@@ -171,6 +191,8 @@ void __dtfl_output_done(dtfl_output *o);
  * stays valid until the next give/reserve or the session closes.
  */
 void *__dtfl_session_reserve(dtfl_session *s, size_t len);
+/* sizeof(dtfl_session), for the worker's session free list. */
+size_t __dtfl_session_size(void);
 
 /*
  * Mark this session's records as owning pointers (the batch-pointer
@@ -242,9 +264,20 @@ struct dtfl_cap {
 	uint64_t time[DTFL_TIME_MAX];
 	__dtfl_change_batch *internal;	/* not owned */
 	size_t port;
+	/*
+	 * The worker free list this block returns to on drop, or NULL for a
+	 * plain allocation.  Set only for capabilities on an operator's
+	 * internal batch, which are dropped before the operator (and so
+	 * before the worker) is freed.
+	 */
+	__dtfl_freelist *pool;
 };
 
 dtfl_cap *__dtfl_cap_new(const dtfl_time_class *tc, const uint64_t *time,
+    __dtfl_change_batch *internal, size_t port);
+/* As __dtfl_cap_new, from (and, with its clones, back to) `pool`. */
+dtfl_cap *__dtfl_cap_new_pooled(__dtfl_freelist *pool,
+    const dtfl_time_class *tc, const uint64_t *time,
     __dtfl_change_batch *internal, size_t port);
 
 /* ------------------------------------------------------------------ */
