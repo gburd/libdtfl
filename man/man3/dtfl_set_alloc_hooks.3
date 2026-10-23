@@ -31,11 +31,20 @@ It must be called before libdtfl allocates anything, and at most once.
 Passing
 .Dv NULL
 restores the libc allocator, again only before first use.
-The hooks must return memory aligned as
+The hooks must return memory aligned for libdtfl's own objects:
+the alignment of
+.Vt uint64_t ,
+.Vt double ,
+pointers and C11 atomics of those, which is 8 bytes on common 64-bit
+platforms.
 .Xr malloc 3
-returns it, for any object type
-.Pq Vt max_align_t ;
-libdtfl stores atomic counters and arbitrary records in it.
+and PostgreSQL's
+.Fn palloc
+both qualify.
+A user record or difference type that needs more
+.Pq Vt long double , Vt __int128 , vector types
+is stored in that memory, so it needs an allocator that aligns to
+.Vt max_align_t .
 .Pp
 libdtfl never calls
 .Fa realloc_fn
@@ -82,9 +91,15 @@ Nothing reached from that worker may be used again, including
 .Fn dtfl_worker_step
 and
 .Fn dtfl_worker_free .
-Discard it by releasing its memory wholesale (for example by deleting
+Discard it by releasing its memory wholesale (for example by resetting
 the host memory context the allocation hooks draw from), and build a
 new worker if the computation is still needed.
+The hooks are set once per process, so whatever
+.Fa ctx
+names must stay valid for the next worker: reset a context rather than
+deleting it, or have
+.Fa ctx
+point at a variable the host updates.
 With
 .Fn dtfl_execute ,
 the whole execution is lost, since its workers share state.

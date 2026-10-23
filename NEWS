@@ -29,7 +29,7 @@ Version 0.1.0 (unreleased)
 	server's contract so a broken hook fails make check.  The manual
 	and dtfl_set_panic_hook(3) now say what a longjmping panic hook
 	leaves behind: the worker is unusable and must be discarded, for
-	example by deleting its memory context.  Thread hooks must start
+	example by resetting its memory context.  Thread hooks must start
 	threads in the same process, so a PostgreSQL background worker
 	cannot back them; the earlier documentation said it could.
 	man dtfl_set_panic_hook now finds its page.

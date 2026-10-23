@@ -7,8 +7,8 @@
  * This shows how a host embeds libdtfl through the four host hooks
  * documented in dtfl_embedding(7): allocation, panic, the diagnostic
  * log, and thread creation.  It is a skeleton, not a loadable module:
- * the PostgreSQL symbols (palloc, pfree, repalloc, ereport, elog,
- * MemoryContext, the bgworker API, sigsetjmp/PG_exception_stack) are
+ * the PostgreSQL symbols (MemoryContextAllocHuge, repalloc_huge,
+ * pfree, ereport, elog, sigsetjmp/PG_exception_stack) are
  * stubbed here so the example compiles and runs with no PostgreSQL
  * installed, while the mapping to the real symbols is spelled out in
  * each hook.  To turn this into a real extension, delete the stubs,
@@ -42,8 +42,8 @@
 /* elog/ereport levels.  The real values come from utils/elog.h. */
 enum { PG_DEBUG1, PG_LOG, PG_WARNING, PG_ERROR };
 
-/* MaxAllocSize and MaxAllocHugeSize from utils/memutils.h. */
-#define PG_MAX_ALLOC_SIZE	((size_t)0x3fffffff)	/* 1 GB - 1 */
+/* MaxAllocHugeSize from utils/memutils.h.  (MaxAllocSize, the
+ * limit of plain palloc and repalloc, is 1 GB - 1: too small.) */
 #define PG_MAX_ALLOC_HUGE_SIZE	(SIZE_MAX / 2)
 
 static void pg_stub_fatal(const char *what);
@@ -121,14 +121,18 @@ pg_stub_fatal(const char *what)
 
 /*
  * 1. Allocation -> MemoryContextAllocHuge / repalloc_huge / pfree in
- * one long-lived context made for the dataflow (in a real extension,
- * AllocSetContextCreate(TopMemoryContext, "dtfl", ...), passed as ctx).
- * Every byte lives in that context, so discarding the worker after an
- * error is MemoryContextDelete (see the panic hook).  The _huge forms
- * matter: plain palloc stops at 1 GB.  libdtfl never passes NULL to
- * realloc_fn or free_fn, but the realloc hook checks anyway, so it is
- * also safe with an older libdtfl.  palloc ereport(ERROR)s on OOM
- * rather than returning NULL, which unwinds like a panic.
+ * a context made for the dataflow (in a real extension,
+ * AllocSetContextCreate(TopMemoryContext, "dtfl", ...)).  The hooks
+ * are set once per process, so ctx is the address of the variable
+ * naming the current context, not a context: a host with several
+ * workers points it at a worker's context before calling into that
+ * worker.  Every byte lives in that context, so discarding the worker
+ * after an error is MemoryContextReset, which keeps the context valid
+ * for the rebuild (see the panic hook).  The _huge forms matter: plain
+ * palloc stops at 1 GB.  libdtfl never passes NULL to realloc_fn or
+ * free_fn, but the realloc hook checks anyway, so it is also safe with
+ * an older libdtfl.  palloc ereport(ERROR)s on OOM rather than
+ * returning NULL, which unwinds like a panic.
  */
 static void *
 hook_malloc(size_t size, void *ctx)
@@ -160,10 +164,11 @@ hook_free(void *p, void *ctx)
  * The longjmp leaves the worker in an unknown state: a structure half
  * updated, a mutex held.  Nothing reached from it may be used again,
  * not even freed with dtfl_worker_free.  The catch site discards the
- * worker by deleting its memory context, and rebuilds from durable
+ * worker by resetting its memory context, and rebuilds from durable
  * state if it needs the dataflow again.  The same holds for an
  * ereport(ERROR) raised inside a callback libdtfl calls (an operator
- * function, a sink, the log hook): it unwinds through libdtfl's frames.
+ * function, a sink, the log hook): it unwinds through libdtfl's frames,
+ * which is why the log hook below never raises ERROR.
  */
 static void
 hook_panic(const char *msg, void *ctx)
@@ -325,9 +330,10 @@ main(void)
 
 	/* PG_TRY: a libdtfl panic longjmps here via the panic hook, so the
 	 * query errors out cleanly instead of crashing the backend.  The
-	 * worker is then unusable: PG_CATCH deletes the dtfl memory context
-	 * (MemoryContextDelete), which frees every byte the worker held,
-	 * and never calls into it again.  The hooks stay installed. */
+	 * worker is then unusable: PG_CATCH resets the dtfl memory context
+	 * (MemoryContextReset), which frees what the worker held on Linux,
+	 * and never calls into it again.  The context, and so the hooks,
+	 * stay valid for a rebuild. */
 	pg_in_try = 1;
 	if (sigsetjmp(pg_error_jmp, 1) != 0) {
 		pg_in_try = 0;

@@ -18,16 +18,36 @@ dtflinclude_HEADERS += include/dtfl/base.h include/dtfl/dtfl.h \
 	include/dtfl/record.h
 dist_man_MANS += man/man3/dtfl_set_alloc_hooks.3 man/man3/dtfl_strerror.3 \
 	man/man3/dtfl_type.3 man/man3/dtfl_put_u64.3 man/man7/dtfl.7
-# dtfl_set_panic_hook is documented in dtfl_set_alloc_hooks(3); install
-# the name as a link so man(1) and the pages' cross-references find it.
-install-data-hook: install-base-man-links
-uninstall-hook: uninstall-base-man-links
-install-base-man-links:
-	cd $(DESTDIR)$(man3dir) && rm -f dtfl_set_panic_hook.3 && \
-	    $(LN_S) dtfl_set_alloc_hooks.3 dtfl_set_panic_hook.3
-uninstall-base-man-links:
-	rm -f $(DESTDIR)$(man3dir)/dtfl_set_panic_hook.3
-.PHONY: install-base-man-links uninstall-base-man-links
+# A page documents several functions (its .Nm lines); install each
+# other name as a link to the page, so man(1) and the pages' .Xr
+# cross-references find it.  tests/dist/test_docs.sh checks that every
+# .Xr target is a page or such a name.
+install-data-hook: install-man-links
+uninstall-hook: uninstall-man-links
+install-man-links:
+	@for f in $(dist_man_MANS); do \
+	  case $$f in man/man3/*.3) ;; *) continue ;; esac; \
+	  page=`basename $$f`; \
+	  for n in `$(AWK) '$$1 == ".Nm" { sub(/,$$/, "", $$2); print $$2 }' \
+	      "$(srcdir)/$$f"`; do \
+	    [ "$$n.3" = "$$page" ] && continue; \
+	    [ -f "$(srcdir)/man/man3/$$n.3" ] && continue; \
+	    (cd "$(DESTDIR)$(man3dir)" && rm -f "$$n.3" && \
+	      $(LN_S) "$$page" "$$n.3") || exit 1; \
+	  done; \
+	done
+uninstall-man-links:
+	@for f in $(dist_man_MANS); do \
+	  case $$f in man/man3/*.3) ;; *) continue ;; esac; \
+	  page=`basename $$f`; \
+	  for n in `$(AWK) '$$1 == ".Nm" { sub(/,$$/, "", $$2); print $$2 }' \
+	      "$(srcdir)/$$f"`; do \
+	    [ "$$n.3" = "$$page" ] && continue; \
+	    [ -f "$(srcdir)/man/man3/$$n.3" ] && continue; \
+	    rm -f "$(DESTDIR)$(man3dir)/$$n.3"; \
+	  done; \
+	done
+.PHONY: install-man-links uninstall-man-links
 EXTRA_DIST += src/base/exports.sym
 
 check_PROGRAMS += tests/unit/test_base

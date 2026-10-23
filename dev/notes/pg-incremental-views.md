@@ -337,16 +337,23 @@ What that means per placement:
 
 - **Placement 1** builds and drops the dataflow inside the transaction,
   so an error costs nothing beyond the transaction it already aborts.
-  Allocate in a context that the abort resets.
+  The allocation hooks are process-wide and hold the address of a
+  context variable (`dtfl_embedding(7)`); point it at a fresh child of
+  `TopTransactionContext` before building, so the abort frees it.
 - **Placement 2** loses the worker, and with it every arrangement it
   holds.  One error rebuilds every view in that worker, by the same
   path as section 4.5's restart recovery.  The maintenance worker must
   therefore allocate all libdtfl memory in one dedicated context made
   for it (a child of `TopMemoryContext`, not a per-transaction context),
-  delete that context in its `PG_CATCH`, and rebuild from the view
-  tables at their `last_n`.  The backend whose commit was in flight
-  gets an error and its transaction aborts, so no view table is left
-  inconsistent.
+  reset that context with `MemoryContextReset` in its `PG_CATCH` (not
+  delete it: the hooks keep pointing at it), and rebuild from the view
+  tables at their `last_n`.  A backend still waiting for its `dMV(n)` is
+  before commit, so it gets an error and its transaction aborts, and no
+  view table is left inconsistent.  The confirm sent from the
+  `XACT_EVENT_COMMIT` callback is different: an `ERROR` there becomes a
+  `PANIC`, so that callback must not raise one when the worker is gone
+  or rebuilding; it leaves the confirmation to the worker's recovery,
+  which reads `last_n`.
 
 To keep the blast radius small:
 
@@ -357,7 +364,11 @@ To keep the blast radius small:
   and the worker raises it after `dtfl_worker_step` returns.
 - Partition views across workers (one worker per view, or per group of
   views over the same base tables), each with its own context, so one
-  error rebuilds one group.
+  error rebuilds one group.  The worker selects a group's context
+  (sets the hooks' context variable) before every call into that
+  group's libdtfl worker, creates every object the group uses while it
+  is selected, and shares none across groups.
+- The log hook maps `DTFL_LOG_ERROR` to `LOG`, never `ERROR`.
 - Allocation hooks use `MemoryContextAllocHuge` and `repalloc_huge`:
   plain `palloc` refuses requests over 1 GB, and a large arrangement's
   columns grow past that.  `repalloc` and `pfree` reject `NULL`;

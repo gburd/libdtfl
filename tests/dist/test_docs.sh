@@ -53,6 +53,21 @@ if [ -n "$undoc" ]; then
 	fail=1
 fi
 
+# Every .Xr dtfl_* cross-reference must reach a page: a file of that
+# name, or an .Nm name of another page, which make install links.
+pages=$(ls "$top"/man/man3/ 2>/dev/null | sed -n 's/\.3$//p')
+xrefs=$(cat "$top"/man/man[1-7]/*.[1-7] 2>/dev/null \
+	| awk '$1 == ".Xr" && $2 ~ /^dtfl/ && $3 ~ /^3/ {print $2}' | sort -u)
+dangling=""
+for x in $xrefs; do
+	printf '%s\n' "$pages" "$documented" | grep -qx "$x" || dangling="$dangling $x"
+done
+if [ -n "$dangling" ]; then
+	echo "[docs] FAIL: .Xr targets with no man page and no .Nm entry:"
+	printf '    %s\n' $dangling
+	fail=1
+fi
+
 MANDOC="${MANDOC:-$(command -v mandoc 2>/dev/null)}"
 if [ -z "$MANDOC" ]; then
 	for m in /nix/store/*-mandoc-*/bin/mandoc; do [ -x "$m" ] && MANDOC="$m"; done
