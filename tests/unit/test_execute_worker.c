@@ -20,8 +20,9 @@
  *     segment, woken by a latch.
  *
  * Each child also checks that libdtfl started no thread: a counting
- * spawn hook must stay at zero and, on Linux, /proc/self/task must
- * still hold one entry when the execution returns.
+ * spawn hook must stay at zero and, on Linux, /proc/self/task must hold
+ * as many entries when the execution returns as when the child started
+ * (one, outside sanitizer runtimes).
  */
 #if defined(__linux__)
 #define _GNU_SOURCE
@@ -179,6 +180,7 @@ typedef struct report {
 } report;
 
 static int report_fd = -1;
+static int tasks_at_start = -1;	/* this child's threads before libdtfl */
 
 /* A child that panics reports the message, so the parent can show it. */
 static void
@@ -203,7 +205,12 @@ child_finish(int fd, int rc, const wctx *c)
 	memset(&r, 0, sizeof r);
 	r.rc = rc;
 	r.spawns = atomic_load(&spawns);
-	r.tasks = task_count();
+	/*
+	 * Threads libdtfl added.  Compared with the count at the child's
+	 * start, not with 1: a sanitizer runtime may own a thread of its
+	 * own in every process.
+	 */
+	r.tasks = tasks_at_start < 0 ? -1 : task_count() - tasks_at_start;
 	r.count = c->count;
 	r.sum = c->sum;
 	r.misrouted = c->misrouted;
@@ -233,7 +240,7 @@ collect(pid_t *pids, int *rd, size_t n)
 		assert_int(r.rc, ==, 0);
 		assert_int(r.spawns, ==, 0);
 		if (r.tasks >= 0)
-			assert_int(r.tasks, ==, 1);
+			assert_int(r.tasks, ==, 0);
 		assert_ullong(r.misrouted, ==, 0);
 		count += r.count;
 		sum += r.sum;
@@ -250,6 +257,7 @@ child_setup(int fd)
 
 	alarm(60);
 	report_fd = fd;
+	tasks_at_start = task_count();
 	dtfl_set_panic_hook(child_panic, NULL);
 	(void)dtfl_set_thread_hooks(&th);
 }
