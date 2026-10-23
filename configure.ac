@@ -130,10 +130,32 @@ AC_ARG_ENABLE([ubsan],
 AC_ARG_ENABLE([tsan],
 	[AS_HELP_STRING([--enable-tsan], [build with ThreadSanitizer])],
 	[AS_IF([test "x$enableval" = xyes], [DTFL_SAN_FLAGS="$DTFL_SAN_FLAGS -fsanitize=thread"])])
+# Fail here, not halfway through make, when the compiler has no runtime
+# for a sanitizer (gcc on FreeBSD has no libtsan).
+AS_IF([test -n "$DTFL_SAN_FLAGS"],
+	[AC_CACHE_CHECK([whether $CC links with$DTFL_SAN_FLAGS], [dtfl_cv_san_link],
+		[save_CFLAGS="$CFLAGS" save_LDFLAGS="$LDFLAGS"
+		 CFLAGS="$CFLAGS $DTFL_SAN_FLAGS" LDFLAGS="$LDFLAGS $DTFL_SAN_FLAGS"
+		 AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+			[dtfl_cv_san_link=yes], [dtfl_cv_san_link=no])
+		 CFLAGS="$save_CFLAGS" LDFLAGS="$save_LDFLAGS"])
+	 AS_IF([test "x$dtfl_cv_san_link" != xyes],
+		[AC_MSG_ERROR([$CC cannot link with$DTFL_SAN_FLAGS; its sanitizer runtime is missing on this platform (see config.log)])])])
+# The tests of a sanitizer build run with address randomization off.
+# Linux: ThreadSanitizer cannot map its shadow under high-entropy ASLR,
+# so TSan tests run under setarch -R.  FreeBSD has no setarch; its
+# proccontrol does the same, and gcc's libasan there refuses to start
+# at all with ASLR on ("not compatible with enabled ASLR"), so every
+# sanitizer build uses it.  The setting is inherited by child processes,
+# so the shell-script tests' programs run without ASLR too.
 DTFL_TEST_WRAPPER=""
-AS_CASE(["$DTFL_SAN_FLAGS"], [*thread*],
+AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	[AC_CHECK_PROG([SETARCH], [setarch], [setarch])
-	 AS_IF([test -n "$SETARCH"], [DTFL_TEST_WRAPPER="setarch `uname -m` -R"])])
+	 AC_CHECK_PROG([PROCCONTROL], [proccontrol], [proccontrol])
+	 AS_CASE(["$DTFL_SAN_FLAGS"], [*thread*],
+		[AS_IF([test -n "$SETARCH"], [DTFL_TEST_WRAPPER="setarch `uname -m` -R"])])
+	 AS_IF([test -z "$DTFL_TEST_WRAPPER" && test -n "$PROCCONTROL"],
+		[DTFL_TEST_WRAPPER="proccontrol -m aslr -s disable"])])
 AC_SUBST([DTFL_TEST_WRAPPER])
 AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	[CFLAGS="$CFLAGS $DTFL_SAN_FLAGS -fno-omit-frame-pointer -g"

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# tests/tsan.supp: ThreadSanitizer suppressions for make check.
+#
+# FreeBSD libthr: pthread_mutex_init and pthread_cond_init allocate the
+# lock with libthr's private allocator (thr_malloc.c), which serializes
+# on an internal umtx lock that TSan does not intercept.  A block one
+# thread frees and another reuses then looks like a race on calloc's
+# memset.  Each pattern matches only a report with that libthr frame
+# on its stack.
+race:__thr_calloc
+race:__thr_malloc
+race:__thr_realloc
+race:__thr_free
