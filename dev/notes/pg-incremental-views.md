@@ -322,6 +322,59 @@ update never committed, and the rebuild starts from the committed state.
 libdtfl's trace spill is a memory tool, not a durability mechanism, and
 is not used for recovery.
 
+### 4.6 Errors inside the engine
+
+The panic hook maps a libdtfl panic (a contract violation, or allocation
+failure) to `ereport(ERROR)`, which longjmps out.  That leaves the
+standalone worker in an unknown state: the panic can fire with a
+structure half updated or a mutex held, so nothing reached from the
+worker may be touched again, not even `dtfl_worker_free`
+(`dtfl_set_panic_hook(3)`).  The same is true of an `ereport(ERROR)`
+raised inside a callback libdtfl calls, such as the row encoder in a
+`map` function or the `inspect` sink that collects `dMV`.
+
+What that means per placement:
+
+- **Placement 1** builds and drops the dataflow inside the transaction,
+  so an error costs nothing beyond the transaction it already aborts.
+  The allocation hooks are process-wide and hold the address of a
+  context variable (`dtfl_embedding(7)`); point it at a fresh child of
+  `TopTransactionContext` before building, so the abort frees it.
+- **Placement 2** loses the worker, and with it every arrangement it
+  holds.  One error rebuilds every view in that worker, by the same
+  path as section 4.5's restart recovery.  The maintenance worker must
+  therefore allocate all libdtfl memory in one dedicated context made
+  for it (a child of `TopMemoryContext`, not a per-transaction context),
+  reset that context with `MemoryContextReset` in its `PG_CATCH` (not
+  delete it: the hooks keep pointing at it), and rebuild from the view
+  tables at their `last_n`.  A backend still waiting for its `dMV(n)` is
+  before commit, so it gets an error and its transaction aborts, and no
+  view table is left inconsistent.  The confirm sent from the
+  `XACT_EVENT_COMMIT` callback is different: an `ERROR` there becomes a
+  `PANIC`, so that callback must not raise one when the worker is gone
+  or rebuilding; it leaves the confirmation to the worker's recovery,
+  which reads `last_n`.
+
+To keep the blast radius small:
+
+- Validate rows before they reach libdtfl (record lengths, `NULL`
+  handling), so the contract-violation panics cannot fire from user data.
+- Keep callbacks from raising errors: the encoder and the sink catch
+  their own `ereport` with `PG_TRY`, record the failure, return normally,
+  and the worker raises it after `dtfl_worker_step` returns.
+- Partition views across workers (one worker per view, or per group of
+  views over the same base tables), each with its own context, so one
+  error rebuilds one group.  The worker selects a group's context
+  (sets the hooks' context variable) before every call into that
+  group's libdtfl worker, creates every object the group uses while it
+  is selected, and shares none across groups.
+- The log hook maps `DTFL_LOG_ERROR` to `LOG`, never `ERROR`.
+- Allocation hooks use `MemoryContextAllocHuge` and `repalloc_huge`:
+  plain `palloc` refuses requests over 1 GB, and a large arrangement's
+  columns grow past that.  `repalloc` and `pfree` reject `NULL`;
+  libdtfl never passes it, and the hook in `dtfl_embedding(7)` checks
+  anyway.
+
 
 ## 5. How the requirements are met
 
@@ -331,7 +384,7 @@ is not used for recovery.
 | reader isolation | FLUX MVCC on the view table, old versions from UNDO |
 | writer correctness | each transaction's delta is its own statements' OLD/NEW images; deltas applied in commit order under the view's maintenance lock |
 | multiset semantics | `dtfl_diff_i64` weights; delete/insert by multiplicity at apply |
-| aggregates incl. MIN/MAX retraction | `reduce` over the group's remaining multiset |
+| aggregates incl. MIN/MAX retraction | `count`/`sum` in the difference (O(change)); `reduce` over the group's remaining multiset for MIN/MAX (O(group)) |
 | cost proportional to change | persistent arrangements in the maintenance worker (placement 2) |
 | durability and recovery | WAL and UNDO for base and view tables; arrangements rebuilt from the committed view state and `last_n` |
 | bounded memory | compaction holds advanced as commits become durable |
@@ -407,6 +460,22 @@ the view's arrangement, so passing `n` means the trace is complete
 through `n`; and type descriptors passed to operators are bound to locals
 and freed (an inline nested `dtfl_type_pair` leaks).
 
+**Aggregates: keep them in the difference.**  A `reduce` recomputes each
+touched group from its whole multiset, so a commit costs the size of the
+groups it touches, not the size of the change.  `bench/ivm_latency`
+measures it (one worker, 100,000 orders, 10-row commits at 100 per
+second; dev host, so relative only): with 1,000 groups of about 100 rows
+a `reduce` commit takes about 450 us, with 16 groups of about 6,000
+rows about 17 ms, and the worker falls behind.  Moving the aggregate into
+the difference keeps it O(change): `dtfl_collection_explode` turns each
+`(region, amount)` into `region` with `amount` as its weight, and
+`dtfl_collection_count` then maintains the sum (and a plain `count` of
+the unexploded rows maintains `count(*)`).  That form took about 85 us
+per commit at both group sizes.  Use `explode` and `count` for COUNT,
+SUM and AVG (as sum over count), and `reduce` only for aggregates the
+difference cannot carry, MIN and MAX, whose cost then grows with the
+group.
+
 Record encoding (`examples/ivm/sqlrow.h` implements the fixed-width and
 NULL cases and documents the rest): libdtfl records are byte strings with a type descriptor
 (PLAN D1).  A PostgreSQL row maps to a tuple descriptor of fixed-width
@@ -478,11 +547,13 @@ These are open design work, not solved by the substrate:
   apply them in a background transaction.  It removes the commit-time
   serialization and gives up read-your-writes on the view.  The libdtfl
   side is identical; only the capture and apply points move.
-- **Performance.**  libdtfl is correct but measured about 2.6x slower
-  than Rust differential dataflow on `count` throughput and 2.7x on the
-  `arrange` arm, same host (`bench/experiments/arrange`).  Per-commit cost is
-  flat over thousands of commits now that arranged traces compact
-  (`tests/unit/test_longrun.c` guards it).  The comparison that matters for
+- **Performance.**  On a dedicated bare-metal host, libdtfl's throughput
+  is within 1.4x of Rust differential dataflow on the pinned `arrange`
+  benchmark at 1 to 16 workers (README, Performance).  Latency is not
+  yet: one worker's open-loop p99 is about 3x Rust's, and an idle step
+  costs about 1.9x.  Per-commit cost is flat over thousands of commits
+  now that arranged traces compact (`tests/unit/test_longrun.c` guards
+  it).  The comparison that matters for
   IVM is maintenance cost versus REFRESH and versus trigger-based IVM at
   realistic delta sizes; run that before drawing conclusions.
 - **Views over views.**  Maintaining a view whose base is another

@@ -744,9 +744,11 @@ u64_reduce_corrections(void *self, const uint64_t *keys, size_t nkeys,
 		__dtfl_vec part;
 
 		dtfl_put_u64(kb, keys[k]);
-		rows_to_args(input + in0, ni, idw, vals, vp, vl, idiffs);
-		rows_to_args(output + out0, no, odw, vals + 8 * ni, vp + ni,
-		    vl + ni, odiffs);
+		/* A side with no rows may come as NULL: offset it only if set. */
+		rows_to_args(input != NULL ? input + in0 : NULL, ni, idw, vals,
+		    vp, vl, idiffs);
+		rows_to_args(output != NULL ? output + out0 : NULL, no, odw,
+		    vals + 8 * ni, vp + ni, vl + ni, odiffs);
 		b->logic(b->ctx, kb, sizeof kb, ni, vp, vl, idiffs, no, vp + ni,
 		    vl + ni, odiffs, ch);
 		__dtfl_vec_init(&part, sizeof(__dtfl_bridge_upd));

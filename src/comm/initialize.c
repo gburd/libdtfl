@@ -100,7 +100,8 @@ __dtfl_comm_initialize(const dtfl_config *cfg,
 		break;
 	case DTFL_COMM_SIM:
 		b = __dtfl_calloc(threads, sizeof *b);
-		__dtfl_sim_builders(threads, dtfl_config_seed(cfg), b);
+		__dtfl_sim_builders(threads, dtfl_config_seed(cfg),
+		    __dtfl_config_sim_faults(cfg), b);
 		break;
 	case DTFL_COMM_CLUSTER:
 		return cluster_initialize(cfg, threads, builders, nbuilders,

@@ -59,16 +59,21 @@ void __dtfl_cb_drain_into(__dtfl_change_batch *cb, __dtfl_change_batch *other);
 void __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src);
 
 /*
- * Iteration after compaction: __dtfl_cb_iter compacts and returns the
- * entry count; entry i is at __dtfl_cb_key(cb, i), __dtfl_cb_delta(cb, i).
- * "drain" is iterate then clear.
+ * ChangeBatch::maintain_bounds: compact only once enough work has
+ * accumulated, more than 32 entries and at least half of them not
+ * clean.  The one copy of upstream's constants.
  */
+static inline void
+__dtfl_cb_maintain_bounds(__dtfl_change_batch *cb)
+{
+	if (cb->updates.len > 32 && cb->updates.len >> 1 >= cb->clean)
+		__dtfl_cb_compact(cb);
+}
 
 /*
  * Adds an update for `key` with `delta` (ChangeBatch::update), then
- * maintain_bounds: compact once there are more than 32 entries and at
- * least half of them are not clean.  Inline: the progress tracker calls
- * it several times per pointstamp.
+ * maintain_bounds.  Inline: the progress tracker calls it several times
+ * per pointstamp.
  */
 static inline void
 __dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta)
@@ -79,11 +84,14 @@ __dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta)
 	for (w = 0; w < cb->kw; w++)
 		e[w] = key[w];
 	e[cb->kw] = (uint64_t)delta;
-	if (cb->updates.len > 32 && cb->updates.len >> 1 >= cb->clean)
-		__dtfl_cb_compact(cb);
+	__dtfl_cb_maintain_bounds(cb);
 }
 
-/* Compacts if dirty and returns the entry count. */
+/*
+ * Iteration after compaction: __dtfl_cb_iter compacts if dirty and
+ * returns the entry count; entry i is at __dtfl_cb_key(cb, i),
+ * __dtfl_cb_delta(cb, i).  "drain" is iterate then clear.
+ */
 static inline size_t
 __dtfl_cb_iter(__dtfl_change_batch *cb)
 {

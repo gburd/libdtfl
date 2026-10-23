@@ -130,6 +130,7 @@ __dtfl_src_build(dtfl_scope *scope, const char *name, const dtfl_type *type,
 	op = __dtfl_op_core_new(scope->worker, name, addr, addr_len, tc,
 	    dtfl_scope_peers(scope), 0, 1, NULL, &summary,
 	    src_op_logic, ctx, src_op_free);
+	__dtfl_op_core_no_initial_activation(op);
 	__dtfl_scope_install(scope, &slot, op);
 
 	*out_pusher = counter;

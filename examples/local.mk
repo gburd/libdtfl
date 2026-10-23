@@ -351,8 +351,9 @@ EXTRA_DIST += examples/diag/smoke.expected examples/diag/scc-bench.expected
 
 # ----------------------------------------------------------------------
 # Embedding skeleton: a worked PostgreSQL extension showing the four
-# host hooks (alloc->palloc, panic->ereport, log->elog, threads->bgworker
-# or the single-thread cooperative mode).  The PostgreSQL symbols are
+# host hooks (alloc->MemoryContextAllocHuge/repalloc_huge/pfree,
+# panic->ereport, log->elog, and the single-thread cooperative mode in
+# place of thread hooks).  The PostgreSQL symbols are
 # stubbed so it builds and runs with no server; the real mapping is in
 # each hook (dtfl_embedding(7)).  A noinst example with its own smoke
 # test.

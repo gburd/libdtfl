@@ -51,3 +51,51 @@ Each entry gives the pinned path, what looks wrong, and a reproducer.
   signed timestamp starts at 0 while `Timestamp::minimum()` is `MIN`.
   Times below 0 are then never available as capabilities from the root.
 - libdtfl matches upstream (`__dtfl_time_to_inner`).
+
+## Counter drops a flush once its produced count is drained
+
+- `timely-v0.31.0:timely/src/dataflow/channels/pushers/counter.rs:25-28`,
+  `Counter::push`: a flush (`None`) goes downstream only "if dirty",
+  that is, if the shared `produced` batch is non-empty.  That batch is
+  not the Counter's own: the operator that owns the output drains it
+  into its `SharedProgress` every time it is scheduled (for an input,
+  `Operator::schedule` in `operators/core/input.rs`).
+- An `Exchange` pusher behind the Counter buffers records per peer and
+  sends them only when the time changes or a flush arrives.  So: send
+  a record, `flush()` the handle (the Exchange buffers it), let the
+  input operator run once (it drains `produced`), then close the epoch
+  (`advance_to` or drop).  `close_epoch` calls `done()`, the Counter
+  sees an empty batch and swallows the flush, the Exchange never sends
+  its buffer, and the dataflow never completes: the produced count was
+  reported, but the message it counts is never delivered.
+- Reproducer against crates.io `timely = "=0.31.0"`, two workers; it
+  hangs (it completes without the `worker.step()`):
+
+  ```rust
+  timely::execute_from_args(["-w", "2"].map(String::from).into_iter(), |worker| {
+      let mut input: InputHandle<u64, CapacityContainerBuilder<Vec<(u64, u64)>>> =
+          InputHandle::new();
+      worker.dataflow::<u64, _, _>(|scope| {
+          scope.input_from(&mut input).exchange(|x: &(u64, u64)| x.0).probe();
+      });
+      if worker.index() == 0 {
+          input.advance_to(1);
+          input.send((0, 0));
+          input.flush();
+          worker.step();
+      }
+  }).unwrap();   // never returns
+  ```
+
+- Harm at the pin: a dataflow that flushes an input feeding an exchange
+  and is stepped before the epoch closes can hang.  libdtfl ports the
+  Counter as it is (`src/timely/push_counter.c`), so it hangs in the
+  same programs Rust does.  It used to hang in more: its input operator
+  asked for a first schedule when built (the shared op_core in
+  `src/timely/builder_raw.c`), which upstream's does not, so `produced`
+  was drained before the first epoch closed even without an
+  `advance_to`.  The input no longer does
+  (`tests/unit/test_input.c` input__flush_step_close_completes).
+- Found by `make check-sim` (notify_multiworker with
+  `DTFL_PBT_FLUSH_STEPS=on`); the pinned case is in
+  `tests/corpus/seeds.txt`.

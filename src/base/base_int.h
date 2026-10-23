@@ -124,6 +124,8 @@ __dtfl_vec_push_n_uninit(__dtfl_vec *v, size_t n)
 	unsigned char *slot;
 
 	__dtfl_vec_reserve(v, n);
+	if (v->data == NULL)	/* n == 0 on an empty vector */
+		return NULL;
 	slot = v->data + v->len * v->elem;
 	v->len += n;
 	return slot;
@@ -136,8 +138,9 @@ __dtfl_vec_push_n(__dtfl_vec *v, const void *elems, size_t n)
 	size_t bytes = n * v->elem;
 	unsigned char *slot;
 
+	/* An empty vector may have no buffer; NULL + 0 is undefined in C. */
 	if (n == 0)
-		return v->data + v->len * v->elem;
+		return v->data == NULL ? NULL : v->data + v->len * v->elem;
 	__dtfl_vec_reserve(v, n);
 	slot = v->data + v->len * v->elem;
 	if (elems != NULL)

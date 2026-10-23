@@ -20,6 +20,9 @@
 #include "pbt.h"
 #include "progress/progress_int.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #define NT 64	/* model capacity: distinct times */
 
 typedef struct model {
@@ -323,7 +326,9 @@ static void
 cb_key(unsigned kw, const uint64_t t[2], uint64_t key[3])
 {
 	key[0] = t[0];
-	key[1] = kw == 3 ? 7 : t[1];
+	/* kw 3: a middle word that varies with the key, so a compare that
+	 * skipped it would merge distinct keys. */
+	key[1] = kw == 3 ? 7 + (t[1] & 1) : t[1];
 	key[2] = t[1];
 }
 
@@ -411,12 +416,176 @@ prop_change_batch_model_kw3(pbt_tc *tc)
 	change_batch_model(tc, 3);
 }
 
+/*
+ * One-word TOTAL times (u64, and i64 with its biased storage, drawn
+ * across zero): __dtfl_time_le and __dtfl_time_lt, which the antichain
+ * code uses, inline this class.  A MutableAntichain under random updates
+ * must hold exactly the least positive time, and the antichain and
+ * frontier queries must answer as integer comparisons do.
+ */
+static void
+total_model(pbt_tc *tc, bool is_signed)
+{
+	dtfl_coord co = { is_signed ? DTFL_COORD_SIGNED : DTFL_COORD_UNSIGNED,
+	    64 };
+	dtfl_time_class *k = dtfl_time_total(co);
+	__dtfl_mutable_antichain *map = __dtfl_alloc(sizeof *map);
+	__dtfl_antichain *ap = __dtfl_alloc(sizeof *ap);
+	int64_t val[16], cnt[16], v, q;
+	size_t nv = 0, i, steps = (size_t)pbt_int(tc, 1, 60);
+	uint64_t w, qw;
+
+	pbt_defer(tc, class_release, k);
+	__dtfl_mantichain_init(map, k);
+	pbt_defer(tc, mantichain_release, map);
+	__dtfl_antichain_init(ap, k);
+	pbt_defer(tc, antichain_release, ap);
+	while (steps-- > 0) {
+		int64_t d = pbt_int(tc, -2, 3);
+		bool have = false, le = false, lt = false;
+		int64_t least = 0;
+
+		v = pbt_int(tc, is_signed ? -3 : 0, 3);
+		w = is_signed ? dtfl_coord_from_i64(v) : (uint64_t)v;
+		for (i = 0; i < nv && val[i] != v; i++)
+			;
+		if (i == nv) {
+			if (nv == 16)
+				break;
+			val[nv] = v;
+			cnt[nv++] = 0;
+		}
+		cnt[i] += d;
+		__dtfl_mantichain_update(map, &w, d);
+		__dtfl_cb_clear(&map->changes);
+		(void)__dtfl_antichain_insert(ap, &w);
+		for (i = 0; i < nv; i++) {
+			if (cnt[i] > 0 && (!have || val[i] < least)) {
+				least = val[i];
+				have = true;
+			}
+		}
+		PBT_ASSERT(__dtfl_mantichain_frontier_len(map) == (have ? 1 : 0));
+		if (have) {
+			uint64_t lw = is_signed ? dtfl_coord_from_i64(least) :
+			    (uint64_t)least;
+
+			PBT_ASSERT(__dtfl_mantichain_frontier(map)[0] == lw);
+		}
+		q = pbt_int(tc, is_signed ? -4 : 0, 4);
+		qw = is_signed ? dtfl_coord_from_i64(q) : (uint64_t)q;
+		if (have) {
+			le = least <= q;
+			lt = least < q;
+		}
+		PBT_ASSERT(__dtfl_mantichain_less_equal(map, &qw) == le);
+		PBT_ASSERT(__dtfl_mantichain_less_than(map, &qw) == lt);
+		/* The antichain of every inserted time is its minimum. */
+		{
+			int64_t mn = val[0];
+
+			for (i = 1; i < nv; i++)
+				if (val[i] < mn)
+					mn = val[i];
+			PBT_ASSERT(__dtfl_antichain_len(ap) == 1);
+			PBT_ASSERT(__dtfl_antichain_less_equal(ap, &qw) == (mn <= q));
+			PBT_ASSERT(__dtfl_antichain_less_than(ap, &qw) == (mn < q));
+		}
+	}
+}
+
+static void
+prop_total_u64_model(pbt_tc *tc)
+{
+	total_model(tc, false);
+}
+
+static void
+prop_total_i64_model(pbt_tc *tc)
+{
+	total_model(tc, true);
+}
+
+/*
+ * Long batches: compact must equal a reference compaction (sort by key
+ * with qsort, sum equal keys, drop zeros) for batches long enough to
+ * take the introsort's partitioning path, with key patterns that stress
+ * it: few distinct keys, already sorted, reversed, and random.
+ */
+static unsigned ref_kw;
+
+static int
+ref_cmp(const void *a, const void *b)
+{
+	return __dtfl_words_cmp(a, b, ref_kw);
+}
+
+static void
+prop_change_batch_long(pbt_tc *tc)
+{
+	unsigned kw = (unsigned)pbt_int(tc, 1, 4);
+	size_t n = (size_t)pbt_int(tc, 21, 3000), i, j, k, words = kw + 1;
+	int pattern = (int)pbt_int(tc, 0, 3);
+	uint64_t span = (uint64_t)pbt_int(tc, 1, 4000), seed;
+	__dtfl_change_batch *cbp = new_cb(tc, kw);
+	uint64_t *ref = __dtfl_alloc(n * words * sizeof *ref);
+	uint64_t key[5];
+
+	pbt_defer(tc, __dtfl_free, ref);
+	seed = (uint64_t)pbt_int(tc, 0, INT64_MAX);
+	for (i = 0; i < n; i++) {
+		uint64_t v;
+
+		seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+		v = (seed >> 17) % span;
+		if (pattern == 1)
+			v = i % span;
+		else if (pattern == 2)
+			v = (n - i) % span;
+		else if (pattern == 3)
+			v = (seed >> 17) % 3;
+		for (k = 0; k < kw; k++)
+			key[k] = k + 1 == kw ? v : (v >> (8 * (kw - k))) & 3;
+		__dtfl_cb_update(cbp, key, (int64_t)((seed >> 40) % 5) - 2);
+		memcpy(ref + i * words, key, kw * sizeof *key);
+		ref[i * words + kw] = (uint64_t)((int64_t)((seed >> 40) % 5) - 2);
+	}
+	/* Reference: sort, then sum runs of equal keys, then drop zeros. */
+	ref_kw = kw;
+	qsort(ref, n, words * sizeof *ref, ref_cmp);
+	for (i = 0, k = 0; i < n; i = j) {
+		uint64_t sum = 0;
+
+		for (j = i; j < n && __dtfl_words_cmp(ref + j * words,
+		    ref + i * words, kw) == 0; j++)
+			sum += ref[j * words + kw];
+		if (sum == 0)
+			continue;
+		memmove(ref + k * words, ref + i * words, kw * sizeof *ref);
+		ref[k * words + kw] = sum;
+		k++;
+	}
+	n = __dtfl_cb_iter(cbp);
+	/* maintain_bounds compacts as it goes; the result is the same. */
+	PBT_ASSERT(n == k || (k == 0 && n == 1 && __dtfl_cb_delta(cbp, 0) == 0));
+	if (k == 0)
+		return;
+	for (i = 0; i < n; i++) {
+		PBT_ASSERT(__dtfl_words_cmp(__dtfl_cb_key(cbp, i), ref + i * words,
+		    kw) == 0);
+		PBT_ASSERT(__dtfl_cb_delta(cbp, i) == (int64_t)ref[i * words + kw]);
+	}
+}
+
 static const pbt_prop props[] = {
 	{ "mutable_antichain_model", prop_mutable_antichain_model, 300 },
 	{ "antichain_insert_model", prop_antichain_insert_model, 300 },
 	{ "change_batch_model", prop_change_batch_model, 300 },
 	{ "change_batch_model_kw1", prop_change_batch_model_kw1, 300 },
 	{ "change_batch_model_kw3", prop_change_batch_model_kw3, 300 },
+	{ "change_batch_long", prop_change_batch_long, 300 },
+	{ "total_u64_model", prop_total_u64_model, 300 },
+	{ "total_i64_model", prop_total_i64_model, 300 },
 };
 
 PBT_MAIN("antichain", props)

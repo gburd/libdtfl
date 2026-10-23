@@ -33,6 +33,7 @@ typedef struct op_core {
 	__dtfl_raw_logic_fn logic;
 	void *ctx;
 	void (*ctx_free)(void *);
+	bool no_initial_activation;	/* input.rs Operator: see below */
 } op_core;
 
 static bool
@@ -99,8 +100,13 @@ oc_initialize(__dtfl_operate *op, __dtfl_connectivity *conn,
 	uint64_t minimum[DTFL_TIME_MAX];
 	size_t i;
 
-	/* Request to be scheduled at least once. */
-	__dtfl_activations_activate(&o->w->activations, o->sched.path, o->sched.path_len);
+	/*
+	 * Request to be scheduled at least once (builder_raw.rs), except
+	 * for the Input operator, whose initialize (input.rs) does not.
+	 */
+	if (!o->no_initial_activation)
+		__dtfl_activations_activate(&o->w->activations, o->sched.path,
+		    o->sched.path_len);
 
 	/* Reserve one capability per output at the minimum time, peers wide. */
 	dtfl_time_minimum(o->tc, minimum);
@@ -157,4 +163,10 @@ __dtfl_op_core_new(__dtfl_worker *w, const char *name, const size_t *path,
 	o->ctx = ctx;
 	o->ctx_free = ctx_free;
 	return &o->operate;
+}
+
+void
+__dtfl_op_core_no_initial_activation(__dtfl_operate *op)
+{
+	((op_core *)op)->no_initial_activation = true;
 }

@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 12, 2026
+.Dd October 23, 2026
 .Dt DTFL_EMBEDDING 7
 .Os
 .Sh NAME
@@ -34,7 +34,11 @@ Called on a contract violation or an allocation failure.
 It must not return.
 The default prints to standard error and calls
 .Xr abort 3 .
-See
+A hook that
+.Xr longjmp 3 Ns s
+out leaves the worker unusable; see
+.Sx After a panic
+below and
 .Xr dtfl_set_panic_hook 3 .
 .It Fn dtfl_set_log_hook
 Receives human-readable diagnostics at
@@ -82,10 +86,25 @@ embed it.
 .Pp
 First, it can supply thread hooks whose
 .Fa spawn
-is backed by the host's own worker mechanism, for example a PostgreSQL
-background worker.
+starts a thread the host manages.
 .Fn dtfl_execute
 then starts and joins each worker through those hooks.
+The hook must start a thread in the same process: the workers of one
+.Fn dtfl_execute
+share memory.
+A PostgreSQL background worker is a separate process and cannot back
+these hooks, and a PostgreSQL extension must not let libdtfl start
+threads at all, since
+.Fn palloc
+and
+.Fn ereport
+are not thread-safe and every libdtfl thread allocates through the
+hooks.
+So an extension calls neither
+.Fn dtfl_execute
+nor
+.Fn dtfl_diag_server_start ,
+and uses the second way.
 .Pp
 Second, and simplest when the host already has an event loop, it can
 avoid
@@ -104,6 +123,43 @@ the host calls
 .Fn dtfl_worker_step
 from its own thread whenever it chooses, interleaving dataflow progress
 with its other work.
+.Ss After a panic
+A panic hook that
+.Xr longjmp 3 Ns s
+out, as
+.Fn ereport ERROR
+does, leaves the worker in an unknown state: the panic can come from
+deep inside an operator, with a structure half updated or a mutex held.
+After the jump nothing reached from that worker may be used again, not
+even
+.Fn dtfl_worker_free .
+The host discards the worker by releasing its memory wholesale, which
+is why the example below allocates in a dedicated memory context: it
+resets that context with
+.Fn MemoryContextReset ,
+which keeps the context valid for the rebuild.
+Deleting it instead would leave the process-wide hooks pointing at a
+dead context.
+On Linux a standalone worker holds nothing but memory; elsewhere its
+mutexes may own small libc allocations that leak.
+File descriptors the host passed in stay the host's to close.
+.Pp
+An
+.Fn ereport ERROR
+raised inside a callback libdtfl calls (an operator function, a sink, the
+log hook) unwinds through libdtfl the same way, so the log hook maps
+.Dv DTFL_LOG_ERROR
+to
+.Dv LOG ,
+and a callback that can fail catches its own errors and returns
+normally.
+A long-lived worker that holds many views loses them all to one error,
+so keep independent dataflows in separate workers, each with its own
+memory context, and make the rebuild path the one used after a restart.
+The hooks hold the address of a context variable rather than a context,
+so the host selects a worker's context by setting the variable before
+each call into that worker; create every object a worker uses while its
+context is selected, and share none across contexts.
 .Ss What libdtfl never does
 libdtfl installs no signal handlers and calls no
 .Xr getenv 3 ,
@@ -119,27 +175,62 @@ facilities itself.
 A PostgreSQL extension wires every boundary to the server before
 starting a computation:
 .Bd -literal -offset indent
-static void *pg_malloc(size_t n, void *c) { return palloc(n); }
+/* The context libdtfl allocates in; set before each call into a worker. */
+static MemoryContext dtfl_cxt;
+
+static void *pg_malloc(size_t n, void *c)
+{ return MemoryContextAllocHuge(*(MemoryContext *)c, n); }
 static void *pg_realloc(void *p, size_t n, void *c)
-{ return repalloc(p, n); }
+{ return p ? repalloc_huge(p, n)
+           : MemoryContextAllocHuge(*(MemoryContext *)c, n); }
 static void pg_free(void *p, void *c) { pfree(p); }
 
 static void pg_panic(const char *msg, void *c)
 { ereport(ERROR, errmsg("dtfl: %s", msg)); }   /* longjmp, no return */
 
+/* never elog(ERROR) from here: it would unwind through libdtfl */
 static void pg_log(dtfl_log_level lvl, const char *msg, void *c)
-{ int e[] = { DEBUG1, LOG, WARNING, ERROR }; elog(e[lvl], "%s", msg); }
+{ int e[] = { DEBUG1, LOG, WARNING, LOG }; elog(e[lvl], "%s", msg); }
 
-dtfl_alloc_hooks ah = { pg_malloc, pg_realloc, pg_free, NULL };
+dtfl_cxt = AllocSetContextCreate(TopMemoryContext, "dtfl",
+    ALLOCSET_DEFAULT_SIZES);
+dtfl_alloc_hooks ah = { pg_malloc, pg_realloc, pg_free, &dtfl_cxt };
 dtfl_set_alloc_hooks(&ah);
 dtfl_set_panic_hook(pg_panic, NULL);
 dtfl_set_log_hook(pg_log, NULL);
-dtfl_set_thread_hooks(&bgworker_hooks);  /* or drive standalone */
+/* no thread hooks: drive a standalone worker, as above */
 .Ed
 .Pp
-A host that cannot spawn threads drops the thread hooks and uses the
-standalone loop shown above instead of
-.Fn dtfl_execute .
+The huge allocation functions matter:
+.Fn palloc
+and
+.Fn repalloc
+refuse more than
+.Dv MaxAllocSize
+(1 GB less one byte), which a large arrangement's columns exceed.
+libdtfl never passes
+.Dv NULL
+to the realloc or free hook, which
+.Fn repalloc
+and
+.Fn pfree
+require; the
+.Li p ?
+test keeps the hook safe with older releases.
+On an error, PG_CATCH calls
+.Fn MemoryContextReset dtfl_cxt
+instead of
+.Fn dtfl_worker_free ,
+then rebuilds.
+Each
+.Fn palloc
+chunk is aligned to
+.Dv MAXALIGN ,
+which is all libdtfl's own objects need; record and difference values
+are stored unaligned in any case and read with
+.Xr memcpy 3 .
+The context belongs to libdtfl: allocate nothing else in it and make no
+child contexts under it, since the reset frees them too.
 .Sh SEE ALSO
 .Xr dtfl_set_alloc_hooks 3 ,
 .Xr dtfl_set_log_hook 3 ,

@@ -15,8 +15,7 @@ Timely and differential dataflow library
 .Sh DESCRIPTION
 By default libdtfl starts worker, network and connection threads with
 .Xr pthread_create 3 .
-A host that supplies its own threads, such as a PostgreSQL background
-worker pool, installs thread hooks so that
+A host that manages its own threads installs thread hooks so that
 .Fn dtfl_execute
 routes every thread through the host:
 .Bd -literal -offset indent
@@ -34,7 +33,7 @@ typedef struct dtfl_thread_hooks {
 .Fa spawn
 starts
 .Fa start Ns Pq Fa arg
-on a new thread and stores an opaque handle in
+on a new thread in the calling process, and stores an opaque handle in
 .Fa *handle_out ;
 it returns 0 on success or a
 .Dv DTFL_E*
@@ -66,6 +65,12 @@ for
 or a structure with both function pointers
 .Dv NULL ,
 restores the pthread default.
+.Pp
+The thread must share the process's memory: the workers of one
+.Fn dtfl_execute
+exchange data through it.
+A PostgreSQL background worker is a separate process, so it cannot back
+these hooks.
 .Pp
 A host that cannot spawn arbitrary threads at all does not install
 hooks and does not call

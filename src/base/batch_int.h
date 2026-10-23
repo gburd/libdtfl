@@ -224,7 +224,8 @@ __dtfl_batch_push_uninit(__dtfl_batch *b, size_t len, const uint64_t *time,
 		__dtfl_vec_push_8bytes(&b->diffs, d);
 	} else
 		__dtfl_vec_push_n(&b->diffs, diff, b->dw);
-	return b->arena.data + start;
+	/* A zero-length first record leaves the arena without a buffer. */
+	return b->arena.data == NULL ? NULL : b->arena.data + start;
 }
 
 /* Appends a record; time and diff may be NULL when tw/dw are 0. */
@@ -253,12 +254,16 @@ __dtfl_batch_rec(const __dtfl_batch *b, size_t i, size_t *len)
 	const size_t *o = (const size_t *)(void *)b->offs.data;
 
 	*len = o[i + 1] - o[i];
-	return b->arena.data + o[i];
+	/* Zero-length records only: the arena has no buffer yet. */
+	return b->arena.data == NULL ? NULL : b->arena.data + o[i];
 }
 
 static inline const uint64_t *
 __dtfl_batch_time(const __dtfl_batch *b, size_t i)
 {
+	/* tw == 0 (unit time) leaves times without a buffer. */
+	if (b->times.data == NULL)
+		return NULL;
 	return (const uint64_t *)(void *)b->times.data + (size_t)b->tw * i;
 }
 

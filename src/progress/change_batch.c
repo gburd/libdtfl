@@ -62,18 +62,6 @@ __dtfl_cb_is_dirty(const __dtfl_change_batch *cb)
 	return cb->updates.len > cb->clean;
 }
 
-/*
- * Maintain the bounds of pending (non-compacted) updates versus clean
- * (compacted) data, compacting only once enough work has accumulated:
- * more than 32 elements and at least half of them not clean.
- */
-static void
-maintain_bounds(__dtfl_change_batch *cb)
-{
-	if (cb->updates.len > 32 && cb->updates.len >> 1 >= cb->clean)
-		__dtfl_cb_compact(cb);
-}
-
 /* Appends every update of `src` (extend); `src` is unchanged. */
 void
 __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
@@ -82,7 +70,7 @@ __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
 	DTFL_ASSERT(cb != src);
 	DTFL_ASSERT(cb->kw == src->kw);
 	__dtfl_vec_push_n(&cb->updates, src->updates.data, src->updates.len);
-	maintain_bounds(cb);
+	__dtfl_cb_maintain_bounds(cb);
 }
 
 /* Swaps entries i and j word by word. */
@@ -99,19 +87,20 @@ entry_swap(__dtfl_change_batch *cb, size_t i, size_t j)
 	}
 }
 
+/* sift_down in the heap of entries [lo, lo + n). */
 static void
-sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
+sift_down_at(__dtfl_change_batch *cb, size_t lo, size_t root, size_t n)
 {
 	size_t child;
 
 	while ((child = 2 * root + 1) < n) {
-		if (child + 1 < n && __dtfl_words_cmp(entry(cb, child),
-		    entry(cb, child + 1), cb->kw) < 0)
+		if (child + 1 < n && __dtfl_words_cmp(entry(cb, lo + child),
+		    entry(cb, lo + child + 1), cb->kw) < 0)
 			child++;
-		if (__dtfl_words_cmp(entry(cb, root), entry(cb, child),
-		    cb->kw) >= 0)
+		if (__dtfl_words_cmp(entry(cb, lo + root),
+		    entry(cb, lo + child), cb->kw) >= 0)
 			return;
-		entry_swap(cb, root, child);
+		entry_swap(cb, lo + root, lo + child);
 		root = child;
 	}
 }
@@ -124,12 +113,14 @@ sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
  */
 #define CB_SMALL_SORT 20
 
+/* Insertion sort of entries [lo, lo + n). */
 static void
-insertion_sort(__dtfl_change_batch *cb, size_t n)
+insertion_sort_at(__dtfl_change_batch *cb, size_t lo, size_t n)
 {
 	unsigned kw = cb->kw, w;
 	size_t i, j, words = (size_t)kw + 1;
-	uint64_t *base = (uint64_t *)(void *)cb->updates.data, tmp[DTFL_TIME_MAX + 3];
+	uint64_t *base = (uint64_t *)(void *)cb->updates.data + lo * words;
+	uint64_t tmp[DTFL_TIME_MAX + 3];
 
 	DTFL_ASSERT(words <= DTFL_TIME_MAX + 3);
 	for (i = 1; i < n; i++) {
@@ -142,9 +133,10 @@ insertion_sort(__dtfl_change_batch *cb, size_t n)
 		j = i;
 		do {
 			uint64_t *d = base + j * words;
+			const uint64_t *src = d - words;
 
 			for (w = 0; w < words; w++)
-				d[w] = d[w - words];
+				d[w] = src[w];
 		} while (--j > 0 && __dtfl_words_cmp(base + (j - 1) * words,
 		    tmp, kw) > 0);
 		for (w = 0; w < words; w++)
@@ -152,35 +144,89 @@ insertion_sort(__dtfl_change_batch *cb, size_t n)
 	}
 }
 
-/*
- * Sorts entries by key only, as upstream's sort_unstable_by on .0.
- * The order among equal keys is unspecified, as upstream's: compaction
- * sums them, so it does not show.  Short runs use insertion sort; longer
- * ones heapsort, in place and allocation-free because qsort has no
- * context argument for the key width.
- */
+/* Heapsort of entries [lo, lo + n): the introsort fallback. */
 static void
-sort_by_key(__dtfl_change_batch *cb)
+heap_range(__dtfl_change_batch *cb, size_t lo, size_t n)
 {
-	size_t n = cb->updates.len, i;
+	size_t i;
 
-	if (n <= CB_SMALL_SORT) {
-		insertion_sort(cb, n);
-		return;
-	}
 	for (i = n / 2; i-- > 0;)
-		sift_down(cb, i, n);
+		sift_down_at(cb, lo, i, n);
 	for (i = n; i-- > 1;) {
-		entry_swap(cb, 0, i);
-		sift_down(cb, 0, i);
+		entry_swap(cb, lo, lo + i);
+		sift_down_at(cb, lo, 0, i);
 	}
 }
 
 /*
- * Compact the internal representation: sort by key, consolidate equal
- * keys and discard any whose accumulation is zero.  Only does work if
- * some element is dirty.
+ * Introsort of entries [lo, hi): quicksort on a median-of-three pivot,
+ * recursing into the smaller side, insertion sort below CB_SMALL_SORT,
+ * and heapsort once `depth` partitions have not shrunk the range (which
+ * bounds the worst case at O(n log n)).  Rust's sort_unstable_by is a
+ * pattern-defeating quicksort of the same family.
  */
+static void
+sort_range(__dtfl_change_batch *cb, size_t lo, size_t hi, size_t depth)
+{
+	unsigned kw = cb->kw;
+	size_t words = (size_t)kw + 1;
+	uint64_t pivot[DTFL_TIME_MAX + 3];
+
+	while (hi - lo > CB_SMALL_SORT) {
+		size_t m = lo + (hi - lo) / 2, i = lo, j = hi - 1, w;
+
+		if (depth-- == 0) {
+			heap_range(cb, lo, hi - lo);
+			return;
+		}
+		if (__dtfl_words_cmp(entry(cb, m), entry(cb, lo), kw) < 0)
+			entry_swap(cb, m, lo);
+		if (__dtfl_words_cmp(entry(cb, hi - 1), entry(cb, lo), kw) < 0)
+			entry_swap(cb, hi - 1, lo);
+		if (__dtfl_words_cmp(entry(cb, hi - 1), entry(cb, m), kw) < 0)
+			entry_swap(cb, hi - 1, m);
+		for (w = 0; w < words; w++)
+			pivot[w] = entry(cb, m)[w];
+		/* Hoare partition: [lo, j] <= pivot <= [j + 1, hi). */
+		for (;;) {
+			while (__dtfl_words_cmp(entry(cb, i), pivot, kw) < 0)
+				i++;
+			while (__dtfl_words_cmp(pivot, entry(cb, j), kw) < 0)
+				j--;
+			if (i >= j)
+				break;
+			entry_swap(cb, i, j);
+			i++;
+			j--;
+		}
+		if (j + 1 - lo < hi - (j + 1)) {
+			sort_range(cb, lo, j + 1, depth);
+			lo = j + 1;
+		} else {
+			sort_range(cb, j + 1, hi, depth);
+			hi = j + 1;
+		}
+	}
+	insertion_sort_at(cb, lo, hi - lo);
+}
+
+/*
+ * Sorts entries by key only, as upstream's sort_unstable_by on .0.
+ * The order among equal keys is unspecified, as upstream's: compaction
+ * sums them, so it does not show.  Introsort, in place and
+ * allocation-free because qsort has no context argument for the key
+ * width; the depth limit is 2 log2 n.
+ */
+static void
+sort_by_key(__dtfl_change_batch *cb)
+{
+	size_t n, d = 0;
+
+	for (n = cb->updates.len; n > 1; n >>= 1)
+		d += 2;
+	sort_range(cb, 0, cb->updates.len, d);
+}
+
 /*
  * compact for short runs of fixed-width keys: the progress tracker's
  * common cases are a u64 time (one key word) and a pointstamp, a
@@ -231,6 +277,11 @@ name(__dtfl_change_batch *cb, size_t n)					\
 COMPACT_FIXED(compact_kw1, 1)
 COMPACT_FIXED(compact_kw3, 3)
 
+/*
+ * Compact the internal representation: sort by key, consolidate equal
+ * keys and discard any whose accumulation is zero.  Only does work if
+ * some element is dirty.
+ */
 void
 __dtfl_cb_compact(__dtfl_change_batch *cb)
 {

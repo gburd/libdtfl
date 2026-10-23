@@ -1,11 +1,13 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# dev/bench-ec2.d/remote.sh MATRIX REPS: runs on the benchmark instance.
+# dev/bench-ec2.d/remote.sh MATRIX REPS [PLACEMENT]: runs on the benchmark
+# instance.
 # Provisions (Debian), builds libdtfl and the Rust pin, tunes the host,
 # runs the matrix and leaves results in ~/res.  Called by dev/bench-ec2.
 set -euo pipefail
 matrix=${1:-full}
 reps=${2:-5}
+placement=${3:-packed}
 res=$HOME/res
 mkdir -p "$res"
 log() { printf '[remote] %s\n' "$*"; }
@@ -69,14 +71,30 @@ done
 sudo systemctl stop unattended-upgrades 2>/dev/null || true
 {
 	uname -a; lscpu | grep -E 'Model name|^CPU\(s\)|Socket|NUMA node\(s\)'
+	echo "placement: $placement"
 	gcc --version | head -1; rustc --version
 	echo "tuning: governor performance, no_turbo 1, freq $base kHz pinned, THP never, numa_balancing 0, nmi_watchdog 0, timers stopped"
 	echo "clock check: $(taskset -c 2 perf stat -x, -e cycles -- timeout 2 sh -c 'while :; do :; done' 2>&1 | head -1)"
 } > "$res/host.txt"
 
-# Physical cores in order starting at core 2 (one hardware thread each).
-mapfile -t cores < <(lscpu -p=CPU,CORE | grep -v '^#' | sort -t, -k2,2n -k1,1n |
-    awk -F, '!seen[$2]++ {print $1}')
+# Physical cores (one hardware thread each), starting at core 2.  packed:
+# socket 0's cores, then socket 1's.  spread: alternate sockets, so worker
+# i and i+1 land on different sockets (PLAN P16.9).
+mapfile -t cores < <(lscpu -p=CPU,CORE,SOCKET | grep -v '^#' |
+    sort -t, -k2,2n -k1,1n | awk -F, -v p="$placement" '
+	!seen[$2]++ { s = $3; n[s]++; c[s, n[s]] = $1; if (s + 1 > ns) ns = s + 1 }
+	END {
+		if (p == "spread") {
+			for (i = 1; ; i++) {
+				any = 0
+				for (s = 0; s < ns; s++)
+					if (i <= n[s]) { print c[s, i]; any = 1 }
+				if (!any) break
+			}
+		} else
+			for (s = 0; s < ns; s++)
+				for (i = 1; i <= n[s]; i++) print c[s, i]
+	}')
 ncores=${#cores[@]}
 cpus_for() { # n -> comma list of the first n physical cores from core 2, wrapping
 	local n=$1 i out=""

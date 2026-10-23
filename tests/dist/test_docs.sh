@@ -53,6 +53,21 @@ if [ -n "$undoc" ]; then
 	fail=1
 fi
 
+# Every .Xr dtfl_* cross-reference must reach a page: a file of that
+# name, or an .Nm name of another page, which make install links.
+pages=$(ls "$top"/man/man3/ 2>/dev/null | sed -n 's/\.3$//p')
+xrefs=$(cat "$top"/man/man[1-7]/*.[1-7] 2>/dev/null \
+	| awk '$1 == ".Xr" && $2 ~ /^dtfl/ && $3 ~ /^3/ {print $2}' | sort -u)
+dangling=""
+for x in $xrefs; do
+	printf '%s\n' "$pages" "$documented" | grep -qx "$x" || dangling="$dangling $x"
+done
+if [ -n "$dangling" ]; then
+	echo "[docs] FAIL: .Xr targets with no man page and no .Nm entry:"
+	printf '    %s\n' $dangling
+	fail=1
+fi
+
 MANDOC="${MANDOC:-$(command -v mandoc 2>/dev/null)}"
 if [ -z "$MANDOC" ]; then
 	for m in /nix/store/*-mandoc-*/bin/mandoc; do [ -x "$m" ] && MANDOC="$m"; done
@@ -71,7 +86,9 @@ for s in "$top"/doc/snippets/*.c; do
 	[ -f "$s" ] || continue
 	name=$(basename "$s" .c)
 	exe="$build/doc-snippet-$name"
-	if ! $CC -std=c11 -I"$top/include" "$s" -o "$exe" -L"$build/.libs" -ldtfl -Wl,-rpath,"$build/.libs" -lpthread 2> "$exe.err"; then
+	# The build's LDFLAGS: a sanitized library needs its runtime linked.
+	# shellcheck disable=SC2086
+	if ! $CC -std=c11 -I"$top/include" "$s" -o "$exe" ${DTFL_LDFLAGS:-} -L"$build/.libs" -ldtfl -Wl,-rpath,"$build/.libs" -lpthread 2> "$exe.err"; then
 		echo "[docs] FAIL: snippet $name does not compile"; sed 's/^/    /' "$exe.err"; fail=1; continue
 	fi
 	if [ -f "$top/doc/snippets/$name.expected" ]; then
