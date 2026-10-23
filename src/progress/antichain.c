@@ -40,7 +40,7 @@ __dtfl_frontier_less_than(const dtfl_time_class *tc, const uint64_t *f,
 	size_t i;
 
 	for (i = 0; i < n; i++) {
-		if (dtfl_time_less_than(tc, f + i * tc->depth, t))
+		if (__dtfl_time_lt(tc, f + i * tc->depth, t))
 			return true;
 	}
 	return false;
@@ -54,7 +54,7 @@ __dtfl_frontier_less_equal(const dtfl_time_class *tc, const uint64_t *f,
 	size_t i;
 
 	for (i = 0; i < n; i++) {
-		if (dtfl_time_less_equal(tc, f + i * tc->depth, t))
+		if (__dtfl_time_le(tc, f + i * tc->depth, t))
 			return true;
 	}
 	return false;
@@ -115,7 +115,7 @@ __dtfl_antichain_insert(__dtfl_antichain *a, const uint64_t *t)
 		return false;
 	/* retain(|x| !element.less_equal(x)), order preserving */
 	for (i = 0; i < a->elems.len; i++) {
-		if (dtfl_time_less_equal(tc, t, elem_at(a, i)))
+		if (__dtfl_time_le(tc, t, elem_at(a, i)))
 			continue;
 		if (kept != i)
 			memcpy(elem_at(a, kept), elem_at(a, i), a->elems.elem);
@@ -134,7 +134,7 @@ __dtfl_antichain_less_than(const __dtfl_antichain *a, const uint64_t *t)
 	size_t i;
 
 	for (i = 0; i < a->elems.len; i++) {
-		if (dtfl_time_less_than(a->tc, __dtfl_antichain_at(a, i), t))
+		if (__dtfl_time_lt(a->tc, __dtfl_antichain_at(a, i), t))
 			return true;
 	}
 	return false;
@@ -147,7 +147,7 @@ __dtfl_antichain_less_equal(const __dtfl_antichain *a, const uint64_t *t)
 	size_t i;
 
 	for (i = 0; i < a->elems.len; i++) {
-		if (dtfl_time_less_equal(a->tc, __dtfl_antichain_at(a, i), t))
+		if (__dtfl_time_le(a->tc, __dtfl_antichain_at(a, i), t))
 			return true;
 	}
 	return false;
@@ -318,9 +318,9 @@ requires_rebuild(const __dtfl_mutable_antichain *m, const uint64_t *time,
 	for (i = 0; i < m->frontier.len; i++) {
 		const uint64_t *f = frontier_at(m, i);
 
-		if (!beyond_frontier && dtfl_time_less_than(m->tc, f, time))
+		if (!beyond_frontier && __dtfl_time_lt(m->tc, f, time))
 			beyond_frontier = true;
-		if (before_frontier && dtfl_time_less_equal(m->tc, f, time))
+		if (before_frontier && __dtfl_time_le(m->tc, f, time))
 			before_frontier = false;
 		if (beyond_frontier && !before_frontier)
 			break;

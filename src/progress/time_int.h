@@ -87,6 +87,27 @@ __dtfl_time_eq(const dtfl_time_class *tc, const uint64_t *a, const uint64_t *b)
 }
 
 /*
+ * dtfl_time_less_equal and dtfl_time_less_than, inline for one-word
+ * TOTAL times (a u64 or i64 epoch, the common case in the progress
+ * tracker's antichains); other shapes call the general functions.
+ */
+static inline bool
+__dtfl_time_le(const dtfl_time_class *tc, const uint64_t *a, const uint64_t *b)
+{
+	if (tc->shape == DTFL_SHAPE_TOTAL)
+		return a[0] <= b[0];
+	return dtfl_time_less_equal(tc, a, b);
+}
+
+static inline bool
+__dtfl_time_lt(const dtfl_time_class *tc, const uint64_t *a, const uint64_t *b)
+{
+	if (tc->shape == DTFL_SHAPE_TOTAL)
+		return a[0] < b[0];
+	return dtfl_time_less_than(tc, a, b);
+}
+
+/*
  * Lattice::advance_by against an antichain of `n` times stored as a flat
  * run (differential lattice.rs:138-147).  Empty frontier: no change.
  * One element: join.  Otherwise the meet over all joins.
