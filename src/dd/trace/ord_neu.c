@@ -161,7 +161,7 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
     __dtfl_batch **chunks, size_t nchunks, __dtfl_description *desc)
 {
 	__dtfl_builder_ord bld;
-	size_t ci, i, nkeys = 0, nvals = 0, nupds = 0;
+	size_t ci, i, nkeys = 0, nvals = 0, nupds = 0, kbytes = 0, vbytes = 0;
 
 	/*
 	 * BuilderInput::key_val_upd_counts: distinct keys, distinct (key,
@@ -187,10 +187,13 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 				    __dtfl_type_cmp(kt, pk, pkl, rec, kl) != 0) {
 					nkeys++;
 					nvals++;
+					kbytes += kl;
+					vbytes += len - kl;
 				} else if (!keyed &&
 				    __dtfl_type_cmp(vt, pv, pvl, rec + kl,
 				    len - kl) != 0) {
 					nvals++;
+					vbytes += len - kl;
 				}
 				nupds++;
 				first = false;
@@ -203,6 +206,14 @@ __dtfl_builder_ord_seal(bool keyed, const dtfl_type *kt, const dtfl_type *vt,
 	}
 	__dtfl_builder_ord_init(&bld, keyed, kt, vt, tc, dc, nkeys, nvals,
 	    nupds);
+	/*
+	 * The counting pass also sums the bytes of the distinct keys and
+	 * values, so their arenas are allocated once, as upstream's
+	 * with_capacity sizes a Vec<K> by count.
+	 */
+	__dtfl_slices_reserve(&bld.result.keys, 0, kbytes);
+	if (!keyed)
+		__dtfl_slices_reserve(&bld.result.vals.vals, 0, vbytes);
 	for (ci = 0; ci < nchunks; ci++) {
 		__dtfl_batch *chunk = chunks[ci];
 		size_t n = __dtfl_batch_len(chunk);
