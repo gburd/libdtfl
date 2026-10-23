@@ -30,10 +30,12 @@
  * SendEndpoints (flushing the last bytes into the queues) and the
  * receive readers.  __dtfl_inline_finish then does what the network
  * threads do at the end: it writes everything left, a zero-length
- * header and a shutdown to every peer, and reads each peer until its
- * zero-length header, checking that nothing follows, as recv_loop does.
- * Data arriving after the worker is gone is dropped, as upstream drops
- * it for a channel already dropped.
+ * header and a shutdown to every peer, and reads each peer past its
+ * zero-length header to the end of the stream, panicking if anything
+ * follows the header, as recv_loop does.  A transport without shutdown
+ * cannot end a stream, so with one the read stops at the header.  Data
+ * arriving after the worker is gone is dropped, as upstream drops it
+ * for a channel already dropped.
  *
  * shortcut: the "communication" log stream gets no events from this
  * driver (the network threads log StateEvent and MessageEvent); add
@@ -62,6 +64,11 @@ typedef struct inline_peer {
 	__dtfl_merge_queue *pending_writer;	/* until posted to the worker */
 	bool eos_sent;			/* the zero-length header went out */
 	bool eos_seen;			/* the peer's zero-length header came */
+	/*
+	 * Nothing more can come: recv returned DTFL_EOF after the header,
+	 * or the header came over a transport without shutdown.
+	 */
+	bool drained;
 } inline_peer;
 
 struct __dtfl_inline_net {
@@ -205,13 +212,18 @@ carve_frames(__dtfl_inline_net *n, inline_peer *ip)
 		__dtfl_panic("Clean shutdown followed by data.");
 }
 
-/* Reads what the peer has; returns true if any bytes arrived. */
+/*
+ * Reads what the peer has; returns true if any bytes arrived.  After the
+ * peer's zero-length header it reads on to DTFL_EOF, as recv_loop's
+ * "reading EOF" read does, so a socket at end of file is not left
+ * readable under the transport's wait.
+ */
 static bool
 pump_recv(__dtfl_inline_net *n, inline_peer *ip)
 {
 	bool any = false;
 
-	for (;;) {
+	while (!ip->drained) {
 		unsigned char *empty;
 		size_t cap, got;
 		int rc;
@@ -222,17 +234,21 @@ pump_recv(__dtfl_inline_net *n, inline_peer *ip)
 		if (rc == DTFL_EOF) {
 			if (!ip->eos_seen)
 				net_panic("reading data", rc);
+			ip->drained = true;
 			break;
 		}
 		if (rc != 0)
-			net_panic("reading data", rc);
+			net_panic(ip->eos_seen ? "reading EOF" : "reading data",
+			    rc);
 		if (got == 0)
 			break;
+		if (ip->eos_seen)
+			__dtfl_panic("Clean shutdown followed by data.");
 		any = true;
 		__dtfl_slab_make_valid(&ip->slab, got);
 		carve_frames(n, ip);
-		if (ip->eos_seen)
-			break;
+		if (ip->eos_seen && n->t->shutdown == NULL)
+			ip->drained = true;
 	}
 	if (ip->staged.len > 0) {
 		if (ip->recv_wr != NULL)
@@ -344,7 +360,7 @@ peers_pending(__dtfl_inline_net *n)
 	size_t i;
 
 	for (i = 0; i < n->npeers; i++)
-		if (!n->peers[i].eos_seen ||
+		if (!n->peers[i].drained ||
 		    n->peers[i].stash_head < n->peers[i].stash.len)
 			return true;
 	return false;
@@ -399,7 +415,7 @@ __dtfl_inline_net_finish(__dtfl_inline_net *n)
 					    DTFL_EIO);
 				progress = true;
 			}
-			if (!ip->eos_seen && pump_recv(n, ip))
+			if (!ip->drained && pump_recv(n, ip))
 				progress = true;
 		}
 		if (!progress && peers_pending(n))

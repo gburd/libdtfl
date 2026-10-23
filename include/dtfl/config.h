@@ -116,6 +116,11 @@ DTFL_API uint64_t dtfl_config_seed(const dtfl_config *cfg);
  *             call it, at any time until the call using the transport
  *             returns.
  *   shutdown  (optional) the end-of-stream header has gone to `peer`.
+ *             With shutdown set, the peer's recv must return DTFL_EOF
+ *             once it has read what came before, and libdtfl reads every
+ *             peer to that DTFL_EOF before it returns, panicking if bytes
+ *             follow the end-of-stream header.  Without it, libdtfl stops
+ *             reading a peer at the end-of-stream header.
  *   destroy   (optional) frees ctx; libdtfl never calls it, the owner
  *             does.
  *

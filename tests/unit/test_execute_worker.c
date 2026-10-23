@@ -43,6 +43,7 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -66,6 +67,9 @@ typedef struct wctx {
 	size_t index, peers;
 	uint64_t count, sum, misrouted;
 } wctx;
+
+/* This worker returns from its worker function 2 s late. */
+static size_t late_index = SIZE_MAX;
 
 static uint64_t
 route(const void *rec, size_t len, void *ctx)
@@ -130,6 +134,11 @@ worker(dtfl_worker *w, void *arg)
 		;
 	dtfl_probe_free(c->probe);
 	dtfl_time_class_free(tc);
+	if (c->index == late_index) {
+		struct timespec d = { 2, 0 };
+
+		nanosleep(&d, NULL);
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -335,6 +344,38 @@ DTFL_TEST(execute_worker_four_processes_socketpair)
 {
 	(void)params; (void)data;
 	run_sockets(4);
+	return MUNIT_OK;
+}
+
+static uint64_t
+cpu_us(const struct rusage *r)
+{
+	return (uint64_t)(r->ru_utime.tv_sec + r->ru_stime.tv_sec) * 1000000u +
+	    (uint64_t)(r->ru_utime.tv_usec + r->ru_stime.tv_usec);
+}
+
+/*
+ * Workers 0 and 1 finish at once and wait for worker 2's end of stream,
+ * which comes 2 s later.  Their streams to each other have ended by
+ * then, and poll(2) reports a socket at end of file readable at once,
+ * so a driver that stopped reading a peer at its end-of-stream header,
+ * without reading on to the end of file, spun for the whole 2 s.  The
+ * three children together should use a few milliseconds of CPU.
+ */
+DTFL_TEST(execute_worker_waits_idle_for_a_late_peer)
+{
+	struct rusage r0, r1;
+	uint64_t used;
+
+	(void)params; (void)data;
+	assert_int(getrusage(RUSAGE_CHILDREN, &r0), ==, 0);
+	late_index = 2;
+	run_sockets(3);
+	assert_int(getrusage(RUSAGE_CHILDREN, &r1), ==, 0);
+	used = cpu_us(&r1) - cpu_us(&r0);
+	munit_logf(MUNIT_LOG_INFO, "workers used %llu us of CPU",
+	    (unsigned long long)used);
+	assert_ullong(used, <, 500000);
 	return MUNIT_OK;
 }
 
@@ -669,6 +710,7 @@ DTFL_TEST(execute_forked_rejects_cluster_and_sim)
 static MunitTest tests[] = {
 	DTFL_T(execute_worker_two_processes_socketpair),
 	DTFL_T(execute_worker_four_processes_socketpair),
+	DTFL_T(execute_worker_waits_idle_for_a_late_peer),
 	DTFL_T(execute_worker_three_processes_shared_rings),
 	DTFL_T(execute_worker_four_processes_shared_rings),
 	DTFL_T(execute_worker_single_needs_no_transport),

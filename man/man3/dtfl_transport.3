@@ -103,6 +103,24 @@ fires from another thread.
 Optional.
 Called once per peer after libdtfl has written the end-of-stream header
 to it, so a socket transport can shut down its write half.
+With
+.Fa shutdown
+set, the peer's
+.Fa recv
+must return
+.Dv DTFL_EOF
+once it has read everything sent before the shutdown, and libdtfl
+reads every peer on to that
+.Dv DTFL_EOF
+before it returns, as timely's receive thread does; bytes after the
+end-of-stream header make it panic with
+.Dq Clean shutdown followed by data .
+Without
+.Fa shutdown ,
+libdtfl stops reading a peer at its end-of-stream header, so a
+transport whose end of file comes only when the peer detaches, as
+.Ql shm_mq
+does, leaves it unset.
 .It Fa destroy
 Optional.
 Frees
