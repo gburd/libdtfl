@@ -109,13 +109,17 @@ enforces them.
 
 Measured with `dev/bench-ec2` on a dedicated c7i.metal-24xl (Xeon
 Platinum 8488C, one socket, clock pinned at 2.4 GHz, C and Rust runs
-alternated, medians of five), against the pinned Rust build on the same
-host:
+alternated, medians of five, at build 5d089fd), against the pinned Rust
+build on the same host:
 
 | `arrange` benchmark, C slower by | 1 | 2 | 4 | 8 | 16 | 48 workers |
 |---|---|---|---|---|---|---|
-| `arrange` arm | 1.17x | 1.17x | 1.30x | 1.05x | 1.32x | 1.41x |
-| `count` arm | 1.32x | 1.34x | 1.35x | 1.28x | 1.36x | 1.26x |
+| `arrange` arm | 1.17x | 1.08x | 1.18x | 0.93x | 1.13x | 1.62x |
+| `count` arm | 1.30x | 1.30x | 1.31x | 1.24x | 1.31x | 1.30x |
+
+At 48 workers the `arrange` arm runs at 1.62x, beyond the 1.5x the plan
+sets; it was 1.41x before the one-block batches, so that case is under
+investigation.
 
 On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz) the
 ratios are the same with workers packed on one socket or spread across
@@ -128,13 +132,14 @@ one worker and 1.10x with four, and its `event_driven` example (one of
 many dataflows advanced per round) runs 100,000 rounds in 0.27 s
 against 0.22 s, whether the dataflows hold 100 or 1,000 operators.
 
-Latency is not yet within 1.5 times.  In the benchmark's open-loop mode,
-which schedules requests on a fixed clock so a stall delays every
-request behind it, one worker at half the C build's capacity answers in
-24 / 31 microseconds (p50 / p99) on the `arrange` arm against Rust's
-10 / 14.  The C build still makes about twice Rust's allocation calls
-per record (0.047 against 0.024 on the `arrange` arm), and at 16 or
-more workers about half its futex calls are glibc's malloc arena locks.
+Latency is within 1.5 times at light load and not yet at heavy load.
+In the benchmark's open-loop mode, which schedules requests on a fixed
+clock so a stall delays every request behind it, one worker on the
+`arrange` arm answers at p99 in 16 microseconds against Rust's 12 at a
+quarter of the C build's capacity (1.39x), and in 29 against 14 at half
+(2.0x).  Allocation calls per record are 1.10 times Rust's on the
+`arrange` arm and 1.51 times on `count`, and at 16 workers futex calls
+per record are 1.10 and 1.37 times Rust's.
 
 An incrementally maintained view (`bench/ivm_latency`: a join and a
 grouped sum over 100,000 rows, ten-row commits, one worker) turns a

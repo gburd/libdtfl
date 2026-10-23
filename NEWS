@@ -122,9 +122,13 @@ Version 0.1.0 (unreleased)
 	--disable-frame-pointers turns this off.
 
 	Throughput within 1.5 times of the Rust originals on the pinned
-	arrange benchmark at 1 to 48 workers on a dedicated bare-metal host
-	with the clock pinned: 1.05 to 1.41 times slower on the arrange arm
-	and 1.26 to 1.36 times on the count arm, the same on two sockets.
+	arrange benchmark at 1 to 16 workers on a dedicated bare-metal host
+	with the clock pinned: 0.93 to 1.18 times on the arrange arm (faster
+	than Rust at 8 workers) and 1.24 to 1.31 times on count; at 48
+	workers count is 1.30 times and arrange 1.62 times.  A reserved batch
+	is one allocation, and messages, capabilities and sessions come from
+	worker-owned free lists, so allocation calls per record are 1.10
+	(arrange) and 1.51 (count) times Rust's.
 	The cost of an idle step is 1.36 times Rust's (timely's barrier
 	example), and event_driven 1.24 times.  Open-loop latency is still
 	about twice Rust's; see the README.  Worker threads exchange data
