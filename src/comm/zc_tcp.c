@@ -8,8 +8,10 @@
  *
  * src/comm/zc_tcp.c: the TCP send and receive loops.
  *
- * One network thread per remote process runs each loop over a socket to
- * that process.
+ * One network thread per remote process runs each loop over the byte
+ * stream to that process: a dtfl_transport (upstream's Stream trait,
+ * zero_copy/stream.rs; see transport_socket.c), which for the cluster is
+ * a blocking socket.
  *
  *   recv_loop reads a sequence of (header, payload) frames from the
  *   socket into a BytesSlab, carves out each complete message, and hands
@@ -21,8 +23,9 @@
  *   when there is nothing to send, and finishes with a zero-length
  *   header and a write shutdown so the peer's recv_loop exits cleanly.
  *
- * The stream abstraction (stream.rs) folds in here: a socket fd supports
- * read, write, shutdown and blocking mode directly.
+ * The loops are generic over the stream, as upstream's are over
+ * S: Stream.  A recv or send that moves nothing (a non-blocking
+ * transport) waits on the transport and retries.
  *
  * Communication logging (logging.rs MessageEvent/StateEvent) is not
  * wired: the network threads have no worker and no comm log sink is
@@ -30,88 +33,91 @@
  * simplified).  The event encoding lands in comm_log.c for a future
  * sink; here the log points are omitted.
  *
- * Threads.  Each loop owns its socket fd and its slab or stash.  The
+ * Threads.  Each loop owns its slab or stash and shares the (immutable,
+ * blocking) transport with the other loop for the same peer.  The
  * only cross-thread state is the MergeQueues it shares with the workers
  * (zc_bytes_exchange.c documents their synchronization) and the mpsc
  * channels it exchanges them through (comm_int.h).  A parked send thread
  * is woken by the worker's Pusher buzzing the queue (the queue's buzz
  * callback unparks this thread's parker).
  */
-#define _GNU_SOURCE	/* MSG_NOSIGNAL, via base/sock_int.h */
-
 #include "comm/zc_int.h"
 #include "comm/init_int.h"
-#include "base/os_thread.h"
-#include "base/sock_int.h"
-
-#include <errno.h>
-#include <sched.h>
-#include <sys/socket.h>
 
 /*
- * tcp_panic: upstream aborts the computation on any socket error with a
+ * tcp_panic: upstream aborts the computation on any stream error with a
  * message beginning "timely communication error:" (downstream crates
- * sniff for it).  Keep the prefix.
+ * sniff for it).  Keep the prefix.  The transport left the cause in the
+ * error detail.
  */
 DTFL_NORETURN static void
-tcp_panic(const char *context, int err)
+tcp_panic(const char *context, int rc)
 {
 	__dtfl_panic("timely communication error: %s: %s", context,
-	    strerror(err));
+	    rc == DTFL_EOF ? "unexpected end of stream" :
+	    dtfl_last_error_detail());
 }
 
 /* ------------------------------------------------------------------ */
-/* Blocking socket IO (stream.rs read/write/shutdown)                  */
+/* Stream IO (stream.rs read/write/shutdown)                           */
 /* ------------------------------------------------------------------ */
 
 /*
- * read(2) into buf, retrying EINTR.  Returns the count (> 0), or panics
- * on error or a zero read (the peer closed without a clean shutdown).
+ * Reads into buf.  Returns the count (> 0), or panics on error or end
+ * of stream (the peer closed without a clean shutdown).
  */
 static size_t
-sock_read(int fd, unsigned char *buf, size_t cap, const char *context)
+stream_read(const dtfl_transport *t, size_t peer, unsigned char *buf,
+    size_t cap, const char *context)
 {
-	ssize_t r;
+	size_t got;
+	int rc;
 
-	do {
-		r = recv(fd, buf, cap, 0);
-	} while (r < 0 && errno == EINTR);
-	if (r < 0)
-		tcp_panic(context, errno);
-	if (r == 0)
-		tcp_panic(context, 0);	/* UnexpectedEof: socket closed */
-	return (size_t)r;
+	for (;;) {
+		rc = t->recv(t->ctx, peer, buf, cap, &got);
+		if (rc != 0)
+			tcp_panic(context, rc);
+		if (got > 0)
+			return got;
+		t->wait(t->ctx, UINT64_MAX);
+	}
 }
 
-/* read(2) that tolerates a zero read, used to confirm EOF after shutdown. */
+/* A read that tolerates end of stream, used to confirm EOF after shutdown. */
 static size_t
-sock_read_eof(int fd, unsigned char *buf, size_t cap, const char *context)
+stream_read_eof(const dtfl_transport *t, size_t peer, unsigned char *buf,
+    size_t cap, const char *context)
 {
-	ssize_t r;
+	size_t got;
+	int rc;
 
-	do {
-		r = recv(fd, buf, cap, 0);
-	} while (r < 0 && errno == EINTR);
-	if (r < 0)
-		tcp_panic(context, errno);
-	return (size_t)r;
+	for (;;) {
+		rc = t->recv(t->ctx, peer, buf, cap, &got);
+		if (rc == DTFL_EOF)
+			return 0;
+		if (rc != 0)
+			tcp_panic(context, rc);
+		if (got > 0)
+			return got;
+		t->wait(t->ctx, UINT64_MAX);
+	}
 }
 
-/* write(2) all of buf, retrying EINTR and short writes.  Panics on error. */
+/* Writes all of buf, retrying short writes.  Panics on error. */
 static void
-sock_write_all(int fd, const unsigned char *buf, size_t len,
-    const char *context)
+stream_write_all(const dtfl_transport *t, size_t peer,
+    const unsigned char *buf, size_t len, const char *context)
 {
-	size_t off = 0;
-	ssize_t w;
+	size_t off = 0, sent;
+	int rc;
 
 	while (off < len) {
-		do {
-			w = send(fd, buf + off, len - off, DTFL_SEND_NOSIGNAL);
-		} while (w < 0 && errno == EINTR);
-		if (w < 0)
-			tcp_panic(context, errno);
-		off += (size_t)w;
+		rc = t->send(t->ctx, peer, buf + off, len - off, &sent);
+		if (rc != 0)
+			tcp_panic(context, rc);
+		if (sent == 0)
+			t->wait(t->ctx, UINT64_MAX);
+		off += sent;
 	}
 }
 
@@ -120,7 +126,8 @@ sock_write_all(int fd, const unsigned char *buf, size_t len,
 /* ------------------------------------------------------------------ */
 
 void
-__dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
+__dtfl_tcp_recv_loop(const dtfl_transport *tr, __dtfl_mpsc **targets,
+    size_t ntargets,
     size_t worker_offset, size_t process, size_t remote,
     __dtfl_logger *logger)
 {
@@ -146,7 +153,7 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 			 * The worker always posts before stepping.  A spin is
 			 * acceptable: the post is near-immediate at build time.
 			 */
-			sched_yield();
+			__dtfl_yield();
 		}
 		queues[i] = h.queue;
 		__dtfl_vec_init(&stageds[i], sizeof(__dtfl_bytes));
@@ -163,7 +170,7 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 		empty = __dtfl_slab_empty(&buffer, &cap);
 		DTFL_ASSERT(cap > 0);
 
-		read = sock_read(fd, empty, cap, "reading data");
+		read = stream_read(tr, remote, empty, cap, "reading data");
 		__dtfl_slab_make_valid(&buffer, read);
 
 		/* Consume complete messages from the front of the buffer. */
@@ -203,7 +210,7 @@ __dtfl_tcp_recv_loop(int fd, __dtfl_mpsc **targets, size_t ntargets,
 					    "by data.");
 				__dtfl_slab_ensure_capacity(&buffer, 1);
 				empty = __dtfl_slab_empty(&buffer, &cap);
-				if (sock_read_eof(fd, empty, cap,
+				if (stream_read_eof(tr, remote, empty, cap,
 				    "reading EOF") > 0)
 					__dtfl_panic("Clean shutdown followed "
 					    "by data.");
@@ -260,7 +267,8 @@ drop_parker(void *ctx)
 }
 
 void
-__dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
+__dtfl_tcp_send_loop(const dtfl_transport *tr, __dtfl_mpsc **sources,
+    size_t nsources,
     size_t process, size_t remote, __dtfl_logger *logger,
     __dtfl_spill_fn *spill)
 {
@@ -347,7 +355,7 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
 						    &h);
 					}
 				}
-				sock_write_all(fd, b->ptr, b->len,
+				stream_write_all(tr, remote, b->ptr, b->len,
 				    "writing data");
 				any = true;
 				__dtfl_bytes_release(b);
@@ -368,9 +376,10 @@ __dtfl_tcp_send_loop(int fd, __dtfl_mpsc **sources, size_t nsources,
 	eos.length = 0;
 	eos.seqno = 0;
 	__dtfl_header_write_to(&eos, eos_bytes);
-	sock_write_all(fd, eos_bytes, sizeof eos_bytes, "writing data");
-	if (shutdown(fd, SHUT_WR) != 0)
-		tcp_panic("shutting down writer", errno);
+	stream_write_all(tr, remote, eos_bytes, sizeof eos_bytes,
+	    "writing data");
+	if (tr->shutdown != NULL && tr->shutdown(tr->ctx, remote) != 0)
+		tcp_panic("shutting down writer", DTFL_EIO);
 	if (logger != NULL)
 		__dtfl_comm_log_message(logger, true, &eos);
 

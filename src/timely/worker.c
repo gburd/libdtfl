@@ -72,7 +72,7 @@ __dtfl_worker_new(__dtfl_allocator *a, dtfl_progress_mode mode, bool timer,
 	__dtfl_freelist_init(&w->msg_pool, sizeof(dtfl_message), 64);
 	__dtfl_freelist_init(&w->cap_pool, sizeof(dtfl_cap), 64);
 	__dtfl_freelist_init(&w->session_pool, __dtfl_session_size(), 16);
-	w->owner = pthread_self();
+	w->owner = __dtfl_thread_self();
 	return w;
 }
 

@@ -38,8 +38,6 @@
  */
 #include "comm/zc_int.h"
 
-#include <sched.h>
-
 /* ------------------------------------------------------------------ */
 /* TcpAllocator                                                        */
 /* ------------------------------------------------------------------ */
@@ -60,6 +58,13 @@ typedef struct tcp_alloc {
 	__dtfl_merge_queue **recvs;	/* [processes-1]; recvs[p] <- proc p */
 	size_t nremote;			/* processes - 1 */
 	__dtfl_vec to_local;		/* to_local_entry, sorted */
+	/*
+	 * The inline network driver (zc_inline.c), or NULL when network
+	 * threads move the bytes.  Runs on this worker's thread at the start
+	 * of receive and the end of release.
+	 */
+	void (*pump)(void *ctx);
+	void *pump_ctx;
 } tcp_alloc;
 
 /* Vector sorted by channel; binary search (channels increase, so append). */static size_t
@@ -199,6 +204,10 @@ tcp_receive(__dtfl_allocator *a)
 	}
 	__dtfl_vec_clear(dropped);
 
+	/* Move whatever the transport has into the recv queues. */
+	if (p->pump != NULL)
+		p->pump(p->pump_ctx);
+
 	/* Catch inner-puller reports from the previous step. */
 	drain_inner_events(p);
 	p->inner->ops->receive(p->inner);
@@ -259,6 +268,8 @@ tcp_release(__dtfl_allocator *a)
 		p->inner->ops->release(p->inner);
 	for (i = 0; i < p->nremote; i++)
 		__dtfl_send_endpoint_publish(p->sends[i]);
+	if (p->pump != NULL)
+		p->pump(p->pump_ctx);
 }
 
 /* Parks unless events are already pending (delegates to the inner). */
@@ -349,6 +360,8 @@ typedef struct tcp_builder {
 	__dtfl_mpsc **promises;		/* [nremote]; to recv threads */
 	__dtfl_mpsc **futures;		/* [nremote]; from send threads */
 	__dtfl_spill_fn *spill;		/* one reference, or NULL */
+	void (*pump)(void *ctx);	/* copied into the allocator */
+	void *pump_ctx;
 } tcp_builder;
 
 /*
@@ -382,6 +395,8 @@ tcp_builder_build(__dtfl_allocator_builder *bb)
 	__dtfl_vec_init(&p->staged, sizeof(__dtfl_bytes));
 	__dtfl_vec_init(&p->to_local, sizeof(to_local_entry));
 	p->nremote = b->nremote;
+	p->pump = b->pump;
+	p->pump_ctx = b->pump_ctx;
 	p->sends = __dtfl_calloc(DTFL_MAX(b->nremote, 1), sizeof *p->sends);
 	p->recvs = __dtfl_calloc(DTFL_MAX(b->nremote, 1), sizeof *p->recvs);
 
@@ -413,7 +428,7 @@ tcp_builder_build(__dtfl_allocator_builder *bb)
 
 		while (!__dtfl_mpsc_recv(b->futures[i], &h)) {
 			/* The send thread posts at startup; a brief spin. */
-			sched_yield();
+			__dtfl_yield();
 		}
 		p->sends[i] = __dtfl_send_endpoint_new(h.queue);
 		__dtfl_mpsc_release(b->futures[i]);
@@ -490,6 +505,8 @@ __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
 		b->peers = peers;
 		b->nremote = nremote;
 		b->spill = __dtfl_spill_fn_retain(spill);
+		b->pump = NULL;
+		b->pump_ctx = NULL;
 		b->promises = __dtfl_calloc(DTFL_MAX(nremote, 1),
 		    sizeof *b->promises);
 		b->futures = __dtfl_calloc(DTFL_MAX(nremote, 1),
@@ -516,4 +533,14 @@ __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
 		}
 	__dtfl_free(promises);
 	__dtfl_free(futures);
+}
+
+void
+__dtfl_tcp_builder_set_pump(__dtfl_allocator_builder *bb, void (*pump)(void *),
+    void *ctx)
+{
+	tcp_builder *b = (tcp_builder *)bb;
+
+	b->pump = pump;
+	b->pump_ctx = ctx;
 }

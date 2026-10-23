@@ -13,7 +13,6 @@
  */
 #include "comm/comm_int.h"
 
-#include <sched.h>
 #include <stddef.h>
 
 /*
@@ -169,7 +168,7 @@ spin_heavy(backoff *b)
 		for (i = 0; i < b->step * b->step; i++)
 			spin_loop();
 	else
-		sched_yield();
+		__dtfl_yield();
 	b->step++;
 }
 

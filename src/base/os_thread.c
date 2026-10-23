@@ -2,8 +2,9 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Greg Burd
  *
- * src/base/os_thread.c: thread creation and join.  The only file in
- * src/ that may call pthread_create (AGENTS.md section 5).
+ * src/base/os_thread.c: thread and process creation and join.  The only
+ * file in src/ that may call pthread_create, fork or waitpid (AGENTS.md
+ * section 5, ADR-0013).
  */
 #if defined(__linux__)
 #define _GNU_SOURCE	/* pthread_setname_np */
@@ -13,6 +14,9 @@
 
 #include <errno.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 /*
  * Thread hooks are process-wide and set before the first
@@ -87,4 +91,56 @@ __dtfl_thread_join(__dtfl_thread t)
 	if (rc != 0)
 		__dtfl_panic("pthread_join: %s", strerror(rc));
 	return ret;
+}
+
+int
+__dtfl_process_fork(long *pid, bool *is_child)
+{
+#ifdef HAVE_FORK
+	pid_t p = fork();
+
+	if (p < 0)
+		return __dtfl_err(DTFL_EIO, "fork: %s", strerror(errno));
+	*is_child = p == 0;
+	*pid = (long)p;
+	return 0;
+#else
+	(void)pid; (void)is_child;
+	return __dtfl_err(DTFL_ENOTSUP, "fork(2) is not available");
+#endif
+}
+
+void
+__dtfl_process_exit(bool ok)
+{
+	_exit(ok ? 0 : 1);
+}
+
+int
+__dtfl_process_wait(long pid)
+{
+#ifdef HAVE_FORK
+	int status;
+	pid_t r;
+
+	do {
+		r = waitpid((pid_t)pid, &status, 0);
+	} while (r < 0 && errno == EINTR);
+	if (r < 0 && errno == ECHILD)	/* SIGCHLD ignored: reaped unseen */
+		return __dtfl_err(DTFL_ESTATE, "waitpid(%ld): %s", pid,
+		    strerror(errno));
+	if (r < 0)
+		return __dtfl_err(DTFL_EIO, "waitpid(%ld): %s", pid,
+		    strerror(errno));
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+		return 0;
+	if (WIFSIGNALED(status))
+		return __dtfl_err(DTFL_EIO, "worker process %ld killed by "
+		    "signal %d", pid, WTERMSIG(status));
+	return __dtfl_err(DTFL_EIO, "worker process %ld exited with "
+	    "status %d", pid, WEXITSTATUS(status));
+#else
+	(void)pid;
+	return __dtfl_err(DTFL_ENOTSUP, "fork(2) is not available");
+#endif
 }

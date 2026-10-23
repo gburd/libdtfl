@@ -18,8 +18,10 @@ dtfl_put_u32
 dtfl_put_u64
 dtfl_put_u8
 dtfl_set_alloc_hooks
+dtfl_set_error_detail
 dtfl_set_log_hook
 dtfl_set_panic_hook
+dtfl_set_sync_hooks
 dtfl_set_thread_hooks
 dtfl_strerror
 dtfl_type_bytes

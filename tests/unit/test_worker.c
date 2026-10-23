@@ -350,7 +350,24 @@ DTFL_TEST(progress_on_sim)
 	return MUNIT_OK;
 }
 
+/*
+ * A worker with no dataflows has never activated anything, so its bound
+ * list has no storage.  Stepping it once must not offset that NULL
+ * (UBSan: "applying zero offset to null pointer" in advance).
+ */
+DTFL_TEST(step_empty_standalone_worker)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+
+	(void)params; (void)data;
+	assert_false(dtfl_worker_step(w));
+	assert_false(dtfl_worker_step(w));
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(step_empty_standalone_worker),
 	DTFL_T(progress_on_thread),
 	DTFL_T(progress_on_process),
 	DTFL_T(progress_on_sim),

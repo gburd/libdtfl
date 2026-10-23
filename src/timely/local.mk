@@ -231,3 +231,12 @@ TESTS += tests/upstream/timely/shape_scaling
 tests_upstream_timely_shape_scaling_SOURCES = tests/upstream/timely/shape_scaling.c
 tests_upstream_timely_shape_scaling_CFLAGS = $(TEST_CFLAGS)
 tests_upstream_timely_shape_scaling_LDADD = $(INTERNAL_LIBS)
+
+# Process-hosted workers (ADR-0013): dtfl_execute_worker over the socket
+# transport and over a host transport in MAP_SHARED memory.
+dist_man_MANS += man/man3/dtfl_execute_worker.3
+check_PROGRAMS += tests/unit/test_execute_worker
+TESTS += tests/unit/test_execute_worker
+tests_unit_test_execute_worker_SOURCES = tests/unit/test_execute_worker.c
+tests_unit_test_execute_worker_CFLAGS = $(TEST_CFLAGS)
+tests_unit_test_execute_worker_LDADD = $(TEST_LIBS)

@@ -35,9 +35,8 @@
 #ifndef DTFL_COMM_INT_H
 #define DTFL_COMM_INT_H
 
-#include <pthread.h>
-
 #include "base/base_int.h"
+#include "base/os_sync.h"
 #include "base/batch_int.h"
 
 /* ------------------------------------------------------------------ */
@@ -266,7 +265,8 @@ void __dtfl_canary_drop(__dtfl_canary *c);
  * A parker owned by one worker thread.  Any thread may buzz it; only
  * the owner parks.  A buzz before park makes the next park return
  * immediately (the semantics of std::thread::park/unpark).
- * Shared by reference count across threads.  Linux uses a futex;
+ * Shared by reference count across threads.  Sleeps through the sync
+ * layer (src/base/os_sync.h): a futex-style word wait where one exists,
  * elsewhere a mutex and condition variable.
  */
 
@@ -277,6 +277,20 @@ void __dtfl_parker_release(__dtfl_parker *p);
 void __dtfl_parker_unpark(__dtfl_parker *p);
 /* Park for at most timeout_ns; UINT64_MAX waits indefinitely. */
 void __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns);
+/*
+ * A parker that sleeps in sleep(ctx, timeout) and is woken by wake(ctx)
+ * (a transport's wait and wake, ADR-0013).  Park returns after at most
+ * one sleep.  wake runs on the unparking thread, only while the owner
+ * is parked or about to be.
+ */
+__dtfl_parker *__dtfl_parker_new_with(void (*sleep)(void *ctx,
+    uint64_t timeout_ns), void (*wake)(void *ctx), void *ctx);
+/*
+ * Stops a callback parker from calling its callbacks, and returns once
+ * no unpark is inside wake.  After this ctx may be freed; the parker
+ * itself lives on until its last reference.
+ */
+void __dtfl_parker_detach(__dtfl_parker *p);
 
 /* ------------------------------------------------------------------ */
 /* Allocators                                                          */
@@ -395,6 +409,9 @@ __dtfl_allocator_builder *__dtfl_thread_builder(void);
  * caller hands builders[i] to worker thread i.
  */
 void __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders);
+/* As above, with worker i parking on parkers[i] (each retained). */
+void __dtfl_process_builders_parked(size_t peers, __dtfl_parker *const *parkers,
+    __dtfl_allocator_builder **builders);
 /*
  * `spill` (borrowed; NULL for none) supplies a policy pair for every
  * MergeQueue the builders create (Hooks::spill).

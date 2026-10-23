@@ -34,7 +34,7 @@ typedef struct timer_heap_entry {
 
 struct __dtfl_sync_activations {
 	__dtfl_arc ref;
-	pthread_mutex_t lock;
+	__dtfl_mutex lock;
 	__dtfl_vec pending;	/* size_t words: len, then path */
 	bool closed;
 	__dtfl_parker *parker;
@@ -50,7 +50,7 @@ __dtfl_sync_activations_new(__dtfl_parker *parker)
 	__dtfl_sync_activations *s = __dtfl_calloc(1, sizeof *s);
 
 	__dtfl_arc_init(&s->ref);
-	pthread_mutex_init(&s->lock, NULL);
+	__dtfl_mutex_init(&s->lock);
 	__dtfl_vec_init(&s->pending, sizeof(size_t));
 	s->parker = parker != NULL ? __dtfl_parker_retain(parker) : NULL;
 	return s;
@@ -68,7 +68,7 @@ __dtfl_sync_activations_release(__dtfl_sync_activations *s)
 {
 	if (s == NULL || !__dtfl_arc_release(&s->ref))
 		return;
-	pthread_mutex_destroy(&s->lock);
+	__dtfl_mutex_destroy(&s->lock);
 	__dtfl_vec_free(&s->pending);
 	if (s->parker != NULL)
 		__dtfl_parker_release(s->parker);
@@ -83,14 +83,14 @@ int
 __dtfl_sync_activations_push(__dtfl_sync_activations *s, const size_t *path,
     size_t len)
 {
-	pthread_mutex_lock(&s->lock);
+	__dtfl_mutex_lock(&s->lock);
 	if (s->closed) {
-		pthread_mutex_unlock(&s->lock);
+		__dtfl_mutex_unlock(&s->lock);
 		return __dtfl_err(DTFL_ESTATE, "worker is gone");
 	}
 	__dtfl_vec_push(&s->pending, &len);
 	__dtfl_vec_push_n(&s->pending, path, len);
-	pthread_mutex_unlock(&s->lock);
+	__dtfl_mutex_unlock(&s->lock);
 	if (s->parker != NULL)
 		__dtfl_parker_unpark(s->parker);
 	return DTFL_OK;
@@ -99,10 +99,10 @@ __dtfl_sync_activations_push(__dtfl_sync_activations *s, const size_t *path,
 void
 __dtfl_sync_activations_close(__dtfl_sync_activations *s)
 {
-	pthread_mutex_lock(&s->lock);
+	__dtfl_mutex_lock(&s->lock);
 	s->closed = true;
 	__dtfl_vec_clear(&s->pending);
-	pthread_mutex_unlock(&s->lock);
+	__dtfl_mutex_unlock(&s->lock);
 }
 
 /* ------------------------------------------------------------------ */
@@ -278,9 +278,9 @@ __dtfl_activations_advance(__dtfl_activations *a)
 		__dtfl_vec drained;
 
 		__dtfl_vec_init(&drained, sizeof(size_t));
-		pthread_mutex_lock(&a->sync->lock);
+		__dtfl_mutex_lock(&a->sync->lock);
 		__dtfl_vec_swap(&drained, &a->sync->pending);
-		pthread_mutex_unlock(&a->sync->lock);
+		__dtfl_mutex_unlock(&a->sync->lock);
 		for (i = 0; i < drained.len;) {
 			size_t len = *DTFL_VEC_AT(&drained, size_t, i);
 
@@ -305,8 +305,10 @@ __dtfl_activations_advance(__dtfl_activations *a)
 
 	/* bounds.drain(..clean) */
 	n = a->bounds.len - a->clean;
-	memmove(a->bounds.data, a->bounds.data + a->clean * sizeof(bound),
-	    n * sizeof(bound));
+	/* Never-activated bounds have no storage: NULL + 0 is undefined. */
+	if (a->clean > 0)
+		memmove(a->bounds.data, a->bounds.data + a->clean * sizeof(bound),
+		    n * sizeof(bound));
 	__dtfl_vec_truncate(&a->bounds, n);
 	b = (bound *)(void *)a->bounds.data;
 	sort_bounds(b, n, (const size_t *)(void *)a->slices.data);

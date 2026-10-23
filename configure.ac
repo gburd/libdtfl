@@ -51,6 +51,13 @@ AC_SEARCH_LIBS([dlopen], [dl dld])
 AC_SEARCH_LIBS([clock_gettime], [rt])
 AC_SEARCH_LIBS([socket], [socket])
 AC_CHECK_HEADERS([linux/futex.h sys/syscall.h])
+# fork(2) for DTFL_WORKERS_PROCESSES.  A link test that includes the
+# header, so a user's -Werror does not trip on autoconf's stub prototype.
+AC_CACHE_CHECK([for fork], [dtfl_cv_fork],
+	[AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <unistd.h>]],
+	    [[return fork() < 0;]])], [dtfl_cv_fork=yes], [dtfl_cv_fork=no])])
+AS_IF([test "x$dtfl_cv_fork" = xyes],
+	[AC_DEFINE([HAVE_FORK], [1], [Define if fork(2) is available])])
 AC_C_BIGENDIAN
 
 # -------------------------------------------------------------------------

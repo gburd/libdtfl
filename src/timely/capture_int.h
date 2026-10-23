@@ -19,7 +19,7 @@
 #ifndef DTFL_CAPTURE_INT_H
 #define DTFL_CAPTURE_INT_H
 
-#include <pthread.h>
+#include "base/os_sync.h"
 
 #include "timely/timely_int.h"
 
@@ -70,7 +70,7 @@ struct dtfl_event_link {
 	const dtfl_time_class *tc;	/* retained */
 	const dtfl_type *type;		/* retained */
 	bool sync;
-	pthread_mutex_t lock;		/* used only when sync */
+	__dtfl_mutex lock;		/* used only when sync */
 	struct dtfl_event_node *head;	/* owned chain */
 	struct dtfl_event_node *tail;	/* append point */
 	struct dtfl_event_node *read;	/* iterator cursor (extract/replay) */

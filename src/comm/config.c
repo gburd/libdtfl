@@ -43,6 +43,7 @@ struct dtfl_config {
 	__dtfl_spill_fn *spill;		/* one reference, or NULL */
 	int64_t idle_merge_effort;	/* differential Config; 0 is None */
 	__dtfl_sim_faults sim_faults;	/* DTFL_COMM_SIM only; zero is none */
+	dtfl_workers workers;		/* threads or forked processes */
 };
 
 dtfl_config *
@@ -103,6 +104,24 @@ dtfl_config_set_mode(dtfl_config *cfg, dtfl_comm_mode mode)
 	}
 	return __dtfl_err(DTFL_EINVAL, "unknown communication mode %d",
 	    (int)mode);
+}
+
+int
+dtfl_config_set_workers(dtfl_config *cfg, dtfl_workers how)
+{
+	switch (how) {
+	case DTFL_WORKERS_THREADS:
+	case DTFL_WORKERS_PROCESSES:
+		cfg->workers = how;
+		return 0;
+	}
+	return __dtfl_err(DTFL_EINVAL, "unknown workers setting %d", (int)how);
+}
+
+dtfl_workers
+dtfl_config_workers(const dtfl_config *cfg)
+{
+	return cfg->workers;
 }
 
 int

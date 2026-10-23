@@ -42,7 +42,7 @@ fi
 # once relocation finishes, and in a shared library every static const
 # object holding pointers (the built-in dtfl_type descriptors) lands
 # there.
-allowed='^(hooks|hooks_used|panic_fn|panic_ctx|log_fn|log_ctx|thread_hooks|thread_hooks_set|err_detail)$'
+allowed='^(hooks|hooks_used|panic_fn|panic_ctx|log_fn|log_ctx|thread_hooks|thread_hooks_set|sync_hooks|sync_hooks_set|sync_used|err_detail)$'
 writable=$($NM --defined-only -f sysv "$lib" | tr -d ' ' \
 	| awk -F'|' '$3 ~ /^[dDbB]$/ && $7 != ".data.rel.ro" {print $1}' \
 	| grep -vE '^(__|_[A-Z]|completed\.|_edata|_end|__bss_start|_fini|_init|__dso_handle|__TMC_END__|__FRAME_END__|_DYNAMIC|_GLOBAL_OFFSET_TABLE_)' \

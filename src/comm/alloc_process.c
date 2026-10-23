@@ -41,7 +41,7 @@ typedef struct process_shared {
 	/* Builders and allocators.  acq_rel decrement; see buzzer.c. */
 	atomic_size_t refs;
 	size_t peers;
-	pthread_mutex_t mu;
+	__dtfl_mutex mu;
 	/*
 	 * process_entry *, under mu.  A linear search: entries live only
 	 * between the first and last worker's allocate, so the list is
@@ -81,7 +81,7 @@ shared_release(process_shared *s)
 	}
 	__dtfl_free(s->counters);
 	__dtfl_free(s->buzzers);
-	pthread_mutex_destroy(&s->mu);
+	__dtfl_mutex_destroy(&s->mu);
 	__dtfl_free(s);
 }
 
@@ -180,7 +180,7 @@ process_allocate(__dtfl_allocator *a, size_t identifier,
 	 * workers, performed by the first worker that enters this critical
 	 * section.
 	 */
-	pthread_mutex_lock(&s->mu);
+	__dtfl_mutex_lock(&s->mu);
 	for (i = 0; i < s->channels.len; i++) {
 		e = *DTFL_VEC_AT(&s->channels, process_entry *, i);
 		if (e->identifier == identifier) {
@@ -204,11 +204,11 @@ process_allocate(__dtfl_allocator *a, size_t identifier,
 		__dtfl_vec_push(&s->channels, &e);
 	}
 	if (e->mc != mc) {
-		pthread_mutex_unlock(&s->mu);
+		__dtfl_mutex_unlock(&s->mu);
 		__dtfl_panic("failed to correctly cast channel %zu", identifier);
 	}
 	if (e->taken[a->index]) {
-		pthread_mutex_unlock(&s->mu);
+		__dtfl_mutex_unlock(&s->mu);
 		__dtfl_panic("channel %zu already consumed", identifier);
 	}
 	e->taken[a->index] = true;
@@ -224,7 +224,7 @@ process_allocate(__dtfl_allocator *a, size_t identifier,
 	empty = --e->remaining == 0;
 	if (empty)
 		__dtfl_vec_swap_remove(&s->channels, slot);
-	pthread_mutex_unlock(&s->mu);
+	__dtfl_mutex_unlock(&s->mu);
 
 	/* sends: one per target worker; recv: this worker's queue. */
 	for (i = 0; i < s->peers; i++) {
@@ -310,14 +310,20 @@ process_builder_destroy(__dtfl_allocator_builder *b)
 void
 __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders)
 {
+	__dtfl_process_builders_parked(peers, NULL, builders);
+}
+
+void
+__dtfl_process_builders_parked(size_t peers, __dtfl_parker *const *parkers,
+    __dtfl_allocator_builder **builders)
+{
 	process_shared *s = __dtfl_alloc(sizeof *s);
 	size_t i;
 
 	DTFL_ASSERT(peers > 0);
 	atomic_init(&s->refs, peers);
 	s->peers = peers;
-	if (pthread_mutex_init(&s->mu, NULL) != 0)
-		__dtfl_panic("process allocator: cannot initialize mutex");
+	__dtfl_mutex_init(&s->mu);
 	__dtfl_vec_init(&s->channels, sizeof(process_entry *));
 	s->counters = __dtfl_calloc(peers, sizeof *s->counters);
 	s->buzzers = __dtfl_calloc(peers, sizeof *s->buzzers);
@@ -325,7 +331,8 @@ __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders)
 		process_builder *pb = __dtfl_alloc(sizeof *pb);
 
 		s->counters[i] = __dtfl_mpsc_new(sizeof(size_t), NULL, NULL);
-		s->buzzers[i] = __dtfl_parker_new();
+		s->buzzers[i] = parkers != NULL ?
+		    __dtfl_parker_retain(parkers[i]) : __dtfl_parker_new();
 		pb->base.build = process_build;
 		pb->base.destroy = process_builder_destroy;
 		pb->shared = s;

@@ -39,7 +39,8 @@ and so does libdtfl.
 
 @item
 @strong{No hidden global state.}  The only process-wide writable state is
-the four host hooks (allocation, panic, logging, thread spawning); the
+the five host hooks (allocation, panic, logging, thread spawning,
+synchronization); the
 only per-thread state is the buffer behind
 @code{dtfl_last_error_detail}.  The library installs no signal handlers,
 reads no environment variables, and touches no @code{getopt} globals.

@@ -68,6 +68,22 @@ DTFL_API int dtfl_execute(const dtfl_config *cfg, dtfl_worker_fn fn,
     void *ctx, dtfl_guards **guards);
 /* Runs one worker on the calling thread (execute_directly / example). */
 DTFL_API int dtfl_execute_directly(dtfl_worker_fn fn, void *ctx);
+/*
+ * Joins an execution as worker `index` of `peers`, on the calling thread,
+ * reaching every other worker through `transport` (borrowed until this
+ * returns; see dtfl_transport(3)).  Each of the `peers` processes (or
+ * threads) calls this once with its own index and transport, and runs
+ * the same `fn`.  Returns once fn has returned, the worker's dataflows
+ * are complete, and every peer has ended its stream.  Starts no thread:
+ * the worker's own steps move the bytes, and it parks in the
+ * transport's wait.  `cfg` (may be NULL) supplies the progress mode, log
+ * subscriptions, spill and idle merge effort; its mode and thread count
+ * are ignored.  With peers == 1 the transport may be NULL.  Fails with
+ * DTFL_EINVAL before starting anything.  See dtfl_execute_worker(3).
+ */
+DTFL_API int dtfl_execute_worker(const dtfl_config *cfg, size_t index,
+    size_t peers, const dtfl_transport *transport, dtfl_worker_fn fn,
+    void *ctx);
 /* Thread-safe: joins worker threads; frees the guards. */
 DTFL_API int dtfl_guards_join(dtfl_guards *g);
 

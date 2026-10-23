@@ -28,8 +28,8 @@
 /* ------------------------------------------------------------------ */
 
 typedef struct rendezvous {
-	pthread_mutex_t lock;
-	pthread_cond_t cond;
+	__dtfl_mutex lock;
+	__dtfl_cond cond;
 	size_t peers;
 	size_t refs;		/* unbuilt builders; guarded */
 	bool abandoned;		/* a builder died unbuilt; guarded */
@@ -49,17 +49,17 @@ rendezvous_release(rendezvous *rv)
 {
 	size_t i, left;
 
-	(void)pthread_mutex_lock(&rv->lock);
+	__dtfl_mutex_lock(&rv->lock);
 	left = --rv->refs;
-	(void)pthread_mutex_unlock(&rv->lock);
+	__dtfl_mutex_unlock(&rv->lock);
 	if (left > 0)
 		return;
 	for (i = 0; i < rv->peers * rv->peers; i++)
 		__dtfl_merge_queue_drop(rv->slot[i], false);
 	__dtfl_free(rv->slot);
 	__dtfl_spill_fn_release(rv->spill);
-	(void)pthread_cond_destroy(&rv->cond);
-	(void)pthread_mutex_destroy(&rv->lock);
+	__dtfl_cond_destroy(&rv->cond);
+	__dtfl_mutex_destroy(&rv->lock);
 	__dtfl_free(rv);
 }
 
@@ -353,17 +353,17 @@ process_builder_build(__dtfl_allocator_builder *bb)
 		    __dtfl_parker_retain(p->base.parker), drop_parker, wp, rp,
 		    &writer, &reader);
 		p->recvs[r] = reader;
-		(void)pthread_mutex_lock(&rv->lock);
+		__dtfl_mutex_lock(&rv->lock);
 		rv->slot[r * peers + me] = writer;
-		(void)pthread_cond_broadcast(&rv->cond);
-		(void)pthread_mutex_unlock(&rv->lock);
+		__dtfl_cond_broadcast(&rv->cond);
+		__dtfl_mutex_unlock(&rv->lock);
 	}
 
 	/* Extract pusher commitments: queues me -> r. */
-	(void)pthread_mutex_lock(&rv->lock);
+	__dtfl_mutex_lock(&rv->lock);
 	for (r = 0; r < peers && !abandoned; r++) {
 		while (rv->slot[me * peers + r] == NULL && !rv->abandoned)
-			(void)pthread_cond_wait(&rv->cond, &rv->lock);
+			__dtfl_cond_wait(&rv->cond, &rv->lock, UINT64_MAX);
 		if (rv->slot[me * peers + r] == NULL) {
 			abandoned = true;
 			break;
@@ -372,7 +372,7 @@ process_builder_build(__dtfl_allocator_builder *bb)
 		    __dtfl_send_endpoint_new(rv->slot[me * peers + r]);
 		rv->slot[me * peers + r] = NULL;
 	}
-	(void)pthread_mutex_unlock(&rv->lock);
+	__dtfl_mutex_unlock(&rv->lock);
 	if (abandoned)
 		__dtfl_panic("Failed to receive MergeQueue");
 
@@ -388,10 +388,10 @@ process_builder_destroy(__dtfl_allocator_builder *bb)
 	process_builder *b = (process_builder *)bb;
 	rendezvous *rv = b->rv;
 
-	(void)pthread_mutex_lock(&rv->lock);
+	__dtfl_mutex_lock(&rv->lock);
 	rv->abandoned = true;
-	(void)pthread_cond_broadcast(&rv->cond);
-	(void)pthread_mutex_unlock(&rv->lock);
+	__dtfl_cond_broadcast(&rv->cond);
+	__dtfl_mutex_unlock(&rv->lock);
 	rendezvous_release(rv);
 	__dtfl_free(b);
 }
@@ -408,9 +408,8 @@ __dtfl_process_binary_builders(size_t peers, __dtfl_spill_fn *spill,
 	size_t i;
 
 	DTFL_ASSERT(peers > 0);
-	if (pthread_mutex_init(&rv->lock, NULL) != 0 ||
-	    pthread_cond_init(&rv->cond, NULL) != 0)
-		__dtfl_panic("ProcessBinary: rendezvous init failed");
+	__dtfl_mutex_init(&rv->lock);
+	__dtfl_cond_init(&rv->cond);
 	rv->peers = peers;
 	rv->refs = peers;
 	rv->abandoned = false;

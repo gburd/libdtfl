@@ -17,37 +17,27 @@
  * a timed park here: park loops until it is unparked or the deadline
  * passes.
  *
- * On Linux the token is a futex word, as in Rust's std (futex parker):
- * EMPTY, NOTIFIED, or PARKED.  Elsewhere, or when DTFL_PARKER_PTHREAD
- * is defined, a mutex and a CLOCK_MONOTONIC condition variable guard a
- * boolean token.
+ * The token is a word, as in Rust's std (futex parker): EMPTY, NOTIFIED,
+ * or PARKED, slept on with the sync layer's word wait (futex(2) on
+ * Linux, or the host's wait/wake hook).  When no word wait is available
+ * (no futex, or a host that supplied mutex and condition hooks but no
+ * wait/wake) a mutex and a condition guard a boolean token instead.
+ * The choice is made per parker, at creation (ADR-0013).
+ *
+ * A third kind sleeps through callbacks (__dtfl_parker_new_with): the
+ * word machine stays, but the sleep is the callback's (a transport's
+ * wait) and an unpark of a PARKED parker calls the wake callback.  Its
+ * park returns after one sleep, even with no unpark: the sleep may end
+ * for bytes on the transport, which the worker reads when it steps.
  */
-#if defined(__linux__)
-#define _GNU_SOURCE	/* syscall(2) */
-#else
-#define _POSIX_C_SOURCE 200809L	/* pthread_condattr_setclock */
-#endif
-
+#include "base/os_sync.h"
 #include "base/probes_int.h"
 #include "comm/comm_int.h"
 
-#include <errno.h>
-#include <time.h>
-
-#if defined(__linux__) && defined(HAVE_LINUX_FUTEX_H) && \
-    defined(HAVE_SYS_SYSCALL_H) && !defined(DTFL_PARKER_PTHREAD)
-#define DTFL_PARKER_FUTEX 1
-#include <linux/futex.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#endif
-
-#ifdef DTFL_PARKER_FUTEX
 /* uint32_t, not an enum: C11 enumerators are int and PARKED is out of range. */
 #define EMPTY		((uint32_t)0)
 #define NOTIFIED	((uint32_t)1)
 #define PARKED		UINT32_MAX
-#endif
 
 struct __dtfl_parker {
 	/*
@@ -55,41 +45,45 @@ struct __dtfl_parker {
 	 * so the freeing thread sees every other holder's accesses.
 	 */
 	atomic_size_t refs;
-#ifdef DTFL_PARKER_FUTEX
+	bool word;	/* the word path; else mu/cv/token.  Immutable. */
+	/* Callback sleep and wake (NULL: none); immutable. */
+	void (*sleep)(void *ctx, uint64_t timeout_ns);
+	void (*wake)(void *ctx);
+	void *cb_ctx;
 	/*
-	 * The token.  unpark's release swap synchronizes with park's
-	 * acquire read of NOTIFIED, so whatever the unparking thread
-	 * wrote before unpark is visible when park returns.
+	 * Detach protocol for the callbacks: an unparker increments
+	 * wakers, then calls wake only if detached is still false, then
+	 * decrements.  __dtfl_parker_detach sets detached, then waits for
+	 * wakers to reach zero.  All four accesses are seq_cst, so either
+	 * the detacher sees the increment and waits, or the unparker sees
+	 * detached and skips the call.
+	 */
+	atomic_bool detached;
+	atomic_uint wakers;
+	/*
+	 * The token on the word path.  unpark's release swap synchronizes
+	 * with park's acquire read of NOTIFIED, so whatever the unparking
+	 * thread wrote before unpark is visible when park returns.
 	 */
 	_Atomic uint32_t state;
-#else
-	pthread_mutex_t mu;
-	pthread_cond_t cv;
+	__dtfl_mutex mu;
+	__dtfl_cond cv;
 	bool token;	/* under mu */
-#endif
 };
 
 __dtfl_parker *
 __dtfl_parker_new(void)
 {
-	__dtfl_parker *p = __dtfl_alloc(sizeof *p);
+	__dtfl_parker *p = __dtfl_calloc(1, sizeof *p);
 
 	atomic_init(&p->refs, 1);
-#ifdef DTFL_PARKER_FUTEX
 	atomic_init(&p->state, EMPTY);
-#else
-	{
-		pthread_condattr_t ca;
-
-		if (pthread_mutex_init(&p->mu, NULL) != 0 ||
-		    pthread_condattr_init(&ca) != 0 ||
-		    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC) != 0 ||
-		    pthread_cond_init(&p->cv, &ca) != 0)
-			__dtfl_panic("parker: cannot initialize mutex or condvar");
-		pthread_condattr_destroy(&ca);
+	p->word = __dtfl_word_wait_available();
+	if (!p->word) {
+		__dtfl_mutex_init(&p->mu);
+		__dtfl_cond_init(&p->cv);
 		p->token = false;
 	}
-#endif
 	return p;
 }
 
@@ -108,37 +102,24 @@ __dtfl_parker_release(__dtfl_parker *p)
 		return;
 	if (atomic_fetch_sub_explicit(&p->refs, 1, memory_order_acq_rel) != 1)
 		return;
-#ifndef DTFL_PARKER_FUTEX
-	pthread_cond_destroy(&p->cv);
-	pthread_mutex_destroy(&p->mu);
-#endif
+	if (!p->word) {
+		__dtfl_cond_destroy(&p->cv);
+		__dtfl_mutex_destroy(&p->mu);
+	}
 	__dtfl_free(p);
 }
 
-#ifdef DTFL_PARKER_FUTEX
-
-/* Waits while *word == PARKED, for at most rel (NULL: no limit). */
 static void
-futex_wait(_Atomic uint32_t *word, const struct timespec *rel)
+word_unpark(__dtfl_parker *p)
 {
-	/* EINTR, EAGAIN and ETIMEDOUT all mean "look at the word again". */
-	(void)syscall(SYS_futex, (uint32_t *)word, FUTEX_WAIT_PRIVATE,
-	    (uint32_t)PARKED, rel, NULL, 0);
-}
-
-void
-__dtfl_parker_unpark(__dtfl_parker *p)
-{
-	DTFL_PROBE1(unpark, (const void *)p);
 	/* release: pairs with the acquire in park (see the state comment). */
 	if (atomic_exchange_explicit(&p->state, NOTIFIED,
 	    memory_order_release) == PARKED)
-		(void)syscall(SYS_futex, (uint32_t *)&p->state,
-		    FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+		__dtfl_word_wake(&p->state);
 }
 
-void
-__dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
+static void
+word_park(__dtfl_parker *p, uint64_t timeout_ns)
 {
 	uint64_t deadline = 0, now;
 	uint32_t expect;
@@ -151,18 +132,12 @@ __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
 		deadline = __dtfl_clock_ns() + timeout_ns;
 	for (;;) {
 		if (timeout_ns == UINT64_MAX) {
-			futex_wait(&p->state, NULL);
+			__dtfl_word_wait(&p->state, PARKED, UINT64_MAX);
 		} else {
-			struct timespec rel;
-
 			now = __dtfl_clock_ns();
-			if (now < deadline) {
-				rel.tv_sec = (time_t)((deadline - now) /
-				    UINT64_C(1000000000));
-				rel.tv_nsec = (long)((deadline - now) %
-				    UINT64_C(1000000000));
-				futex_wait(&p->state, &rel);
-			}
+			if (now < deadline)
+				__dtfl_word_wait(&p->state, PARKED,
+				    deadline - now);
 		}
 		expect = NOTIFIED;
 		if (atomic_compare_exchange_strong_explicit(&p->state, &expect,
@@ -178,40 +153,107 @@ __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
 	(void)atomic_exchange_explicit(&p->state, EMPTY, memory_order_acquire);
 }
 
-#else /* !DTFL_PARKER_FUTEX */
+__dtfl_parker *
+__dtfl_parker_new_with(void (*sleep)(void *ctx, uint64_t timeout_ns),
+    void (*wake)(void *ctx), void *ctx)
+{
+	__dtfl_parker *p = __dtfl_calloc(1, sizeof *p);
+
+	atomic_init(&p->refs, 1);
+	atomic_init(&p->state, EMPTY);
+	atomic_init(&p->detached, false);
+	atomic_init(&p->wakers, 0);
+	p->word = true;
+	p->sleep = sleep;
+	p->wake = wake;
+	p->cb_ctx = ctx;
+	return p;
+}
+
+void
+__dtfl_parker_detach(__dtfl_parker *p)
+{
+	atomic_store_explicit(&p->detached, true, memory_order_seq_cst);
+	while (atomic_load_explicit(&p->wakers, memory_order_seq_cst) != 0)
+		__dtfl_yield();
+}
+
+static void
+cb_unpark(__dtfl_parker *p)
+{
+	/* release: pairs with the acquire in cb_park, as word_unpark. */
+	if (atomic_exchange_explicit(&p->state, NOTIFIED,
+	    memory_order_release) != PARKED)
+		return;
+	atomic_fetch_add_explicit(&p->wakers, 1, memory_order_seq_cst);
+	if (!atomic_load_explicit(&p->detached, memory_order_seq_cst))
+		p->wake(p->cb_ctx);
+	atomic_fetch_sub_explicit(&p->wakers, 1, memory_order_seq_cst);
+}
+
+static void
+cb_park(__dtfl_parker *p, uint64_t timeout_ns)
+{
+	/* NOTIFIED -> EMPTY and return, or EMPTY -> PARKED. */
+	if (atomic_fetch_sub_explicit(&p->state, 1,
+	    memory_order_acquire) == NOTIFIED)
+		return;
+	if (!atomic_load_explicit(&p->detached, memory_order_seq_cst))
+		p->sleep(p->cb_ctx, timeout_ns);
+	/* PARKED or NOTIFIED -> EMPTY; a NOTIFIED here was this wakeup. */
+	(void)atomic_exchange_explicit(&p->state, EMPTY, memory_order_acquire);
+}
+
+static void
+cond_unpark(__dtfl_parker *p)
+{
+	__dtfl_mutex_lock(&p->mu);
+	p->token = true;
+	__dtfl_cond_signal(&p->cv);
+	__dtfl_mutex_unlock(&p->mu);
+}
+
+static void
+cond_park(__dtfl_parker *p, uint64_t timeout_ns)
+{
+	uint64_t deadline = 0, now;
+
+	__dtfl_mutex_lock(&p->mu);
+	if (timeout_ns != UINT64_MAX)
+		deadline = __dtfl_clock_ns() + timeout_ns;
+	while (!p->token) {
+		if (timeout_ns == UINT64_MAX) {
+			__dtfl_cond_wait(&p->cv, &p->mu, UINT64_MAX);
+			continue;
+		}
+		now = __dtfl_clock_ns();
+		if (now >= deadline)
+			break;
+		__dtfl_cond_wait(&p->cv, &p->mu, deadline - now);
+	}
+	p->token = false;
+	__dtfl_mutex_unlock(&p->mu);
+}
 
 void
 __dtfl_parker_unpark(__dtfl_parker *p)
 {
 	DTFL_PROBE1(unpark, (const void *)p);
-	pthread_mutex_lock(&p->mu);
-	p->token = true;
-	pthread_cond_signal(&p->cv);
-	pthread_mutex_unlock(&p->mu);
+	if (p->sleep != NULL)
+		cb_unpark(p);
+	else if (p->word)
+		word_unpark(p);
+	else
+		cond_unpark(p);
 }
 
 void
 __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
 {
-	struct timespec ts;
-	uint64_t deadline;
-
-	pthread_mutex_lock(&p->mu);
-	if (timeout_ns == UINT64_MAX) {
-		while (!p->token)
-			pthread_cond_wait(&p->cv, &p->mu);
-	} else {
-		deadline = __dtfl_clock_ns() + timeout_ns;
-		ts.tv_sec = (time_t)(deadline / UINT64_C(1000000000));
-		ts.tv_nsec = (long)(deadline % UINT64_C(1000000000));
-		while (!p->token) {
-			if (pthread_cond_timedwait(&p->cv, &p->mu, &ts) ==
-			    ETIMEDOUT)
-				break;
-		}
-	}
-	p->token = false;
-	pthread_mutex_unlock(&p->mu);
+	if (p->sleep != NULL)
+		cb_park(p, timeout_ns);
+	else if (p->word)
+		word_park(p, timeout_ns);
+	else
+		cond_park(p, timeout_ns);
 }
-
-#endif /* DTFL_PARKER_FUTEX */

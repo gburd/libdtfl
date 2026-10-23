@@ -20,7 +20,7 @@ timely-dataflow	communication/src/allocator/zero_copy/initialize.rs	135	src/comm
 timely-dataflow	communication/src/allocator/zero_copy/mod.rs	18	src/comm/comm_int.h	P2	done	module glue; the TcpBuilder/send/recv declarations live in zc_int.h
 timely-dataflow	communication/src/allocator/zero_copy/push_pull.rs	140	src/comm/zc_push_pull.c	P2	done	PullerInner wrapped in counters::Puller for the Tcp allocator
 timely-dataflow	communication/src/allocator/zero_copy/spill.rs	287	src/comm/spill.c	P2	done	SpillPolicyFn is __dtfl_spill_fn, built by dtfl_config_set_spill_file and passed into every MergeQueue pair of ProcessBinary, the TcpBuilder recv queues and the send-loop queues
-timely-dataflow	communication/src/allocator/zero_copy/stream.rs	47	src/comm/zc_tcp.c	P2	done	Stream over a socket fd folds into zc_tcp.c (read/write/shutdown/blocking are direct syscalls)
+timely-dataflow	communication/src/allocator/zero_copy/stream.rs	47	src/comm/transport_socket.c	P2	done	the Stream trait is the public dtfl_transport vtable (ADR-0013); transport_socket.c implements it for sockets, blocking for the cluster threads and non-blocking under poll(2) for dtfl_transport_socket
 timely-dataflow	communication/src/allocator/zero_copy/tcp.rs	225	src/comm/zc_tcp.c	P2	done	send_loop and recv_loop, with the pin's StateEvent/MessageEvent logging through the per-thread logger
 timely-dataflow	communication/src/buzzer.rs	19	src/comm/buzzer.c	P2	done	Buzzer is a reference to an explicit per-worker parker (futex on Linux)
 timely-dataflow	communication/src/initialize.rs	448	src/comm/initialize.c	P2	done	flags parsed without getopt(3) global state (D7), in src/comm/config.c; try_build has Thread, Process, ProcessBinary, Sim and Cluster (the TCP mesh)

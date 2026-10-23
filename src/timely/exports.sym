@@ -1,6 +1,7 @@
 # Public symbols defined in src/timely.  One per line.
 dtfl_execute
 dtfl_execute_directly
+dtfl_execute_worker
 dtfl_guards_join
 dtfl_scope_addr
 dtfl_scope_index

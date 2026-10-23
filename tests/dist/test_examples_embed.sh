@@ -1,7 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# tests/dist/test_examples_embed.sh: smoke test the PostgreSQL embedding
-# skeleton (examples/embed/pg_extension).  It installs the four host
+# tests/dist/test_examples_embed.sh: smoke test the embedding examples:
+# the PostgreSQL skeleton (examples/embed/pg_extension), and the forked
+# workers over socketpairs (examples/embed/forked_workers).  For the
+# skeleton:  It installs the four host
 # hooks (alloc, panic, log, and the single-thread cooperative mode in
 # place of thread hooks), runs a small differential dataflow by hand
 # with dtfl_worker_new_standalone/dtfl_worker_step, and reports the
@@ -34,4 +36,24 @@ if ! diff "$exp/pg_extension.expected" "$tmp/out" >/dev/null 2>&1; then
 	exit 1
 fi
 echo "[embed] PASS: pg_extension"
+
+# Forked workers over socketpairs: the same totals for 1, 2 and 4.
+fw="$bindir/forked_workers"
+if [ ! -x "$fw" ]; then
+	echo "[embed] SKIP: forked_workers not built"
+	exit 77
+fi
+for n in 1 2 4; do
+	if ! timeout 60 "$fw" "$n" >"$tmp/fw.out" 2>"$tmp/fw.err"; then
+		echo "[embed] FAIL: forked_workers $n crashed, hung or failed"
+		sed 's/^/    /' "$tmp/fw.err" | head -10
+		exit 1
+	fi
+	if ! diff "$exp/forked_workers.expected" "$tmp/fw.out" >/dev/null 2>&1; then
+		echo "[embed] FAIL: forked_workers $n output does not match expected"
+		diff "$exp/forked_workers.expected" "$tmp/fw.out" | head -10 | sed 's/^/    /'
+		exit 1
+	fi
+done
+echo "[embed] PASS: forked_workers 1 2 4"
 exit 0
