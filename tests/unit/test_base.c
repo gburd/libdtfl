@@ -48,6 +48,64 @@ DTFL_TEST(alloc_hooks_route_allocation)
 	return MUNIT_OK;
 }
 
+/*
+ * Hooks with PostgreSQL's contract: repalloc and pfree require a pointer
+ * palloc returned, so a NULL pointer is a crash there.  Count the calls
+ * that would crash instead of crashing.
+ */
+static size_t null_reallocs, null_frees;
+
+static void *
+strict_realloc(void *p, size_t n, void *ctx)
+{
+	(void)ctx;
+	if (p == NULL) {
+		null_reallocs++;
+		return malloc(n);
+	}
+	return realloc(p, n);
+}
+
+static void
+strict_free(void *p, void *ctx)
+{
+	(void)ctx;
+	if (p == NULL) {
+		null_frees++;
+		return;
+	}
+	free(p);
+}
+
+/*
+ * A vector starts with no buffer, so its first push grows from NULL.
+ * The library must take that allocation from malloc_fn: realloc_fn and
+ * free_fn never see NULL, so repalloc and pfree can be hooks as they are.
+ */
+DTFL_TEST(alloc_hooks_never_pass_null)
+{
+	dtfl_alloc_hooks h = { counting_malloc, strict_realloc, strict_free, NULL };
+	__dtfl_vec v;
+	uint64_t x = 7;
+	void *p;
+	size_t i;
+
+	(void)params; (void)data;
+	assert_int(dtfl_set_alloc_hooks(&h), ==, DTFL_OK);
+	__dtfl_vec_init(&v, sizeof x);
+	for (i = 0; i < 100; i++)
+		__dtfl_vec_push(&v, &x);
+	__dtfl_vec_free(&v);
+	__dtfl_vec_free(&v);
+	p = __dtfl_realloc(NULL, 32);
+	p = __dtfl_realloc(p, 64);
+	__dtfl_free(p);
+	__dtfl_free(NULL);
+	assert_size(null_reallocs, ==, 0);
+	assert_size(null_frees, ==, 0);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(alloc_hooks_reject_null_members)
 {
 	dtfl_alloc_hooks h = { NULL, counting_realloc, counting_free, NULL };
@@ -123,6 +181,7 @@ DTFL_TEST(strerror_covers_codes)
 
 static MunitTest tests[] = {
 	DTFL_T(alloc_hooks_route_allocation),
+	DTFL_T(alloc_hooks_never_pass_null),
 	DTFL_T(alloc_hooks_reject_null_members),
 	DTFL_T(panic_reaches_hook),
 	DTFL_T(mul_size_overflow_panics),
