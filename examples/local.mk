@@ -414,3 +414,12 @@ dist_check_SCRIPTS += tests/dist/test_examples_ivm.sh
 TESTS += tests/dist/test_examples_ivm.sh
 EXTRA_DIST += examples/ivm/ivm_view.expected examples/ivm/txn_harness.expected \
 	examples/ivm/sqlrow_check.expected
+
+# Workers in forked processes over the built-in socketpair transport
+# (dtfl_execute_worker, ADR-0013).
+noinst_PROGRAMS += examples/embed/forked_workers
+check_PROGRAMS += examples/embed/forked_workers
+examples_embed_forked_workers_SOURCES = examples/embed/forked_workers.c
+examples_embed_forked_workers_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
+examples_embed_forked_workers_LDADD = libdtfl.la
+EXTRA_DIST += examples/embed/forked_workers.expected
