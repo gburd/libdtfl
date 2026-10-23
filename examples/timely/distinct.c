@@ -146,6 +146,8 @@ build(dtfl_scope *scope, void *arg)
 	dtfl_stream *out;
 
 	dtfl_op_builder_input(b, s, dtfl_pact_exchange(route_by_value, NULL));
+	/* As Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, dtfl_type_u64());
 	dtfl_op_builder_build(b, distinct_logic, dc, distinct_free);
 	out = dtfl_stream_inspect(out, inspect_value, DTFL_CTX(&c->index, NULL));

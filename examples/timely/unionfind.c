@@ -124,6 +124,8 @@ union_find(dtfl_stream *in, dtfl_pact pact)
 	dtfl_stream *out;
 
 	dtfl_op_builder_input(b, in, pact);
+	/* As Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, pair);
 	dtfl_op_builder_build(b, uf_logic, c, uf_free);
 	dtfl_type_free(pair);
