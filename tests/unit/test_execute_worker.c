@@ -615,13 +615,22 @@ DTFL_TEST(execute_worker_rejects_bad_arguments)
  * non-zero on a mismatch, so a passing dtfl_execute means every child
  * got its share.  The panic hook makes a broken child exit non-zero
  * rather than abort with a core.
+ *
+ * Each child arms its own alarm: fork(2) does not carry the test's
+ * alarm into the children, and a hung child keeps the write end of
+ * munit's report pipe, which it inherited, open.  The test's alarm then
+ * kills only the test process, and munit waits on the pipe for as long
+ * as the children live.
  */
+#define CHILD_ALARM 20
+
 static void
 forked_worker(dtfl_worker *w, void *arg)
 {
 	wctx c;
 
 	(void)arg;
+	alarm(CHILD_ALARM);
 	memset(&c, 0, sizeof c);
 	worker(w, &c);
 	if (c.misrouted != 0 || c.count != M)
@@ -675,18 +684,24 @@ DTFL_TEST(execute_forked_reports_a_failed_child)
 	dtfl_config *cfg = dtfl_config_new();
 
 	(void)params; (void)data;
-	alarm(60);
+	alarm(3 * CHILD_ALARM);
 	dtfl_set_panic_hook(quiet_panic, NULL);
 	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
 	assert_int(dtfl_config_set_threads(cfg, 3), ==, 0);
 	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
 	/*
 	 * Worker 1 exits with 7; its peers then see their streams end early
-	 * and panic (6).  The first failure waited for is reported.
+	 * and panic (6).  The first failure waited for is reported.  A peer
+	 * that never sees the end (a descriptor of worker 1's leaked into
+	 * another child) dies of its alarm instead, and that detail says
+	 * "killed by signal 14".
 	 */
 	assert_int(dtfl_execute(cfg, failing_worker, NULL, NULL), ==, DTFL_EIO);
-	assert_not_null(strstr(dtfl_last_error_detail(), "exited with status"));
+	if (strstr(dtfl_last_error_detail(), "exited with status") == NULL)
+		munit_errorf("expected a child to exit non-zero, got: %s",
+		    dtfl_last_error_detail());
 	dtfl_config_free(cfg);
+	alarm(0);
 	return MUNIT_OK;
 }
 
@@ -776,7 +791,7 @@ act_worker(dtfl_worker *w, void *arg)
 	act_state s;
 
 	(void)arg;
-	alarm(20);	/* a lost wake hangs this child; let it die */
+	alarm(CHILD_ALARM);	/* a lost wake hangs this child */
 	memset(&s, 0, sizeof s);
 	dtfl_worker_dataflow(w, "act", tc, act_build, &s);
 	while (dtfl_worker_step_or_park(w, UINT64_MAX))
