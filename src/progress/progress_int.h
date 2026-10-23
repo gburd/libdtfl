@@ -49,7 +49,6 @@ void __dtfl_cb_init(__dtfl_change_batch *cb, unsigned key_words);
 void __dtfl_cb_free(__dtfl_change_batch *cb);
 void __dtfl_cb_clear(__dtfl_change_batch *cb);
 bool __dtfl_cb_is_dirty(const __dtfl_change_batch *cb);
-void __dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta);
 void __dtfl_cb_compact(__dtfl_change_batch *cb);
 /* is_empty and len compact first, as upstream. */
 bool __dtfl_cb_is_empty(__dtfl_change_batch *cb);
@@ -60,11 +59,46 @@ void __dtfl_cb_drain_into(__dtfl_change_batch *cb, __dtfl_change_batch *other);
 void __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src);
 
 /*
- * Iteration after compaction: __dtfl_cb_iter compacts and returns the
- * entry count; entry i is at __dtfl_cb_key(cb, i), __dtfl_cb_delta(cb, i).
- * "drain" is iterate then clear.
+ * ChangeBatch::maintain_bounds: compact only once enough work has
+ * accumulated, more than 32 entries and at least half of them not
+ * clean.  The one copy of upstream's constants.
  */
-size_t __dtfl_cb_iter(__dtfl_change_batch *cb);
+static inline void
+__dtfl_cb_maintain_bounds(__dtfl_change_batch *cb)
+{
+	if (cb->updates.len > 32 && cb->updates.len >> 1 >= cb->clean)
+		__dtfl_cb_compact(cb);
+}
+
+/*
+ * Adds an update for `key` with `delta` (ChangeBatch::update), then
+ * maintain_bounds.  Inline: the progress tracker calls it several times
+ * per pointstamp.
+ */
+static inline void
+__dtfl_cb_update(__dtfl_change_batch *cb, const uint64_t *key, int64_t delta)
+{
+	uint64_t *e = (uint64_t *)__dtfl_vec_push_n_uninit(&cb->updates, 1);
+	unsigned w;
+
+	for (w = 0; w < cb->kw; w++)
+		e[w] = key[w];
+	e[cb->kw] = (uint64_t)delta;
+	__dtfl_cb_maintain_bounds(cb);
+}
+
+/*
+ * Iteration after compaction: __dtfl_cb_iter compacts if dirty and
+ * returns the entry count; entry i is at __dtfl_cb_key(cb, i),
+ * __dtfl_cb_delta(cb, i).  "drain" is iterate then clear.
+ */
+static inline size_t
+__dtfl_cb_iter(__dtfl_change_batch *cb)
+{
+	if (cb->clean < cb->updates.len)
+		__dtfl_cb_compact(cb);
+	return cb->updates.len;
+}
 
 static inline const uint64_t *
 __dtfl_cb_key(const __dtfl_change_batch *cb, size_t i)

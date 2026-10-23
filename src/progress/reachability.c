@@ -710,28 +710,42 @@ wl_cmp(const __dtfl_tracker *t, const uint64_t *a, const uint64_t *b)
 }
 
 static void
+wl_copy(uint64_t *dst, const uint64_t *src, size_t w)
+{
+	size_t i;
+
+	for (i = 0; i < w; i++)
+		dst[i] = src[i];
+}
+
+/*
+ * The worklist is a min-heap on (time, location), as upstream's
+ * BinaryHeap<Reverse<..>>.  Push and pop move a hole rather than
+ * swapping, as BinaryHeap does: one entry copy per level.  Entries with
+ * equal (time, location) are summed when popped, so the pop order among
+ * them, which depends on the heap's layout, never shows.
+ */
+static void
 wl_push(__dtfl_tracker *t, const uint64_t *time, __dtfl_location loc, int64_t diff)
 {
 	size_t w = wl_words(t), i;
-	uint64_t *e, *heap;
+	uint64_t e[DTFL_TIME_MAX + 3], *heap;
 
-	e = __dtfl_vec_push_n(&t->worklist, NULL, w);
 	__dtfl_time_copy(t->tc, e, time);
 	__dtfl_location_key(loc, e + t->depth);
 	e[t->depth + 2] = (uint64_t)diff;
+	(void)__dtfl_vec_push_n_uninit(&t->worklist, w);
 	heap = (uint64_t *)(void *)t->worklist.data;
 	i = t->worklist.len / w - 1;
 	while (i > 0) {
 		size_t parent = (i - 1) / 2;
-		uint64_t tmp[DTFL_TIME_MAX + 3];
 
-		if (wl_cmp(t, heap + parent * w, heap + i * w) <= 0)
+		if (wl_cmp(t, heap + parent * w, e) <= 0)
 			break;
-		memcpy(tmp, heap + parent * w, w * sizeof(uint64_t));
-		memcpy(heap + parent * w, heap + i * w, w * sizeof(uint64_t));
-		memcpy(heap + i * w, tmp, w * sizeof(uint64_t));
+		wl_copy(heap + i * w, heap + parent * w, w);
 		i = parent;
 	}
+	wl_copy(heap + i * w, e, w);
 }
 
 static bool
@@ -748,27 +762,50 @@ wl_pop(__dtfl_tracker *t, uint64_t *out)
 {
 	size_t w = wl_words(t), n = t->worklist.len / w, i = 0;
 	uint64_t *heap = (uint64_t *)(void *)t->worklist.data;
+	const uint64_t *last;
 
-	memcpy(out, heap, w * sizeof(uint64_t));
+	wl_copy(out, heap, w);
 	n--;
-	if (n > 0)
-		memcpy(heap, heap + n * w, w * sizeof(uint64_t));
-	__dtfl_vec_truncate(&t->worklist, n * w);
+	t->worklist.len = n * w;
+	if (n == 0)
+		return;
+	/* Sift the last entry down from the root, moving the hole. */
+	last = heap + n * w;
 	for (;;) {
-		size_t l = 2 * i + 1, r = l + 1, m = i;
-		uint64_t tmp[DTFL_TIME_MAX + 3];
+		size_t l = 2 * i + 1, m;
 
-		if (l < n && wl_cmp(t, heap + l * w, heap + m * w) < 0)
-			m = l;
-		if (r < n && wl_cmp(t, heap + r * w, heap + m * w) < 0)
-			m = r;
-		if (m == i)
+		if (l >= n)
 			break;
-		memcpy(tmp, heap + m * w, w * sizeof(uint64_t));
-		memcpy(heap + m * w, heap + i * w, w * sizeof(uint64_t));
-		memcpy(heap + i * w, tmp, w * sizeof(uint64_t));
+		m = l;
+		if (l + 1 < n && wl_cmp(t, heap + (l + 1) * w, heap + l * w) < 0)
+			m = l + 1;
+		if (wl_cmp(t, heap + m * w, last) >= 0)
+			break;
+		wl_copy(heap + i * w, heap + m * w, w);
 		i = m;
 	}
+	wl_copy(heap + i * w, last, w);
+}
+
+/*
+ * For tests: pushes n entries (times of t->depth words, then location
+ * and diff) into the worklist and pops them all into out, so a test can
+ * check the heap pops in (time, location) order.  The worklist must be
+ * empty before and is empty after.
+ */
+void
+__dtfl_tracker_worklist_roundtrip(__dtfl_tracker *t, const uint64_t *times,
+    const __dtfl_location *locs, const int64_t *diffs, size_t n,
+    uint64_t *out)
+{
+	size_t w = wl_words(t), i;
+
+	DTFL_ASSERT(t->worklist.len == 0);
+	for (i = 0; i < n; i++)
+		wl_push(t, times + i * t->depth, locs[i], diffs[i]);
+	for (i = 0; i < n; i++)
+		wl_pop(t, out + i * w);
+	DTFL_ASSERT(t->worklist.len == 0);
 }
 
 static void
