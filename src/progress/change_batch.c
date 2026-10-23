@@ -142,9 +142,10 @@ insertion_sort(__dtfl_change_batch *cb, size_t n)
 		j = i;
 		do {
 			uint64_t *d = base + j * words;
+			const uint64_t *src = d - words;
 
 			for (w = 0; w < words; w++)
-				d[w] = d[w - words];
+				d[w] = src[w];
 		} while (--j > 0 && __dtfl_words_cmp(base + (j - 1) * words,
 		    tmp, kw) > 0);
 		for (w = 0; w < words; w++)
