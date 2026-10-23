@@ -208,6 +208,10 @@ void __dtfl_tracker_update(__dtfl_tracker *t, __dtfl_location loc,
     const uint64_t *time, int64_t delta);
 bool __dtfl_tracker_tracking_anything(__dtfl_tracker *t);
 void __dtfl_tracker_propagate_all(__dtfl_tracker *t);
+/* Tests only: the worklist heap's pop order (reachability.c). */
+void __dtfl_tracker_worklist_roundtrip(__dtfl_tracker *t,
+    const uint64_t *times, const __dtfl_location *locs, const int64_t *diffs,
+    size_t n, uint64_t *out);
 /*
  * Tracker::pushed: changes to implications, keyed (Location, T) (2 +
  * depth words).  The caller iterates and clears.

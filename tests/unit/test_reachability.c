@@ -117,6 +117,58 @@ DTFL_TEST(progress_reachability__doc_example)
 	return MUNIT_OK;
 }
 
+/*
+ * The worklist is a min-heap on (time, location), as upstream's
+ * BinaryHeap<Reverse<(T, Location, i64)>>: whatever order entries are
+ * pushed in, they pop sorted by time then location, with entries for one
+ * (time, location) adjacent so propagate_all can sum them.  A heap that
+ * pops out of order still reaches the same frontiers, the counts being
+ * order-free, so only this test sees it; propagation itself just takes
+ * longer, exponentially so in nested scopes.
+ */
+DTFL_TEST(worklist_pops_in_time_location_order)
+{
+	__dtfl_reach_builder *b = __dtfl_reach_builder_new(u64);
+	__dtfl_connectivity scope;
+	__dtfl_tracker *t;
+	enum { N = 300 };
+	uint64_t times[N], out[N * 4], state = 12345;
+	__dtfl_location locs[N];
+	int64_t diffs[N], sum;
+	size_t i, round;
+
+	(void)params; (void)data;
+	add_simple_node(b, 0, 0);
+	add_simple_node(b, 1, 1);
+	__dtfl_reach_builder_add_edge(b, src_loc(0, 0), tgt_loc(1, 0));
+	__dtfl_reach_builder_add_edge(b, src_loc(1, 0), tgt_loc(0, 0));
+	t = __dtfl_reach_builder_build(b, &scope);
+	for (round = 1; round <= N; round += 37) {
+		for (i = 0; i < round; i++) {
+			state = state * 6364136223846793005ULL +
+			    1442695040888963407ULL;
+			times[i] = (state >> 33) % 17;
+			locs[i] = (state >> 20) & 1 ?
+			    src_loc((state >> 21) & 1, 0) :
+			    tgt_loc((state >> 21) & 1, 0);
+			diffs[i] = (int64_t)i + 1;
+		}
+		__dtfl_tracker_worklist_roundtrip(t, times, locs, diffs, round,
+		    out);
+		for (i = 1; i < round; i++)
+			assert_int(__dtfl_words_cmp(out + (i - 1) * 4,
+			    out + i * 4, 3), <=, 0);
+		/* Every diff comes back once: the pops are a permutation. */
+		sum = 0;
+		for (i = 0; i < round; i++)
+			sum += (int64_t)out[i * 4 + 3];
+		assert_int64(sum, ==, (int64_t)(round * (round + 1) / 2));
+	}
+	__dtfl_connectivity_free(&scope);
+	__dtfl_tracker_free(t);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(cycle_without_increment_is_detected)
 {
 	__dtfl_reach_builder *b = __dtfl_reach_builder_new(u64);
@@ -263,6 +315,7 @@ teardown(void *fixture)
 
 static MunitTest tests[] = {
 	T(progress_reachability__doc_example),
+	T(worklist_pops_in_time_location_order),
 	T(cycle_without_increment_is_detected),
 	T(scope_summary_and_outputs),
 	T(wide_reversed_operator_builds),
