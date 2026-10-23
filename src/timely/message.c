@@ -18,18 +18,39 @@
  */
 #include "timely/timely_int.h"
 
-dtfl_message *
-__dtfl_message_new(const dtfl_time_class *tc, const uint64_t *time,
-    __dtfl_batch *data)
+/* Fills a fresh block; every field is set, as a recycled block is stale. */
+static dtfl_message *
+message_init(dtfl_message *m, uintptr_t pool, const dtfl_time_class *tc,
+    const uint64_t *time, __dtfl_batch *data)
 {
-	dtfl_message *m = __dtfl_alloc(sizeof *m);
-
 	m->depth = tc->depth;
 	__dtfl_time_copy(tc, m->time, time);
 	m->data = data;
 	m->from = 0;
 	m->seq = 0;
+	m->pool = pool;
 	return m;
+}
+
+dtfl_message *
+__dtfl_message_new(const dtfl_time_class *tc, const uint64_t *time,
+    __dtfl_batch *data)
+{
+	return message_init(__dtfl_alloc(sizeof(dtfl_message)), 0, tc, time,
+	    data);
+}
+
+/*
+ * Message::new for a message sent per container: upstream moves it
+ * through the channel by value, so it costs no allocation there; here
+ * the block comes from the sending worker's free list.
+ */
+dtfl_message *
+__dtfl_message_new_pooled(__dtfl_freelist *pool, const dtfl_time_class *tc,
+    const uint64_t *time, __dtfl_batch *data)
+{
+	return message_init(__dtfl_freelist_get(pool), (uintptr_t)pool, tc,
+	    time, data);
 }
 
 void
@@ -39,6 +60,18 @@ __dtfl_message_free(dtfl_message *m)
 		return;
 	__dtfl_batch_release(m->data);
 	__dtfl_free(m);
+}
+
+void
+__dtfl_message_free_local(dtfl_message *m, __dtfl_freelist *pool)
+{
+	if (m == NULL)
+		return;
+	__dtfl_batch_release(m->data);
+	if (m->pool == (uintptr_t)pool)
+		__dtfl_freelist_put(pool, m);
+	else
+		__dtfl_free(m);
 }
 
 /* ------------------------------------------------------------------ */
@@ -141,6 +174,7 @@ msg_decode(const __dtfl_msg_class *mc, const __dtfl_bytes *b)
 	if (data == NULL)
 		return NULL;
 	m = __dtfl_alloc(sizeof *m);
+	m->pool = 0;
 	m->depth = (unsigned)depth;
 	m->from = (size_t)get_u64_le(b->ptr);
 	m->seq = (size_t)get_u64_le(b->ptr + 8);
@@ -158,6 +192,7 @@ msg_clone(const __dtfl_msg_class *mc, const void *msg)
 
 	(void)mc;
 	*out = *m;
+	out->pool = 0;	/* a hook allocation, not a block of m's list */
 	out->data = __dtfl_batch_retain(m->data);	/* share, don't copy (D2) */
 	return out;
 }

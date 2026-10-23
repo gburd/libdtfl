@@ -22,6 +22,7 @@ struct __dtfl_pull_counter {
 	__dtfl_pull *pullable;		/* owned */
 	__dtfl_change_batch *consumed;	/* not owned */
 	dtfl_message *held;		/* current message; owned until released */
+	__dtfl_freelist *pool;		/* this worker's message list, or NULL */
 };
 
 __dtfl_pull_counter *
@@ -32,6 +33,7 @@ __dtfl_pull_counter_new(__dtfl_pull *inner, __dtfl_change_batch *consumed)
 	c->pullable = inner;
 	c->consumed = consumed;
 	c->held = NULL;
+	c->pool = NULL;
 	return c;
 }
 
@@ -43,7 +45,10 @@ release_held(__dtfl_pull_counter *c)
 		int64_t count = (int64_t)__dtfl_batch_len(c->held->data);
 
 		__dtfl_cb_update(c->consumed, c->held->time, count);
-		__dtfl_message_free(c->held);
+		if (c->pool != NULL)
+			__dtfl_message_free_local(c->held, c->pool);
+		else
+			__dtfl_message_free(c->held);
 		c->held = NULL;
 	}
 }
@@ -70,6 +75,12 @@ __dtfl_pull_counter_free(__dtfl_pull_counter *c)
 	release_held(c);
 	__dtfl_pull_destroy(c->pullable);
 	__dtfl_free(c);
+}
+
+void
+__dtfl_pull_counter_set_pool(__dtfl_pull_counter *c, __dtfl_freelist *pool)
+{
+	c->pool = pool;
 }
 
 void

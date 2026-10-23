@@ -834,7 +834,156 @@ DTFL_TEST(capability__downgrade_backwards_panics)
 	return MUNIT_OK;
 }
 
+/*
+ * A pooled message: freed on its own worker it goes back on that
+ * worker's list, comes back with every field reset, and freed on
+ * another worker (another list) it goes to the hooks instead of that
+ * worker's list.  A clone is never a pooled block.
+ */
+DTFL_TEST(message_pool_stays_with_its_worker)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	__dtfl_freelist mine, theirs;
+	dtfl_message *m, *m2, *c;
+	const __dtfl_msg_class *mc = __dtfl_message_class();
+	uint64_t t = 5;
+
+	(void)params; (void)data;
+	__dtfl_freelist_init(&mine, sizeof(dtfl_message), 4);
+	__dtfl_freelist_init(&theirs, sizeof(dtfl_message), 4);
+	m = __dtfl_message_new_pooled(&mine, tc, &t, __dtfl_batch_new(0, 0));
+	m->from = 7;
+	m->seq = 9;
+	c = mc->clone(mc, m);
+	assert_true(c->pool == 0);
+	__dtfl_message_free_local(c, &mine);	/* not mine: to the hooks */
+	assert_size(mine.len, ==, 0);
+	__dtfl_message_free_local(m, &mine);
+	assert_size(mine.len, ==, 1);
+	t = 6;
+	m2 = __dtfl_message_new_pooled(&mine, tc, &t, __dtfl_batch_new(0, 0));
+	assert_ptr_equal(m2, m);
+	assert_size(m2->from, ==, 0);
+	assert_size(m2->seq, ==, 0);
+	assert_uint64(m2->time[0], ==, 6);
+	assert_size(__dtfl_batch_len(m2->data), ==, 0);
+	__dtfl_message_free_local(m2, &theirs);
+	assert_size(theirs.len, ==, 0);
+	assert_size(mine.len, ==, 0);
+	__dtfl_freelist_free(&mine);
+	__dtfl_freelist_free(&theirs);
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
+/*
+ * Worker teardown returns every pooled block to the hooks.  Counting
+ * hooks see a dataflow whose notify operator holds pooled capabilities
+ * (taken from received messages and kept for a later time) when the
+ * worker is freed, and every allocation must be freed by the end.
+ * Dropping the dataflows puts their spares back on the worker's lists,
+ * so the lists must be freed after the dataflows.  The input is closed
+ * first: closing activates its operators, so it needs a live worker.
+ */
+static long td_allocs, td_frees;
+
+static void *
+td_malloc(size_t n, void *ctx)
+{
+	(void)ctx;
+	td_allocs++;
+	return malloc(n);	/* DTFL_RAW_OK: test hook */
+}
+
+static void *
+td_realloc(void *p, size_t n, void *ctx)
+{
+	(void)ctx;
+	return realloc(p, n);	/* DTFL_RAW_OK: test hook */
+}
+
+static void
+td_free(void *p, void *ctx)
+{
+	(void)ctx;
+	td_frees++;
+	free(p);	/* DTFL_RAW_OK: test hook */
+}
+
+static void
+td_logic(void *ctx, dtfl_op *op, dtfl_notificator *note)
+{
+	dtfl_message *m;
+	dtfl_cap *cap;
+	uint64_t n;
+
+	(void)ctx;
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		uint64_t later = 1000;
+		dtfl_cap *c = dtfl_op_input_cap(op, 0, 0);
+
+		dtfl_notificator_notify_at(note, dtfl_cap_delayed(c, &later));
+		dtfl_cap_drop(c);
+	}
+	while (dtfl_notificator_next(note, &cap, &n))
+		dtfl_cap_drop(cap);
+}
+
+typedef struct td_ctx {
+	dtfl_input *in;
+} td_ctx;
+
+static void
+td_build(dtfl_scope *scope, void *arg)
+{
+	td_ctx *c = arg;
+	dtfl_stream *s = dtfl_input_to_stream(c->in, scope);
+
+	(void)dtfl_stream_unary_notify(s, dtfl_pact_pipeline(), "Hold", NULL, 0,
+	    dtfl_type_u64(), td_logic, DTFL_NOCTX);
+}
+
+DTFL_TEST(worker_teardown_returns_pooled_blocks)
+{
+	dtfl_alloc_hooks h = { td_malloc, td_realloc, td_free, NULL };
+	dtfl_time_class *tc;
+	dtfl_worker *w;
+	td_ctx c;
+	uint64_t i, t;
+
+	(void)params; (void)data;
+	assert_int(dtfl_set_alloc_hooks(&h), ==, DTFL_OK);
+	tc = dtfl_time_u64();
+	w = dtfl_worker_new_standalone();
+	c.in = dtfl_input_new(dtfl_type_u64());
+	dtfl_worker_dataflow(w, "td", tc, td_build, &c);
+	for (t = 0; t < 8; t++) {
+		dtfl_input_advance_to(c.in, &t);
+		for (i = 0; i < 20; i++) {
+			unsigned char b[8];
+
+			dtfl_put_u64(b, i);
+			dtfl_input_send(c.in, b, sizeof b);
+		}
+		dtfl_input_flush(c.in);
+		dtfl_worker_step(w);
+		dtfl_worker_step(w);
+	}
+	/*
+	 * Close the input without stepping, then free the worker
+	 * mid-computation: the operator still holds pooled caps.
+	 */
+	dtfl_input_close(c.in);
+	dtfl_worker_free(w);
+	dtfl_time_class_free(tc);
+	assert_long(td_allocs, >, 0);
+	assert_long(td_frees, ==, td_allocs);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(message_pool_stays_with_its_worker),
+	DTFL_T(worker_teardown_returns_pooled_blocks),
 	DTFL_T(builder__map_pipeline),
 	DTFL_T(tee__fan_out),
 	DTFL_T(session__shared_forwarding_keeps_records),

@@ -179,8 +179,50 @@ DTFL_TEST(strerror_covers_codes)
 	return MUNIT_OK;
 }
 
+/*
+ * The free list hands back what was put (LIFO), allocates when empty,
+ * frees past its cap, and frees every spare at the end; the counting
+ * hooks see each block allocated and freed exactly once.
+ */
+DTFL_TEST(freelist_reuses_and_caps)
+{
+	dtfl_alloc_hooks h = { counting_malloc, counting_realloc,
+	    counting_free, NULL };
+	__dtfl_freelist f;
+	void *a, *b, *c, *d;
+
+	(void)params; (void)data;
+	assert_int(dtfl_set_alloc_hooks(&h), ==, DTFL_OK);
+	hook_mallocs = 0;
+	__dtfl_freelist_init(&f, 48, 2);
+	a = __dtfl_freelist_get(&f);
+	b = __dtfl_freelist_get(&f);
+	c = __dtfl_freelist_get(&f);
+	assert_size(hook_mallocs, ==, 3);
+	memset(a, 0xab, 48);
+	__dtfl_freelist_put(&f, a);
+	__dtfl_freelist_put(&f, b);
+	__dtfl_freelist_put(&f, c);	/* past the cap: freed */
+	assert_size(f.len, ==, 2);
+	d = __dtfl_freelist_get(&f);
+	assert_ptr_equal(d, b);
+	assert_ptr_equal(__dtfl_freelist_get(&f), a);
+	assert_size(hook_mallocs, ==, 3);
+	c = __dtfl_freelist_get(&f);	/* empty again: a fresh block */
+	assert_size(hook_mallocs, ==, 4);
+	__dtfl_free(c);
+	__dtfl_freelist_put(&f, NULL);
+	__dtfl_freelist_put(&f, a);
+	__dtfl_freelist_put(&f, d);
+	__dtfl_freelist_free(&f);
+	assert_size(f.len, ==, 0);
+	assert_null(f.head);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(alloc_hooks_route_allocation),
+	DTFL_T(freelist_reuses_and_caps),
 	DTFL_T(alloc_hooks_never_pass_null),
 	DTFL_T(alloc_hooks_reject_null_members),
 	DTFL_T(panic_reaches_hook),

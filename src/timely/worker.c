@@ -20,6 +20,7 @@
  * indexed by id holds them (a NULL entry means "no path").
  */
 #include "base/probes_int.h"
+#include "timely/timely_int.h"
 #include "timely/worker_int.h"
 
 #include <stdio.h>
@@ -67,6 +68,10 @@ __dtfl_worker_new(__dtfl_allocator *a, dtfl_progress_mode mode, bool timer,
 	__dtfl_vec_init(&w->paths, sizeof(path_entry));
 	__dtfl_vec_init(&w->temp_channel_ids, sizeof(size_t));
 	__dtfl_vec_init(&w->active_dataflows, sizeof(size_t));
+	/* shortcut: 64 spares each, about one wave of the arrange benchmark. */
+	__dtfl_freelist_init(&w->msg_pool, sizeof(dtfl_message), 64);
+	__dtfl_freelist_init(&w->cap_pool, sizeof(dtfl_cap), 64);
+	__dtfl_freelist_init(&w->session_pool, __dtfl_session_size(), 16);
 	w->owner = pthread_self();
 	return w;
 }
@@ -127,6 +132,10 @@ __dtfl_worker_free(__dtfl_worker *w)
 	__dtfl_log_registry_free(w->log);
 	__dtfl_activations_free(&w->activations);
 	__dtfl_allocator_destroy(w->allocator);
+	/* Last: dropping the dataflows above returns their spares here. */
+	__dtfl_freelist_free(&w->msg_pool);
+	__dtfl_freelist_free(&w->cap_pool);
+	__dtfl_freelist_free(&w->session_pool);
 	__dtfl_free(w);
 }
 

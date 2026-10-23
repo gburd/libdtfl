@@ -64,16 +64,14 @@ msort(const row_cmp *c, size_t *v, size_t *tmp, size_t n)
 /*
  * Consolidate::consolidate_into's swap: moves out's storage into b and
  * b's old storage into out, which is left empty with its capacity, so a
- * caller that keeps out reuses it as the next target.
+ * caller that keeps out reuses it as the next target.  A column that
+ * lives in its batch's one-block allocation is copied instead of moved
+ * (__dtfl_batch_move_rows), so neither batch points into the other.
  */
 static void
 swap_storage(__dtfl_batch *b, __dtfl_batch *out)
 {
-	__dtfl_vec_swap(&b->arena, &out->arena);
-	__dtfl_vec_swap(&b->offs, &out->offs);
-	__dtfl_vec_swap(&b->times, &out->times);
-	__dtfl_vec_swap(&b->diffs, &out->diffs);
-	__dtfl_batch_clear(out);
+	__dtfl_batch_move_rows(b, out);
 }
 
 /*
@@ -368,7 +366,9 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 	DTFL_ASSERT(dc->width == b->dw);
 	if (__dtfl_batch_len(b) == 0)
 		return;
-	out = __dtfl_batch_new(b->tw, b->dw);
+	/* One block sized for every row, so the target is one allocation. */
+	out = __dtfl_batch_new_reserved(b->tw, b->dw, __dtfl_batch_len(b),
+	    b->arena.len);
 	__dtfl_vec_init(&scratch, 1);
 	consolidate_into(b, rt, dc, out, &scratch);
 	__dtfl_vec_free(&scratch);

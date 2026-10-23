@@ -41,14 +41,15 @@ __dtfl_output_give(dtfl_output *o, const uint64_t *time, __dtfl_batch *data)
 		__dtfl_batch_release(data);
 		return;
 	}
-	bundle = __dtfl_message_new(o->tc, time, data);
+	bundle = o->msg_pool != NULL ?
+	    __dtfl_message_new_pooled(o->msg_pool, o->tc, time, data) :
+	    __dtfl_message_new(o->tc, time, data);
 	__dtfl_push_push(o->pushee, &bundle);
 	/* The counter+tee take ownership; a recycled element is unexpected. */
 	if (bundle != NULL) {
 		dtfl_message *m = bundle;
 
-		__dtfl_batch_release(m->data);
-		__dtfl_free(m);
+		__dtfl_message_free(m);
 	}
 }
 
