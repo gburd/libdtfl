@@ -138,6 +138,50 @@ AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	 LDFLAGS="$LDFLAGS $DTFL_SAN_FLAGS"])
 
 # -------------------------------------------------------------------------
+# Frame pointers.  Kept by default, so perf, bpftrace and other profilers
+# can walk the stack of a release build without DWARF unwinding.
+# --disable-frame-pointers lets the compiler omit them.  The flags go in
+# AM_CFLAGS, ahead of the user's CFLAGS, so CFLAGS can still override.
+# -------------------------------------------------------------------------
+AC_ARG_ENABLE([frame-pointers],
+	[AS_HELP_STRING([--disable-frame-pointers], [let the compiler omit frame pointers (kept by default, for profilers)])],
+	[], [enable_frame_pointers=yes])
+DTFL_FP_CFLAGS=""
+AS_IF([test "x$enable_frame_pointers" = xyes],
+	[for _f in -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer; do
+		AC_MSG_CHECKING([whether $CC accepts $_f])
+		_save_cflags="$CFLAGS"
+		CFLAGS="$CFLAGS -Werror $_f"
+		AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [])],
+			[DTFL_FP_CFLAGS="$DTFL_FP_CFLAGS $_f"; AC_MSG_RESULT([yes])],
+			[AC_MSG_RESULT([no])])
+		CFLAGS="$_save_cflags"
+	 done])
+AC_SUBST([DTFL_FP_CFLAGS])
+
+# -------------------------------------------------------------------------
+# USDT static probes (DTrace and SystemTap) through sys/sdt.h, from
+# systemtap-sdt-dev on Debian.  Default: on when the header provides
+# STAP_PROBEn (FreeBSD's kernel sys/sdt.h does not).  --enable-usdt
+# fails without it; --disable-usdt compiles every probe to nothing.
+# -------------------------------------------------------------------------
+AC_ARG_ENABLE([usdt],
+	[AS_HELP_STRING([--enable-usdt], [build the USDT static probes (default: when sys/sdt.h is usable)])],
+	[], [enable_usdt=auto])
+AS_IF([test "x$enable_usdt" != xno],
+	[AC_CACHE_CHECK([for a usable sys/sdt.h], [dtfl_cv_sdt],
+		[AC_COMPILE_IFELSE(
+			[AC_LANG_PROGRAM([[@%:@include <sys/sdt.h>]],
+				[[int x = 1; STAP_PROBE2(dtfl, conftest, x, &x);]])],
+			[dtfl_cv_sdt=yes], [dtfl_cv_sdt=no])])
+	 AS_IF([test "x$dtfl_cv_sdt" = xyes], [enable_usdt=yes],
+		[test "x$enable_usdt" = xyes],
+		[AC_MSG_ERROR([--enable-usdt needs a sys/sdt.h with STAP_PROBEn (systemtap-sdt-dev)])],
+		[enable_usdt=no])])
+AS_IF([test "x$enable_usdt" = xyes],
+	[AC_DEFINE([DTFL_USDT], [1], [Define to build the USDT static probes])])
+
+# -------------------------------------------------------------------------
 # Columnar fixed-width-key fast path (experiment).  Off by default.  When
 # enabled, the trace's key container stores fixed-width, memcmp-ordered keys
 # as a flat stride column and seeks them with a strided compare, instead of
@@ -207,4 +251,6 @@ libdtfl $PACKAGE_VERSION
   ddir:         $enable_ddir
   server:       $enable_server
   columnar:     $enable_columnar
+  usdt probes:  $enable_usdt
+  frame ptrs:   ${DTFL_FP_CFLAGS:-omitted}
 ])

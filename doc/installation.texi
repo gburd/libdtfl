@@ -54,6 +54,21 @@ over the multi-worker suites.
 Build the diagnostics console, the DDIR language and tooling, and the
 diagnostics server component.  Each is on by default where its
 prerequisites are present.
+
+@item --enable-usdt
+@itemx --disable-usdt
+Build the USDT static probes (@pxref{Diagnostics}) for DTrace, SystemTap,
+@command{bpftrace} and @command{perf}.  On by default when
+@file{sys/sdt.h} is found (on Debian, the @code{systemtap-sdt-dev}
+package); without it each probe compiles to nothing.
+@option{--enable-usdt} fails when the header is missing.
+
+@item --disable-frame-pointers
+The library is built with @option{-fno-omit-frame-pointer} (and
+@option{-mno-omit-leaf-frame-pointer} where the compiler accepts it), so
+profilers can walk its stack in a release build; this option lets the
+compiler omit them.  A frame-pointer flag in @env{CFLAGS} takes
+precedence either way.
 @end table
 
 Link a program with @option{-ldtfl}, or let pkg-config supply the flags:
