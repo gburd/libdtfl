@@ -11,6 +11,9 @@
 #     --rev REV        libdtfl revision to build (default HEAD)
 #     --matrix M       quick | full (default full)
 #     --reps N         measured repetitions per point (default 5)
+#     --placement P    packed | spread (default packed): packed fills one
+#                      socket's physical cores first; spread alternates
+#                      sockets (PLAN P16.9; the same on one socket)
 #     --out DIR        results directory (default /scratch/$USER/bench-<stamp>)
 #     --keep           leave the instance running (prints how to stop it)
 #
@@ -35,6 +38,7 @@ itype=c7i.metal-24xl
 rev=HEAD
 matrix=full
 reps=5
+placement=packed
 out=""
 keep=0
 while [ $# -gt 0 ]; do
@@ -45,6 +49,7 @@ while [ $# -gt 0 ]; do
 	--rev) rev=$2; shift 2 ;;
 	--matrix) matrix=$2; shift 2 ;;
 	--reps) reps=$2; shift 2 ;;
+	--placement) placement=$2; shift 2 ;;
 	--out) out=$2; shift 2 ;;
 	--keep) keep=1; shift ;;
 	-h|--help) sed -n '3,30p' "$0"; exit 0 ;;
@@ -53,6 +58,7 @@ while [ $# -gt 0 ]; do
 done
 case $matrix in quick|full) ;; *) echo "bench-ec2: --matrix quick|full" >&2; exit 2 ;; esac
 case $reps in ''|*[!0-9]*) echo "bench-ec2: --reps takes a number" >&2; exit 2 ;; esac
+case $placement in packed|spread) ;; *) echo "bench-ec2: --placement packed|spread" >&2; exit 2 ;; esac
 [ -n "$profile" ] && export AWS_PROFILE=$profile
 export AWS_REGION=$region
 
@@ -157,9 +163,9 @@ scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$work/timely.tgz" \
     "$src/dev/bench-ec2.d/remote.sh" \
     "$src/dev/bench-ec2.d/differential-v0.25.1.Cargo.lock" "admin@$ip:"
 
-log "provisioning, building and running the $matrix matrix"
-rsh "bash remote.sh $matrix $reps" 2>&1 | tee "$out/remote.log"
+log "provisioning, building and running the $matrix matrix ($placement)"
+rsh "bash remote.sh $matrix $reps $placement" 2>&1 | tee "$out/remote.log"
 scp -q -r "${ssh_opts[@]}" "admin@$ip:res/*" "$out/"
-echo "instance_type=$itype ami=$ami rev=$(git -C "$src" rev-parse "$rev") pin=$pin" >> "$out/host.txt"
+echo "instance_type=$itype ami=$ami rev=$(git -C "$src" rev-parse "$rev") pin=$pin placement=$placement" >> "$out/host.txt"
 log "results in $out"
 python3 "$src/dev/bench-ec2.d/report.py" "$out" | tee "$out/summary.md"
