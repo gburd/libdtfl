@@ -690,7 +690,10 @@ dtfl_arranged_as_collection(dtfl_arranged *a, const dtfl_type *out_type,
 	c->depth = a->depth;
 	c->dw = a->diff->cls->width;
 	dtfl_op_builder_input(b, a->stream, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, ascoll_logic, c, ascoll_free);
@@ -777,7 +780,10 @@ cross_impl(dtfl_arranged *a, dtfl_stream *crossed, dtfl_scope *to_scope,
 	cc->inner = to;
 	b = dtfl_op_builder_new(to_scope, name);
 	dtfl_op_builder_input(b, crossed, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out->stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
 	dtfl_op_builder_build(b, cross_batch_logic, cc, cross_free);

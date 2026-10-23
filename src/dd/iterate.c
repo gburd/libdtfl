@@ -116,7 +116,10 @@ collection_results_in(dtfl_collection *c, const uint64_t *step)
 	ut = __dtfl_update_type(c->type, c->depth, rc->dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(c->stream), "ResultsIn");
 	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, results_in_logic, rc, results_in_free);

@@ -67,7 +67,10 @@ dtfl_stream_filter(dtfl_stream *st, dtfl_pred_fn fn, dtfl_ctx ctx)
 	c->user = ctx.ptr;
 	c->user_free = ctx.free;
 	dtfl_op_builder_input(b, st, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, dtfl_stream_type(st));
 	dtfl_op_builder_build(b, filter_logic, c, filter_free);

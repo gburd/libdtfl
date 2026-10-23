@@ -90,7 +90,10 @@ dtfl_stream_flat_map(dtfl_stream *st, const dtfl_type *out_type, dtfl_map_fn fn,
 	c->user = ctx.ptr;
 	c->user_free = ctx.free;
 	dtfl_op_builder_input(b, st, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, out_type);
 	dtfl_op_builder_build(b, map_logic, c, map_free);

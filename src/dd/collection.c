@@ -459,7 +459,10 @@ map_impl(dtfl_collection *c, const dtfl_type *out_type,
 	mc->depth = c->depth;
 	mc->dw = c->diff->cls->width;
 	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, map_logic, mc, map_free);
@@ -583,7 +586,10 @@ dtfl_collection_negate(dtfl_collection *c)
 	ut = __dtfl_update_type(c->type, c->depth, nc->dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(c->stream), "Negate");
 	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, negate_logic, nc, __dtfl_free);
@@ -772,7 +778,10 @@ dtfl_collection_explode(dtfl_collection *c, const dtfl_type *out_type,
 	ut = __dtfl_update_type(out_type, c->depth, ec->out_dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(c->stream), "Explode");
 	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, explode_logic, ec, explode_free);
@@ -879,7 +888,10 @@ dtfl_collection_delay(dtfl_collection *c, dtfl_collection_delay_fn fn,
 	ut = __dtfl_update_type(c->type, c->depth, mc->dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(st), "Delay");
 	dtfl_op_builder_input(b, st, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, delay_map_logic, mc, delay_free);
@@ -1011,7 +1023,10 @@ cross_impl(dtfl_collection *c, dtfl_stream *crossed, dtfl_scope *to_scope,
 	ut = __dtfl_update_type(c->type, to_depth, cc->dw);
 	b = dtfl_op_builder_new(to_scope, name);
 	dtfl_op_builder_input(b, crossed, dtfl_pact_pipeline());
-	/* Operator::unary (generic/operator.rs): frontier changes alone do not schedule. */
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
 	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, cross_logic, cc, cross_free);
