@@ -2049,9 +2049,10 @@ rd_build_batches(reduce_op_ctx *c, const __dtfl_antichain *held,
 				    __dtfl_vec_at(&ob->diffs, oi) : NULL;
 
 				kl = dtfl_type_value_len(c->ikt, rec, rl);
+				/* rec is NULL for an empty record: no offset. */
 				__dtfl_builder_ord_push(&bld, rec, kl,
-				    (const char *)rec + kl, rl - kl,
-				    tv_at(&ob->times, oi), d);
+				    rec != NULL ? (const char *)rec + kl : NULL,
+				    rl - kl, tv_at(&ob->times, oi), d);
 			}
 			if (idx != NULL)
 				__dtfl_free(idx);

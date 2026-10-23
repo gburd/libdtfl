@@ -71,7 +71,9 @@ for s in "$top"/doc/snippets/*.c; do
 	[ -f "$s" ] || continue
 	name=$(basename "$s" .c)
 	exe="$build/doc-snippet-$name"
-	if ! $CC -std=c11 -I"$top/include" "$s" -o "$exe" -L"$build/.libs" -ldtfl -Wl,-rpath,"$build/.libs" -lpthread 2> "$exe.err"; then
+	# The build's LDFLAGS: a sanitized library needs its runtime linked.
+	# shellcheck disable=SC2086
+	if ! $CC -std=c11 -I"$top/include" "$s" -o "$exe" ${DTFL_LDFLAGS:-} -L"$build/.libs" -ldtfl -Wl,-rpath,"$build/.libs" -lpthread 2> "$exe.err"; then
 		echo "[docs] FAIL: snippet $name does not compile"; sed 's/^/    /' "$exe.err"; fail=1; continue
 	fi
 	if [ -f "$top/doc/snippets/$name.expected" ]; then
