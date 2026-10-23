@@ -87,19 +87,20 @@ entry_swap(__dtfl_change_batch *cb, size_t i, size_t j)
 	}
 }
 
+/* sift_down in the heap of entries [lo, lo + n). */
 static void
-sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
+sift_down_at(__dtfl_change_batch *cb, size_t lo, size_t root, size_t n)
 {
 	size_t child;
 
 	while ((child = 2 * root + 1) < n) {
-		if (child + 1 < n && __dtfl_words_cmp(entry(cb, child),
-		    entry(cb, child + 1), cb->kw) < 0)
+		if (child + 1 < n && __dtfl_words_cmp(entry(cb, lo + child),
+		    entry(cb, lo + child + 1), cb->kw) < 0)
 			child++;
-		if (__dtfl_words_cmp(entry(cb, root), entry(cb, child),
-		    cb->kw) >= 0)
+		if (__dtfl_words_cmp(entry(cb, lo + root),
+		    entry(cb, lo + child), cb->kw) >= 0)
 			return;
-		entry_swap(cb, root, child);
+		entry_swap(cb, lo + root, lo + child);
 		root = child;
 	}
 }
@@ -112,12 +113,13 @@ sift_down(__dtfl_change_batch *cb, size_t root, size_t n)
  */
 #define CB_SMALL_SORT 20
 
+/* Insertion sort of entries [lo, lo + n). */
 static void
-insertion_sort(__dtfl_change_batch *cb, size_t n)
+insertion_sort_at(__dtfl_change_batch *cb, size_t lo, size_t n)
 {
 	unsigned kw = cb->kw, w;
 	size_t i, j, words = (size_t)kw + 1;
-	uint64_t *base = (uint64_t *)(void *)cb->updates.data;
+	uint64_t *base = (uint64_t *)(void *)cb->updates.data + lo * words;
 	uint64_t tmp[DTFL_TIME_MAX + 3];
 
 	DTFL_ASSERT(words <= DTFL_TIME_MAX + 3);
@@ -142,28 +144,87 @@ insertion_sort(__dtfl_change_batch *cb, size_t n)
 	}
 }
 
+/* Heapsort of entries [lo, lo + n): the introsort fallback. */
+static void
+heap_range(__dtfl_change_batch *cb, size_t lo, size_t n)
+{
+	size_t i;
+
+	for (i = n / 2; i-- > 0;)
+		sift_down_at(cb, lo, i, n);
+	for (i = n; i-- > 1;) {
+		entry_swap(cb, lo, lo + i);
+		sift_down_at(cb, lo, 0, i);
+	}
+}
+
+/*
+ * Introsort of entries [lo, hi): quicksort on a median-of-three pivot,
+ * recursing into the smaller side, insertion sort below CB_SMALL_SORT,
+ * and heapsort once `depth` partitions have not shrunk the range (which
+ * bounds the worst case at O(n log n)).  Rust's sort_unstable_by is a
+ * pattern-defeating quicksort of the same family.
+ */
+static void
+sort_range(__dtfl_change_batch *cb, size_t lo, size_t hi, size_t depth)
+{
+	unsigned kw = cb->kw;
+	size_t words = (size_t)kw + 1;
+	uint64_t pivot[DTFL_TIME_MAX + 3];
+
+	while (hi - lo > CB_SMALL_SORT) {
+		size_t m = lo + (hi - lo) / 2, i = lo, j = hi - 1, w;
+
+		if (depth-- == 0) {
+			heap_range(cb, lo, hi - lo);
+			return;
+		}
+		if (__dtfl_words_cmp(entry(cb, m), entry(cb, lo), kw) < 0)
+			entry_swap(cb, m, lo);
+		if (__dtfl_words_cmp(entry(cb, hi - 1), entry(cb, lo), kw) < 0)
+			entry_swap(cb, hi - 1, lo);
+		if (__dtfl_words_cmp(entry(cb, hi - 1), entry(cb, m), kw) < 0)
+			entry_swap(cb, hi - 1, m);
+		for (w = 0; w < words; w++)
+			pivot[w] = entry(cb, m)[w];
+		/* Hoare partition: [lo, j] <= pivot <= [j + 1, hi). */
+		for (;;) {
+			while (__dtfl_words_cmp(entry(cb, i), pivot, kw) < 0)
+				i++;
+			while (__dtfl_words_cmp(pivot, entry(cb, j), kw) < 0)
+				j--;
+			if (i >= j)
+				break;
+			entry_swap(cb, i, j);
+			i++;
+			j--;
+		}
+		if (j + 1 - lo < hi - (j + 1)) {
+			sort_range(cb, lo, j + 1, depth);
+			lo = j + 1;
+		} else {
+			sort_range(cb, j + 1, hi, depth);
+			hi = j + 1;
+		}
+	}
+	insertion_sort_at(cb, lo, hi - lo);
+}
+
 /*
  * Sorts entries by key only, as upstream's sort_unstable_by on .0.
  * The order among equal keys is unspecified, as upstream's: compaction
- * sums them, so it does not show.  Short runs use insertion sort; longer
- * ones heapsort, in place and allocation-free because qsort has no
- * context argument for the key width.
+ * sums them, so it does not show.  Introsort, in place and
+ * allocation-free because qsort has no context argument for the key
+ * width; the depth limit is 2 log2 n.
  */
 static void
 sort_by_key(__dtfl_change_batch *cb)
 {
-	size_t n = cb->updates.len, i;
+	size_t n, d = 0;
 
-	if (n <= CB_SMALL_SORT) {
-		insertion_sort(cb, n);
-		return;
-	}
-	for (i = n / 2; i-- > 0;)
-		sift_down(cb, i, n);
-	for (i = n; i-- > 1;) {
-		entry_swap(cb, 0, i);
-		sift_down(cb, 0, i);
-	}
+	for (n = cb->updates.len; n > 1; n >>= 1)
+		d += 2;
+	sort_range(cb, 0, cb->updates.len, d);
 }
 
 /*
