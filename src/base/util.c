@@ -8,25 +8,41 @@
 
 #include "base_int.h"
 
+#include <limits.h>
 #include <time.h>
 
 void
 __dtfl_vec_init(__dtfl_vec *v, size_t elem)
 {
-	DTFL_ASSERT(elem > 0);
+	DTFL_ASSERT(elem > 0 && elem <= UINT_MAX);
 	v->data = NULL;
 	v->len = 0;
 	v->cap = 0;
-	v->elem = elem;
+	v->elem = (unsigned)elem;
+	v->borrowed = false;
 }
 
 void
+__dtfl_vec_init_borrowed(__dtfl_vec *v, size_t elem, void *data, size_t cap)
+{
+	__dtfl_vec_init(v, elem);
+	if (data != NULL && cap != 0) {
+		v->data = data;
+		v->cap = cap;
+		v->borrowed = true;
+	}
+}
+
+/* A borrowed buffer is the owner's to free; only an owned one is ours. */
+void
 __dtfl_vec_free(__dtfl_vec *v)
 {
-	__dtfl_free(v->data);
+	if (!v->borrowed)
+		__dtfl_free(v->data);
 	v->data = NULL;
 	v->len = 0;
 	v->cap = 0;
+	v->borrowed = false;
 }
 
 void
@@ -42,14 +58,28 @@ __dtfl_vec_grow(__dtfl_vec *v, size_t additional)
 	ncap = v->cap < 4 ? 4 : v->cap;
 	while (ncap < need)
 		ncap = ncap > SIZE_MAX / 2 ? need : ncap * 2;
-	v->data = __dtfl_realloc(v->data, __dtfl_mul_size(ncap, v->elem));
+	if (v->borrowed) {
+		/* Copy out of the owner's memory once; from here on it is ours. */
+		unsigned char *p = __dtfl_alloc(__dtfl_mul_size(ncap, v->elem));
+
+		if (v->len != 0)
+			memcpy(p, v->data, v->len * v->elem);
+		v->data = p;
+		v->borrowed = false;
+	} else
+		v->data = __dtfl_realloc(v->data,
+		    __dtfl_mul_size(ncap, v->elem));
 	v->cap = ncap;
 }
 
 void
 __dtfl_vec_shrink(__dtfl_vec *v)
 {
-	if (v->len == 0) {
+	if (v->borrowed) {
+		/* The owner's memory cannot shrink; only forget an empty one. */
+		if (v->len == 0)
+			__dtfl_vec_free(v);
+	} else if (v->len == 0) {
 		__dtfl_free(v->data);
 		v->data = NULL;
 		v->cap = 0;

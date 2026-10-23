@@ -92,16 +92,25 @@ void __dtfl_err_clear(void);
 
 /*
  * __dtfl_vec: a growable array of fixed-size elements.  The element
- * size is fixed at init.  Storage comes from the allocation hooks.
+ * size is fixed at init.  Storage comes from the allocation hooks, or,
+ * for a borrowed vector, from memory its owner manages (a slice of a
+ * one-block batch).  A borrowed buffer is never reallocated or freed:
+ * growing copies it once into a hook allocation the vector then owns,
+ * and free just forgets it.  The owner keeps the memory alive for as
+ * long as the vector points into it.
  */
 typedef struct __dtfl_vec {
 	unsigned char *data;
 	size_t len;	/* elements in use */
 	size_t cap;	/* elements allocated */
-	size_t elem;	/* element size in bytes */
+	unsigned elem;	/* element size in bytes */
+	bool borrowed;	/* data is not ours: never realloc or free it */
 } __dtfl_vec;
 
 void __dtfl_vec_init(__dtfl_vec *v, size_t elem);
+/* A borrowed, empty vector over `cap` elements at data (see above). */
+void __dtfl_vec_init_borrowed(__dtfl_vec *v, size_t elem, void *data,
+    size_t cap);
 void __dtfl_vec_free(__dtfl_vec *v);
 void __dtfl_vec_shrink(__dtfl_vec *v);
 /* The out-of-line slow path of __dtfl_vec_reserve. */

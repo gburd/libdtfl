@@ -20,6 +20,12 @@
  * non-decreasing, offs[count] == arena.len, times.len == count * tw and
  * diffs.len == count * dw.  A batch with more than one reference is
  * immutable; only the holder of the sole reference writes to it.
+ *
+ * Storage: a batch is one block (struct and reserved columns, see
+ * __dtfl_batch_new_reserved) plus any column that outgrew its share and
+ * moved to its own allocation.  A column still in the block is a
+ * borrowed vector and never leaves its batch: __dtfl_batch_move_rows
+ * copies it rather than handing the pointer to another batch.
  */
 #include "base_int.h"
 
@@ -32,32 +38,68 @@ __dtfl_batch_new(unsigned time_words, unsigned diff_bytes)
 	return __dtfl_batch_new_reserved(time_words, diff_bytes, 0, 0);
 }
 
+/* Round n up to the 16-byte alignment malloc gives each separate column. */
+static size_t
+block_align(size_t n)
+{
+	if (n > SIZE_MAX - 15)
+		__dtfl_panic("batch block size overflow");
+	return (n + 15) & ~(size_t)15;
+}
+
+static size_t
+block_add(size_t a, size_t b)
+{
+	if (a > SIZE_MAX - b)
+		__dtfl_panic("batch block size overflow");
+	return a + b;
+}
+
 /*
- * __dtfl_batch_new, with room for `rows` records and `bytes` arena bytes
- * reserved as __dtfl_batch_reserve would, but with each column allocated
- * once at its final size: the offsets vector holds its leading zero and
- * `rows` more without a second allocation.
+ * __dtfl_batch_new, with room for `rows` records and `bytes` arena bytes.
+ * The struct and every column it has room for are one allocation, carved
+ * in order (struct, offsets, times, diffs, arena), each column 16-byte
+ * aligned as a separate malloc would be.  The columns are borrowed
+ * vectors over the block: filling within the reservation never
+ * allocates, a column pushed past its share copies itself out once into
+ * its own allocation (__dtfl_vec_grow), and release frees the block once,
+ * with any columns that moved out.  A column with no room reserved (times
+ * when tw is 0, diffs when dw is 0, the arena when bytes is 0) starts
+ * without a buffer, as a separately grown column does.  Upstream's chunk
+ * is one Vec<(D, T, R)> allocation; this is its columnar counterpart.
  */
 __dtfl_batch *
 __dtfl_batch_new_reserved(unsigned time_words, unsigned diff_bytes,
     size_t rows, size_t bytes)
 {
-	__dtfl_batch *b = __dtfl_alloc(sizeof *b);
-	size_t zero = 0;
+	size_t orows, osz, tsz, dsz, at_o, at_t, at_d, at_a, total;
+	unsigned char *blk;
+	__dtfl_batch *b;
 
+	/* An unsized batch keeps vec_grow's first capacity for its offsets. */
+	orows = rows != 0 ? block_add(rows, 1) : 4;
+	osz = __dtfl_mul_size(orows, sizeof(size_t));
+	tsz = __dtfl_mul_size(__dtfl_mul_size(rows, time_words),
+	    sizeof(uint64_t));
+	dsz = __dtfl_mul_size(rows, diff_bytes);
+	at_o = block_align(sizeof *b);
+	at_t = block_add(at_o, block_align(osz));
+	at_d = block_add(at_t, block_align(tsz));
+	at_a = block_add(at_d, block_align(dsz));
+	total = block_add(at_a, bytes);
+	blk = __dtfl_alloc(total);
+	b = (__dtfl_batch *)(void *)blk;
 	__dtfl_arc_init(&b->ref);
-	__dtfl_vec_init(&b->arena, 1);
-	__dtfl_vec_init(&b->offs, sizeof(size_t));
-	__dtfl_vec_init(&b->times, sizeof(uint64_t));
-	__dtfl_vec_init(&b->diffs, 1);
+	__dtfl_vec_init_borrowed(&b->offs, sizeof(size_t), blk + at_o, orows);
+	__dtfl_vec_init_borrowed(&b->times, sizeof(uint64_t), blk + at_t,
+	    tsz / sizeof(uint64_t));
+	__dtfl_vec_init_borrowed(&b->diffs, 1, blk + at_d, dsz);
+	__dtfl_vec_init_borrowed(&b->arena, 1, blk + at_a, bytes);
 	b->tw = time_words;
 	b->dw = diff_bytes;
 	b->elem_drop = NULL;
 	b->elem_retain = NULL;
-	__dtfl_vec_reserve(&b->offs, rows + 1);
-	__dtfl_vec_push_size(&b->offs, zero);
-	if (rows != 0 || bytes != 0)
-		__dtfl_batch_reserve(b, rows, bytes);
+	__dtfl_vec_push_size(&b->offs, 0);
 	return b;
 }
 
@@ -102,11 +144,12 @@ __dtfl_batch_release(__dtfl_batch *b)
 	__dtfl_free(b);
 }
 
-/* A new, uniquely held batch with the same contents. */
+/* A new, uniquely held batch with the same contents, in one block. */
 __dtfl_batch *
 __dtfl_batch_copy(const __dtfl_batch *b)
 {
-	__dtfl_batch *c = __dtfl_batch_new(b->tw, b->dw);
+	__dtfl_batch *c = __dtfl_batch_new_reserved(b->tw, b->dw,
+	    __dtfl_batch_len(b), b->arena.len);
 
 	__dtfl_vec_copy(&c->arena, &b->arena);
 	__dtfl_vec_copy(&c->offs, &b->offs);
@@ -135,6 +178,40 @@ __dtfl_batch_make_mut(__dtfl_batch *b)
 	c = __dtfl_batch_copy(b);
 	__dtfl_batch_release(b);
 	return c;
+}
+
+/*
+ * Moves one column's elements from src to dst, leaving src empty.  Two
+ * separately allocated buffers trade places, so dst's old buffer becomes
+ * src's spare capacity.  A buffer that lives in a one-block batch never
+ * leaves that batch (its block is freed with it), so if either column is
+ * borrowed src's elements are copied into dst instead.
+ */
+static void
+col_move(__dtfl_vec *dst, __dtfl_vec *src)
+{
+	if (!dst->borrowed && !src->borrowed)
+		__dtfl_vec_swap(dst, src);
+	else {
+		dst->len = 0;
+		(void)__dtfl_vec_push_n(dst, src->data, src->len);
+	}
+	src->len = 0;
+}
+
+void
+__dtfl_batch_move_rows(__dtfl_batch *dst, __dtfl_batch *src)
+{
+	DTFL_ASSERT(dst->tw == src->tw && dst->dw == src->dw &&
+	    dst->elem_drop == NULL && src->elem_drop == NULL);
+	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&dst->ref) == 1 &&
+	    __dtfl_arc_count(&src->ref) == 1);
+	col_move(&dst->arena, &src->arena);
+	col_move(&dst->offs, &src->offs);
+	col_move(&dst->times, &src->times);
+	col_move(&dst->diffs, &src->diffs);
+	/* Every batch's offs[0] is 0, so src is the empty batch again. */
+	src->offs.len = 1;
 }
 
 /* Empties the batch, keeping its allocations. */
@@ -391,8 +468,8 @@ __dtfl_batch_decode(const unsigned char *p, size_t len)
 		if (p[i] != 0)
 			return NULL;
 
-	b = __dtfl_batch_new((unsigned)tw, (unsigned)dw);
-	__dtfl_vec_reserve(&b->offs, (size_t)count);
+	b = __dtfl_batch_new_reserved((unsigned)tw, (unsigned)dw,
+	    (size_t)count, (size_t)arena);
 	for (i = 1; i <= count; i++) {
 		size_t o = (size_t)le_get(p + 16 + i * 8, 8);
 
@@ -400,7 +477,6 @@ __dtfl_batch_decode(const unsigned char *p, size_t len)
 	}
 	__dtfl_vec_push_n(&b->arena, p + at, (size_t)arena);
 	at += (size_t)arena;
-	__dtfl_vec_reserve(&b->times, nt);
 	for (i = 0; i < nt; i++, at += 8) {
 		uint64_t w = le_get(p + at, 8);
 
