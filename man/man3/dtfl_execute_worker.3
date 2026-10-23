@@ -121,6 +121,10 @@ for (size_t i = 0; i < 4; i++) {
 /* the parent closes its copies and waits for the children */
 .Ed
 .Pp
+.Xr dtfl_config_set_workers 3
+does exactly this inside
+.Fn dtfl_execute .
+.Pp
 In PostgreSQL, the leader backend creates a DSM segment holding a
 .Ql shm_mq
 for each ordered pair of participants, registers

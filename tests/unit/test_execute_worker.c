@@ -556,6 +556,108 @@ DTFL_TEST(execute_worker_rejects_bad_arguments)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* DTFL_WORKERS_PROCESSES: dtfl_execute forks the workers itself       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Each forked worker checks its own routing and totals and exits
+ * non-zero on a mismatch, so a passing dtfl_execute means every child
+ * got its share.  The panic hook makes a broken child exit non-zero
+ * rather than abort with a core.
+ */
+static void
+forked_worker(dtfl_worker *w, void *arg)
+{
+	wctx c;
+
+	(void)arg;
+	memset(&c, 0, sizeof c);
+	worker(w, &c);
+	if (c.misrouted != 0 || c.count != M)
+		_exit(5);
+}
+
+static void
+quiet_panic(const char *msg, void *ctx)
+{
+	(void)ctx;
+	fprintf(stderr, "forked worker panicked: %s\n", msg);
+	_exit(6);
+}
+
+static int
+run_forked(dtfl_comm_mode mode, size_t n)
+{
+	dtfl_config *cfg = dtfl_config_new();
+	int rc;
+
+	assert_int(dtfl_config_set_mode(cfg, mode), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, n), ==, 0);
+	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
+	assert_int(dtfl_config_workers(cfg), ==, DTFL_WORKERS_PROCESSES);
+	dtfl_set_panic_hook(quiet_panic, NULL);
+	rc = dtfl_execute(cfg, forked_worker, NULL, NULL);
+	dtfl_config_free(cfg);
+	return rc;
+}
+
+DTFL_TEST(execute_forked_process_mode)
+{
+	(void)params; (void)data;
+	assert_int(run_forked(DTFL_COMM_PROCESS, 4), ==, 0);
+	assert_int(run_forked(DTFL_COMM_PROCESS_BINARY, 3), ==, 0);
+	return MUNIT_OK;
+}
+
+/* A child that fails makes dtfl_execute fail, rather than hang. */
+static void
+failing_worker(dtfl_worker *w, void *arg)
+{
+	(void)arg;
+	if (dtfl_worker_index(w) == 1)
+		_exit(7);
+	forked_worker(w, NULL);
+}
+
+DTFL_TEST(execute_forked_reports_a_failed_child)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	alarm(60);
+	dtfl_set_panic_hook(quiet_panic, NULL);
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, 3), ==, 0);
+	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
+	/*
+	 * Worker 1 exits with 7; its peers then see their streams end early
+	 * and panic (6).  The first failure waited for is reported.
+	 */
+	assert_int(dtfl_execute(cfg, failing_worker, NULL, NULL), ==, DTFL_EIO);
+	assert_not_null(strstr(dtfl_last_error_detail(), "exited with status"));
+	dtfl_config_free(cfg);
+	return MUNIT_OK;
+}
+
+DTFL_TEST(execute_forked_rejects_cluster_and_sim)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	assert_int(dtfl_config_set_workers(cfg, (dtfl_workers)9), ==,
+	    DTFL_EINVAL);
+	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_SIM), ==, 0);
+	assert_int(dtfl_execute(cfg, forked_worker, NULL, NULL), ==,
+	    DTFL_EINVAL);
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_CLUSTER), ==, 0);
+	assert_int(dtfl_execute(cfg, forked_worker, NULL, NULL), ==,
+	    DTFL_EINVAL);
+	dtfl_config_free(cfg);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(execute_worker_two_processes_socketpair),
 	DTFL_T(execute_worker_four_processes_socketpair),
@@ -563,6 +665,9 @@ static MunitTest tests[] = {
 	DTFL_T(execute_worker_four_processes_shared_rings),
 	DTFL_T(execute_worker_single_needs_no_transport),
 	DTFL_T(execute_worker_rejects_bad_arguments),
+	DTFL_T(execute_forked_process_mode),
+	DTFL_T(execute_forked_reports_a_failed_child),
+	DTFL_T(execute_forked_rejects_cluster_and_sim),
 	DTFL_T_END
 };
 

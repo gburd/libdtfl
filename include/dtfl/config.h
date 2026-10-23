@@ -149,6 +149,20 @@ DTFL_API int dtfl_transport_socket(const int *fds, size_t nfds, size_t self,
     dtfl_transport *out);
 
 /*
+ * Where dtfl_execute() runs the workers of a Process or ProcessBinary
+ * configuration: threads of this process (the default), or one child
+ * process each, forked by libdtfl and joined over a socketpair mesh.
+ * Fails with DTFL_EINVAL for an unknown value.  See dtfl_execute_worker(3)
+ * for processes the host creates itself.
+ */
+typedef enum dtfl_workers {
+	DTFL_WORKERS_THREADS = 0,
+	DTFL_WORKERS_PROCESSES = 1
+} dtfl_workers;
+DTFL_API int dtfl_config_set_workers(dtfl_config *cfg, dtfl_workers how);
+DTFL_API dtfl_workers dtfl_config_workers(const dtfl_config *cfg);
+
+/*
  * Parses timely's command-line flags at the pin:
  *   -w, --threads NUM     worker threads per process (default 1)
  *   -p, --process IDX     this process's index (default 0)

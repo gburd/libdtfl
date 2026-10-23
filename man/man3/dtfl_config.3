@@ -7,6 +7,8 @@
 .Nm dtfl_config_free ,
 .Nm dtfl_config_set_mode ,
 .Nm dtfl_config_set_threads ,
+.Nm dtfl_config_set_workers ,
+.Nm dtfl_config_workers ,
 .Nm dtfl_config_set_cluster ,
 .Nm dtfl_config_set_report ,
 .Nm dtfl_config_set_progress_mode ,
@@ -38,6 +40,10 @@ Timely and differential dataflow library
 .Fn dtfl_config_set_mode "dtfl_config *cfg" "dtfl_comm_mode mode"
 .Ft int
 .Fn dtfl_config_set_threads "dtfl_config *cfg" "size_t threads"
+.Ft int
+.Fn dtfl_config_set_workers "dtfl_config *cfg" "dtfl_workers how"
+.Ft dtfl_workers
+.Fn dtfl_config_workers "const dtfl_config *cfg"
 .Ft int
 .Fo dtfl_config_set_cluster
 .Fa "dtfl_config *cfg"
@@ -128,6 +134,56 @@ A scheduler seeded with
 picks the order in which messages are delivered, so a run can be
 replayed exactly.
 .El
+.Pp
+.Fn dtfl_config_set_workers
+says where
+.Fn dtfl_execute
+runs the workers of a
+.Dv DTFL_COMM_THREAD ,
+.Dv DTFL_COMM_PROCESS
+or
+.Dv DTFL_COMM_PROCESS_BINARY
+configuration:
+.Bl -tag -width DTFL_WORKERS_PROCESSES
+.It Dv DTFL_WORKERS_THREADS
+Threads of the calling process, the default.
+.It Dv DTFL_WORKERS_PROCESSES
+One child process per worker.
+.Fn dtfl_execute
+makes a
+.Xr socketpair 2
+between every pair of workers, forks the children, and runs each worker
+in its child with
+.Xr dtfl_execute_worker 3
+over
+.Xr dtfl_transport_socket 3 ,
+so no child starts a thread.
+The workers share no memory: the context passed to
+.Fn dtfl_execute
+is each child's copy, and results go back to the parent only through
+something the host sets up, such as a pipe or shared memory.
+.Fn dtfl_execute
+returns once every child has exited, 0 if all exited with status 0;
+.Fa *guards
+is set to
+.Dv NULL .
+.El
+.Pp
+With
+.Dv DTFL_WORKERS_PROCESSES ,
+.Fn dtfl_execute
+fails with
+.Dv DTFL_EINVAL
+for the cluster and simulation modes, with
+.Dv DTFL_ENOTSUP
+on a platform without
+.Xr fork 2 ,
+and with
+.Dv DTFL_EIO
+if a child fails, exits non-zero or is killed.
+Use
+.Xr dtfl_execute_worker 3
+directly for processes the host creates itself.
 .Pp
 .Fn dtfl_config_set_mode
 and
@@ -348,8 +404,10 @@ buffers stay in memory and a warning goes to the log hook
 If a spilled buffer cannot be read back, the panic hook is called.
 .Sh SEE ALSO
 .Xr dtfl_config_set_idle_merge_effort 3 ,
+.Xr dtfl_execute_worker 3 ,
 .Xr dtfl_set_log_hook 3 ,
 .Xr dtfl_strerror 3 ,
+.Xr dtfl_transport 3 ,
 .Xr dtfl 7
 .Sh HISTORY
 These functions combine timely's

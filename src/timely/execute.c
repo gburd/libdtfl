@@ -26,8 +26,11 @@
 #include "comm/init_int.h"
 #include "comm/sim_int.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 struct dtfl_guards {
 	size_t n;
@@ -79,6 +82,94 @@ worker_thread(void *arg)
 	return NULL;
 }
 
+/*
+ * DTFL_WORKERS_PROCESSES: a socketpair mesh, then one forked child per
+ * worker, each running dtfl_execute_worker over its row of the mesh.
+ * The parent waits for every child; any child that fails, exits non-zero
+ * or is killed makes the result DTFL_EIO.  A child that cannot start its
+ * transport exits 1 without touching its peers, whose reads then end in
+ * a communication error, so the whole execution fails rather than hangs.
+ */
+static int
+execute_forked(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx)
+{
+	size_t n = dtfl_config_threads(cfg), i, j;
+	int *mesh;	/* mesh[i * n + j]: i's end of the i-j pair */
+	long *pids;
+	int rc = DTFL_OK, wrc;
+
+	switch (dtfl_config_mode(cfg)) {
+	case DTFL_COMM_THREAD:
+	case DTFL_COMM_PROCESS:
+	case DTFL_COMM_PROCESS_BINARY:
+		break;
+	default:
+		return __dtfl_err(DTFL_EINVAL, "worker processes need the "
+		    "Thread, Process or ProcessBinary mode");
+	}
+	if (dtfl_config_mode(cfg) == DTFL_COMM_THREAD)
+		n = 1;
+	mesh = __dtfl_calloc(n * n, sizeof *mesh);
+	pids = __dtfl_calloc(n, sizeof *pids);
+	for (i = 0; i < n * n; i++)
+		mesh[i] = -1;
+	for (i = 0; i < n && rc == DTFL_OK; i++)
+		for (j = i + 1; j < n && rc == DTFL_OK; j++) {
+			int sv[2];
+
+			if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+				rc = __dtfl_err(DTFL_EIO, "socketpair: %s",
+				    strerror(errno));
+				break;
+			}
+			mesh[i * n + j] = sv[0];
+			mesh[j * n + i] = sv[1];
+		}
+	for (i = 0; i < n && rc == DTFL_OK; i++) {
+		bool child;
+
+		rc = __dtfl_process_fork(&pids[i], &child);
+		if (rc != DTFL_OK)
+			break;
+		if (child) {
+			dtfl_transport t;
+			bool ok;
+
+			/* Keep only this worker's row of the mesh. */
+			for (j = 0; j < n * n; j++)
+				if (j / n != i && mesh[j] >= 0)
+					(void)close(mesh[j]);
+			if (n == 1) {
+				ok = dtfl_execute_worker(cfg, 0, 1, NULL, fn,
+				    ctx) == DTFL_OK;
+			} else {
+				ok = dtfl_transport_socket(&mesh[i * n], n, i,
+				    &t) == DTFL_OK;
+				if (ok) {
+					ok = dtfl_execute_worker(cfg, i, n, &t,
+					    fn, ctx) == DTFL_OK;
+					t.destroy(t.ctx);
+				}
+			}
+			__dtfl_process_exit(ok);
+		}
+	}
+	/* The parent's copies: closing them leaves each child the only holder. */
+	for (j = 0; j < n * n; j++)
+		if (mesh[j] >= 0)
+			(void)close(mesh[j]);
+	for (j = 0; j < i; j++) {
+		if (pids[j] <= 0)
+			continue;
+		wrc = __dtfl_process_wait(pids[j]);
+		if (wrc != DTFL_OK && rc == DTFL_OK)
+			rc = wrc;
+	}
+	__dtfl_free(mesh);
+	__dtfl_free(pids);
+	return rc;
+}
+
 int
 dtfl_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx,
     dtfl_guards **guards_out)
@@ -91,6 +182,11 @@ dtfl_execute(const dtfl_config *cfg, dtfl_worker_fn fn, void *ctx,
 
 	if (cfg == NULL || fn == NULL)
 		return __dtfl_err(DTFL_EINVAL, "dtfl_execute: NULL config or function");
+	if (dtfl_config_workers(cfg) == DTFL_WORKERS_PROCESSES) {
+		if (guards_out != NULL)
+			*guards_out = NULL;
+		return execute_forked(cfg, fn, ctx);
+	}
 	if (dtfl_config_mode(cfg) == DTFL_COMM_SIM)
 		return __dtfl_sim_execute(cfg, fn, ctx);
 	rc = __dtfl_comm_initialize(cfg, &builders, &n, &net);

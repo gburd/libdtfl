@@ -22,5 +22,7 @@ dtfl_config_set_spill_file
 dtfl_config_set_threads
 dtfl_transport_socket
 dtfl_config_threads
+dtfl_config_workers
+dtfl_config_set_workers
 dtfl_config_timely_log_addr
 dtfl_config_log_subscribe

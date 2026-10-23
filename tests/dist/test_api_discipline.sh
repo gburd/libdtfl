@@ -3,7 +3,7 @@
 # tests/dist/test_api_discipline.sh: library code rules (AGENTS.md section 5).
 #
 # 1. No raw allocation in src/ outside src/base/os_alloc.c.
-# 2. No pthread_create in src/ outside src/base/os_thread.c.
+# 2. No pthread_create, fork or waitpid in src/ outside src/base/os_thread.c.
 # 3. No getenv, signal/sigaction, or getopt anywhere in src/.
 # 3a. No lock, wait, yield, sleep, clock or thread-identity call in src/
 #     outside src/base/os_sync.c, so the sync hooks reach every one
@@ -34,8 +34,8 @@ sync_srcs=$(echo "$srcs" | grep -v '^src/base/os_sync.c$')
 
 check "raw allocation outside src/base/os_alloc.c" \
 	'(^|[^_a-zA-Z0-9.>])(malloc|calloc|realloc|free|strdup|strndup)[[:space:]]*\(' $alloc_srcs
-check "pthread_create outside src/base/os_thread.c" \
-	'pthread_create[[:space:]]*\(' $thread_srcs
+check "pthread_create, fork or waitpid outside src/base/os_thread.c" \
+	'(^|[^_a-zA-Z0-9.>])(pthread_create|fork|vfork|waitpid|wait|_exit)[[:space:]]*\(' $thread_srcs
 check "lock, wait, sleep, clock or thread identity outside src/base/os_sync.c" \
 	'(^|[^_a-zA-Z0-9])(pthread_mutex_[a-z]+|pthread_cond_[a-z]+|pthread_rwlock_[a-z]+|pthread_spin_[a-z]+|sem_(wait|post|init|timedwait)|sched_yield|nanosleep|usleep|clock_gettime|pthread_self|pthread_equal|mtx_[a-z]+|cnd_[a-z]+|thrd_yield|thrd_sleep)[[:space:]]*\(|SYS_futex' $sync_srcs
 check "environment, signal or getopt use in library code" \
