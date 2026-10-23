@@ -306,9 +306,14 @@ fill(__dtfl_batch *b, size_t from, size_t n)
 
 	for (i = from; i < from + n; i++) {
 		uint64_t rec = i * 7, t[2] = { i, i + 1 };
-		int32_t d = -(int32_t)i;
+		/*
+		 * The diff is 4 bytes; d[1] only pads it to 8 so gcc's
+		 * -Warray-bounds does not flag the push's 8-byte fast path,
+		 * which dw == 4 never takes.
+		 */
+		int32_t d[2] = { -(int32_t)i, 0 };
 
-		__dtfl_batch_push(b, &rec, 8, t, &d);
+		__dtfl_batch_push(b, &rec, 8, t, d);
 	}
 }
 
