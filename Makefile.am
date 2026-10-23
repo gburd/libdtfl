@@ -6,7 +6,7 @@
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src -I$(top_builddir)
-AM_CFLAGS = $(DTFL_STD_CFLAGS) $(DTFL_WARN_CFLAGS)
+AM_CFLAGS = $(DTFL_STD_CFLAGS) $(DTFL_WARN_CFLAGS) $(DTFL_FP_CFLAGS)
 
 lib_LTLIBRARIES = libdtfl.la
 libdtfl_la_SOURCES =
@@ -22,7 +22,8 @@ dtflinclude_HEADERS =
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = dtfl.pc
 
-noinst_HEADERS = tests/munit.h tests/dtfl_test.h tests/pbt/pbt.h
+noinst_HEADERS = tests/munit.h tests/dtfl_test.h tests/pbt/pbt.h \
+	tests/pbt/pbt_sim.h
 noinst_LTLIBRARIES = libmunit.la
 libmunit_la_SOURCES = tests/munit.c
 libmunit_la_CFLAGS = -std=c11 -w
@@ -60,7 +61,8 @@ TESTS += $(dist_check_SCRIPTS)
 LOG_COMPILER = $(DTFL_TEST_WRAPPER)
 AM_TESTS_ENVIRONMENT = \
 	top_srcdir='$(abs_top_srcdir)'; export top_srcdir; \
-	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM;
+	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM; \
+	DTFL_LDFLAGS='$(LDFLAGS)'; export DTFL_LDFLAGS;
 
 dist_man_MANS =
 EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \
@@ -101,4 +103,13 @@ check-asan:
 check-tsan:
 	@echo "Configure a separate build with --enable-tsan and run make check there."
 	@exit 1
-.PHONY: check-asan check-tsan
+
+# Simulator coverage (P16.7): the simulator-capable properties under
+# DTFL_COMM_SIM with drawn seeds and faults.  DTFL_SIM_SEEDS (default
+# 2000) cases per property, in DTFL_SIM_JOBS parallel shards.
+SIM_PBT = tests/pbt/pbt_comm tests/pbt/pbt_join tests/pbt/pbt_reduce \
+	tests/pbt/pbt_ops_notify tests/pbt/pbt_bfs
+EXTRA_DIST += tests/pbt/check_sim.sh
+check-sim: $(SIM_PBT)
+	$(SHELL) $(top_srcdir)/tests/pbt/check_sim.sh
+.PHONY: check-asan check-tsan check-sim

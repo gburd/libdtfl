@@ -14,6 +14,8 @@
  *   - messages on one (sender, receiver, channel) arrive in send order;
  *   - a message pulled after receive() has its channel's event pending;
  *   - nothing leaks (every message is freed once).
+ * The simulator runs with a drawn delay fault too (sim_int.h), which must
+ * keep all four.
  */
 #include "pbt.h"
 
@@ -164,9 +166,14 @@ prop_schedule(pbt_tc *tc, bool sim)
 	bool done;
 
 	g->n = (size_t)pbt_int(tc, 1, MAXW);
-	if (sim)
-		__dtfl_sim_builders(g->n, (uint64_t)pbt_int(tc, 0, INT64_MAX), b);
-	else
+	if (sim) {
+		__dtfl_sim_faults f;
+
+		memset(&f, 0, sizeof f);
+		f.delay_max = (uint32_t)pbt_int(tc, 0, 8);
+		__dtfl_sim_builders(g->n, (uint64_t)pbt_int(tc, 0, INT64_MAX),
+		    &f, b);
+	} else
 		__dtfl_process_builders(g->n, b);
 	for (w = 0; w < g->n; w++)
 		g->a[w] = __dtfl_allocator_build(b[w]);
@@ -234,8 +241,8 @@ prop_sim(pbt_tc *tc)
  * delivery, observed as the sequence of values pulled.
  */
 static void
-sim_trace(uint64_t seed, size_t n, const int64_t *plan, size_t nplan,
-    __dtfl_vec *trace)
+sim_trace(uint64_t seed, const __dtfl_sim_faults *f, size_t n,
+    const int64_t *plan, size_t nplan, __dtfl_vec *trace)
 {
 	__dtfl_allocator_builder *b[MAXW];
 	__dtfl_allocator *a[MAXW];
@@ -244,7 +251,7 @@ sim_trace(uint64_t seed, size_t n, const int64_t *plan, size_t nplan,
 	size_t i, w;
 	void *m;
 
-	__dtfl_sim_builders(n, seed, b);
+	__dtfl_sim_builders(n, seed, f, b);
 	for (w = 0; w < n; w++) {
 		a[w] = __dtfl_allocator_build(b[w]);
 		__dtfl_allocate(a[w], 0, &mclass, p[w], &l[w]);
@@ -286,7 +293,10 @@ prop_sim_replay(pbt_tc *tc)
 	int64_t plan[120];
 	size_t n = (size_t)pbt_int(tc, 1, MAXW), np, i;
 	uint64_t seed = (uint64_t)pbt_int(tc, 0, INT64_MAX);
+	__dtfl_sim_faults f;
 
+	memset(&f, 0, sizeof f);
+	f.delay_max = (uint32_t)pbt_int(tc, 0, 8);
 	live = 0;
 	np = (size_t)pbt_int(tc, 0, 120);
 	for (i = 0; i < np; i++)
@@ -295,8 +305,8 @@ prop_sim_replay(pbt_tc *tc)
 	__dtfl_vec_init(&t2, sizeof(uint64_t));
 	pbt_defer(tc, free_vec, &t1);
 	pbt_defer(tc, free_vec, &t2);
-	sim_trace(seed, n, plan, np, &t1);
-	sim_trace(seed, n, plan, np, &t2);
+	sim_trace(seed, &f, n, plan, np, &t1);
+	sim_trace(seed, &f, n, plan, np, &t2);
 	PBT_ASSERT(t1.len == t2.len);
 	PBT_ASSERT(t1.len == 0 || memcmp(t1.data, t2.data, t1.len * t1.elem) == 0);
 	PBT_ASSERT(live == 0);

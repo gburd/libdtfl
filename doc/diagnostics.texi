@@ -71,3 +71,94 @@ the address @command{dtfl-diag} listens on through
 @code{dtfl_config_from_env}, which reads @env{TIMELY_WORKER_LOG_ADDR}
 and @env{DIFFERENTIAL_LOG_ADDR}.  See @code{dtfl-diag(1)} for the full
 set of options.
+
+@section Static probes
+
+A library built with USDT probes (@option{--enable-usdt},
+@pxref{Installation}) carries static probes under the provider
+@code{dtfl}, which DTrace, SystemTap, @command{bpftrace} and
+@command{perf} can attach to with no change to the program.  The probes
+use no semaphores.  An untraced probe is a @code{nop}; under gcc its
+arguments are read only when a tracer is attached, while under clang
+the arguments are loaded into registers first, a few loads per probe.
+The probes fire once per operator schedule, park, unpark,
+batch and merge, never in a per-record loop.  Every integer argument is
+a @code{uint64_t}; addresses are @code{const void *} and are useful only
+to match one probe's firing with another's.
+
+@c usdt-probes-begin: tests/dist/test_usdt.sh reads the @item and @itemx lines.
+@table @asis
+@item @code{dtfl:operator_start} (5 arguments)
+@itemx @code{dtfl:operator_end} (5 arguments)
+A scope is about to run one of its operators, and has just run it.
+Arguments: @code{worker} (the worker index), @code{dataflow} (the
+dataflow index), @code{id} (the operator's worker-unique identifier, as
+in the @code{"timely"} log), @code{index} (its index within its
+scope), then for @code{operator_start} the operator's name
+(@code{const char *}) and for @code{operator_end} @code{incomplete}
+(1 when the operator asked to be scheduled again, otherwise 0).  A nested
+scope is itself an operator of its parent, so its start and end
+bracket those of its children.
+
+@item @code{dtfl:park} (3 arguments)
+@itemx @code{dtfl:park_end} (2 arguments)
+A worker with nothing to do is about to park, and has returned from
+parking.  @code{park} has @code{worker}, @code{timeout_ns} (the longest
+the worker will sleep; @code{UINT64_MAX} means until woken) and
+@code{parker} (@code{const void *}); @code{park_end} has @code{worker}
+and @code{parker}.  The worker returns at once when it already has a
+wakeup pending.
+
+@item @code{dtfl:unpark} (1 argument)
+Some thread is waking a parked or parking thread: @code{parker}
+(@code{const void *}).  For a worker it is the same address as in that
+worker's @code{park}.  The TCP send threads of a cluster also park and
+are woken this way; they have no @code{park} probe, so their addresses
+appear only here.  It fires on every wakeup, whether or not the target
+is parked.
+
+@item @code{dtfl:batch_seal} (3 arguments)
+A newly built batch enters a trace (an arrangement's, a reduce
+output's or an upsert's).  Arguments: @code{trace}
+(@code{const void *}, the same in that trace's merge probes),
+@code{batch} (@code{const void *}) and @code{updates}, the batch's
+update count, which is 0 for an empty batch that only advances the
+trace's frontier.
+
+@item @code{dtfl:merge_begin} (4 arguments)
+@itemx @code{dtfl:merge_end} (5 arguments)
+A trace starts merging two batches at one level of its spine, and
+finishes.  Arguments: @code{trace} (@code{const void *}), @code{level}
+(the spine level; a batch at level @var{k} counts as 2@sup{@var{k}}
+updates for merge accounting), @code{len1} and @code{len2} (the input
+batches' update counts), and for @code{merge_end} @code{updates}, the
+merged batch's update count after compaction.  A merge proceeds in
+fueled steps across many operator schedules between the two.  A merge
+still in progress when its trace is dropped has no @code{merge_end}, so a
+script that keys on @code{trace} should forget a trace's open merges when
+the trace's operator ends.
+@end table
+@c usdt-probes-end
+
+@command{bpftrace} counts operator schedules by name, for every process
+using the library (the path is where @file{libdtfl.so} is installed):
+
+@example
+sudo bpftrace -e 'usdt:/usr/local/lib/libdtfl.so:dtfl:operator_start
+    @{ @@[str(arg4)] = count(); @}'
+@end example
+
+@noindent
+and shows how long workers sleep when they park:
+
+@example
+sudo bpftrace -e '
+usdt:/usr/local/lib/libdtfl.so:dtfl:park @{ @@t[tid] = nsecs; @}
+usdt:/usr/local/lib/libdtfl.so:dtfl:park_end /@@t[tid]/ @{
+    @@us = hist((nsecs - @@t[tid]) / 1000); delete(@@t[tid]); @}'
+@end example
+
+@command{readelf -n libdtfl.so} lists the probes the library carries.
+The library is also built with frame pointers by default, so
+@command{perf} and @command{bpftrace} can take stack traces without
+DWARF unwinding.

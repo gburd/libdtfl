@@ -1062,7 +1062,8 @@ DTFL_TEST(splitmix64_reference_values)
  * of receive rounds, or 0 on a FIFO violation (reported in err).
  */
 static size_t
-sim_run(uint64_t seed, __dtfl_vec *trace, char *err, size_t errlen)
+sim_run(uint64_t seed, const __dtfl_sim_faults *f, __dtfl_vec *trace,
+    char *err, size_t errlen)
 {
 	__dtfl_allocator_builder *b[SIM_PEERS];
 	__dtfl_allocator *a[SIM_PEERS];
@@ -1073,7 +1074,7 @@ sim_run(uint64_t seed, __dtfl_vec *trace, char *err, size_t errlen)
 	unsigned k;
 
 	memset(next, 0, sizeof next);
-	__dtfl_sim_builders(SIM_PEERS, seed, b);
+	__dtfl_sim_builders(SIM_PEERS, seed, f, b);
 	for (w = 0; w < SIM_PEERS; w++)
 		a[w] = __dtfl_allocator_build(b[w]);
 	for (w = 0; w < SIM_PEERS; w++)
@@ -1121,6 +1122,63 @@ sim_run(uint64_t seed, __dtfl_vec *trace, char *err, size_t errlen)
 	return err[0] == '\0' ? rounds : 0;
 }
 
+/*
+ * The fault-free simulator's delivery trace for seeds 1 to 8, as
+ * (rounds, FNV-1a of the trace bytes), recorded from the simulator
+ * before fault injection existed (build at a71fbaf).  A run with no
+ * faults, or with every fault setting zero, must reproduce them: the
+ * fault code may not draw from the scheduler's generator unless a
+ * fault is enabled.
+ */
+static const struct { size_t rounds; uint64_t fnv; } sim_golden[8] = {
+	{ 10, UINT64_C(0x965235656208aeb3) }, { 13, UINT64_C(0xe565dd74551e50a3) },
+	{ 18, UINT64_C(0x8adf3ddf65626f33) }, { 9, UINT64_C(0xe2ede305273b8f73) },
+	{ 10, UINT64_C(0x37ad6077cf624433) }, { 12, UINT64_C(0xc5f2e1ed6061a5a3) },
+	{ 11, UINT64_C(0xe2438b79c017b8b3) }, { 9, UINT64_C(0xebba260c15267263) },
+};
+
+static uint64_t
+trace_fnv(const __dtfl_vec *tr)
+{
+	uint64_t h = UINT64_C(1469598103934665603);
+	size_t i;
+
+	for (i = 0; i < tr->len * tr->elem; i++) {
+		h ^= tr->data[i];
+		h *= UINT64_C(1099511628211);
+	}
+	return h;
+}
+
+DTFL_TEST(sim_fault_free_matches_golden)
+{
+	__dtfl_sim_faults none;
+	char err[256] = "";
+	uint64_t seed;
+	int pass;
+
+	(void)params; (void)data;
+	memset(&none, 0, sizeof none);
+	atomic_store(&test_msg_live, 0);
+	for (seed = 1; seed <= 8; seed++) {
+		for (pass = 0; pass < 2; pass++) {
+			__dtfl_vec tr;
+			size_t r;
+
+			__dtfl_vec_init(&tr, 2 * sizeof(uint64_t));
+			r = sim_run(seed, pass == 0 ? NULL : &none, &tr, err,
+			    sizeof err);
+			if (err[0] != '\0')
+				munit_errorf("%s", err);
+			assert_size(r, ==, sim_golden[seed - 1].rounds);
+			assert_uint64(trace_fnv(&tr), ==, sim_golden[seed - 1].fnv);
+			__dtfl_vec_free(&tr);
+		}
+	}
+	assert_long(atomic_load(&test_msg_live), ==, 0);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(sim_deterministic_per_seed)
 {
 	__dtfl_vec t1, t2, t3;
@@ -1135,9 +1193,9 @@ DTFL_TEST(sim_deterministic_per_seed)
 		__dtfl_vec_init(&t1, 2 * sizeof(uint64_t));
 		__dtfl_vec_init(&t2, 2 * sizeof(uint64_t));
 		__dtfl_vec_init(&t3, 2 * sizeof(uint64_t));
-		r1 = sim_run(seed, &t1, err, sizeof err);
-		r2 = sim_run(seed, &t2, err, sizeof err);
-		(void)sim_run(seed + 1000, &t3, err, sizeof err);
+		r1 = sim_run(seed, NULL, &t1, err, sizeof err);
+		r2 = sim_run(seed, NULL, &t2, err, sizeof err);
+		(void)sim_run(seed + 1000, NULL, &t3, err, sizeof err);
 		if (err[0] != '\0')
 			munit_errorf("%s", err);
 		assert_size(r1, >, 1);	/* delivery really was delayed */
@@ -1158,6 +1216,61 @@ DTFL_TEST(sim_deterministic_per_seed)
 	return MUNIT_OK;
 }
 
+/*
+ * Delay faults hold messages back for drawn receive turns, but keep
+ * every (sender, receiver, channel) FIFO in order, deliver everything,
+ * and replay per seed.  An all-zero fault set draws exactly as no
+ * faults do.
+ */
+DTFL_TEST(sim_delay_keeps_fifo)
+{
+	__dtfl_sim_faults none, delay;
+	__dtfl_vec t1, t2, t0;
+	char err[256] = "";
+	size_t r0, r1, r2, slower = 0;
+	uint64_t seed;
+
+	(void)params; (void)data;
+	memset(&none, 0, sizeof none);
+	memset(&delay, 0, sizeof delay);
+	/* Every message is sent at turn 0; a round is SIM_PEERS turns, so
+	 * some message is almost surely held for about 20 rounds, far more
+	 * than an undelayed drain takes. */
+	delay.delay_max = 60;
+	atomic_store(&test_msg_live, 0);
+	for (seed = 1; seed <= 8; seed++) {
+		__dtfl_vec_init(&t0, 2 * sizeof(uint64_t));
+		__dtfl_vec_init(&t1, 2 * sizeof(uint64_t));
+		__dtfl_vec_init(&t2, 2 * sizeof(uint64_t));
+		r0 = sim_run(seed, &none, &t0, err, sizeof err);
+		r1 = sim_run(seed, &delay, &t1, err, sizeof err);
+		r2 = sim_run(seed, &delay, &t2, err, sizeof err);
+		if (err[0] != '\0')
+			munit_errorf("%s", err);
+		assert_size(t1.len, ==, SIM_PEERS * SIM_PEERS * 2 * SIM_MSG);
+		assert_size(r1, ==, r2);
+		assert_memory_equal(t1.len * t1.elem, t1.data, t2.data);
+		if (r1 > r0)
+			slower++;
+		__dtfl_vec_free(&t0);
+		__dtfl_vec_free(&t1);
+		__dtfl_vec_free(&t2);
+		/* Zero faults replay the fault-free run exactly. */
+		__dtfl_vec_init(&t0, 2 * sizeof(uint64_t));
+		__dtfl_vec_init(&t1, 2 * sizeof(uint64_t));
+		r0 = sim_run(seed, &none, &t0, err, sizeof err);
+		r1 = sim_run(seed, NULL, &t1, err, sizeof err);
+		assert_size(r0, ==, r1);
+		assert_memory_equal(t0.len * t0.elem, t0.data, t1.data);
+		__dtfl_vec_free(&t0);
+		__dtfl_vec_free(&t1);
+	}
+	/* The delay really holds messages back (all but surely). */
+	assert_size(slower, >=, 7);
+	assert_long(atomic_load(&test_msg_live), ==, 0);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(sim_flush_and_drop)
 {
 	__dtfl_allocator_builder *b[2];
@@ -1168,7 +1281,7 @@ DTFL_TEST(sim_flush_and_drop)
 
 	(void)params; (void)data;
 	atomic_store(&test_msg_live, 0);
-	__dtfl_sim_builders(2, 9, b);
+	__dtfl_sim_builders(2, 9, NULL, b);
 	a0 = __dtfl_allocator_build(b[0]);
 	a1 = __dtfl_allocator_build(b[1]);
 	__dtfl_allocate(a0, 3, &test_msg_class, p0, &l0);
@@ -1201,7 +1314,7 @@ DTFL_TEST(sim_virtual_clock_and_rand)
 	uint64_t r0, r1, s;
 
 	(void)params; (void)data;
-	__dtfl_sim_builders(2, 77, b);
+	__dtfl_sim_builders(2, 77, NULL, b);
 	a0 = __dtfl_allocator_build(b[0]);
 	a1 = __dtfl_allocator_build(b[1]);
 	sim = __dtfl_sim_of(a0);
@@ -1320,7 +1433,9 @@ static MunitTest tests[] = {
 	DTFL_T(process_unbuilt_builder_is_released),
 	DTFL_T(broadcaster_clones_all_but_first),
 	DTFL_T(splitmix64_reference_values),
+	DTFL_T(sim_fault_free_matches_golden),
 	DTFL_T(sim_deterministic_per_seed),
+	DTFL_T(sim_delay_keeps_fifo),
 	DTFL_T(sim_flush_and_drop),
 	DTFL_T(sim_virtual_clock_and_rand),
 	DTFL_T(comm_initialize_modes),

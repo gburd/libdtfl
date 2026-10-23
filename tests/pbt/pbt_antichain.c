@@ -313,12 +313,28 @@ lone_zero(const __dtfl_change_batch *cb)
 	return cb->updates.len == 1 && __dtfl_cb_delta(cb, 0) == 0;
 }
 
+/*
+ * The model over one-, two- or three-word keys.  The model's key is two
+ * words: with kw 1 the key is t[0] and t[1] stays 0; with kw 3 the key
+ * is (t[0], 7, t[1]), a fixed middle word, so the same model checks the
+ * fixed-width fast paths of compact.
+ */
 static void
-prop_change_batch_model(pbt_tc *tc)
+cb_key(unsigned kw, const uint64_t t[2], uint64_t key[3])
 {
-	__dtfl_change_batch *cbp = new_cb(tc, 2), *otherp = new_cb(tc, 2);
+	key[0] = t[0];
+	/* kw 3: a middle word that varies with the key, so a compare that
+	 * skipped it would merge distinct keys. */
+	key[1] = kw == 3 ? 7 + (t[1] & 1) : t[1];
+	key[2] = t[1];
+}
+
+static void
+change_batch_model(pbt_tc *tc, unsigned kw)
+{
+	__dtfl_change_batch *cbp = new_cb(tc, kw), *otherp = new_cb(tc, kw);
 	model m = { .n = 0 };
-	uint64_t t[2];
+	uint64_t t[2], key3[3];
 	size_t steps = (size_t)pbt_int(tc, 1, 150), i, n, j;
 	int64_t op;
 #define cb (*cbp)
@@ -326,11 +342,14 @@ prop_change_batch_model(pbt_tc *tc)
 	while (steps-- > 0) {
 		op = pbt_int(tc, 0, 9);
 		draw_t(tc, t);
+		if (kw == 1)
+			t[1] = 0;
 		if (op <= 6) {
 			int64_t delta = pbt_int(tc, -3, 3);
 
 			model_update(&m, t, delta);
-			__dtfl_cb_update(&cb, t, delta);
+			cb_key(kw, t, key3);
+			__dtfl_cb_update(&cb, key3, delta);
 			/* Bounded dirt: maintain_bounds compacts past 32. */
 			PBT_ASSERT(cb.updates.len <= 32 ||
 			    cb.updates.len >> 1 < cb.clean);
@@ -364,9 +383,10 @@ prop_change_batch_model(pbt_tc *tc)
 
 		if (i > 0)
 			PBT_ASSERT(__dtfl_words_cmp(__dtfl_cb_key(&cb, i - 1), key,
-			    2) < 0);
+			    kw) < 0);
 		for (j = 0; j < m.n; j++) {
-			if (m.t[j][0] == key[0] && m.t[j][1] == key[1])
+			if (m.t[j][0] == key[0] &&
+			    m.t[j][1] == (kw == 1 ? 0 : kw == 3 ? key[2] : key[1]))
 				break;
 		}
 		PBT_ASSERT(j < m.n && m.count[j] == __dtfl_cb_delta(&cb, i));
@@ -375,10 +395,122 @@ prop_change_batch_model(pbt_tc *tc)
 #undef other
 }
 
+static void
+prop_change_batch_model(pbt_tc *tc)
+{
+	change_batch_model(tc, 2);
+}
+
+static void
+prop_change_batch_model_kw1(pbt_tc *tc)
+{
+	change_batch_model(tc, 1);
+}
+
+static void
+prop_change_batch_model_kw3(pbt_tc *tc)
+{
+	change_batch_model(tc, 3);
+}
+
+/*
+ * One-word TOTAL times (u64, and i64 with its biased storage, drawn
+ * across zero): __dtfl_time_le and __dtfl_time_lt, which the antichain
+ * code uses, inline this class.  A MutableAntichain under random updates
+ * must hold exactly the least positive time, and the antichain and
+ * frontier queries must answer as integer comparisons do.
+ */
+static void
+total_model(pbt_tc *tc, bool is_signed)
+{
+	dtfl_coord co = { is_signed ? DTFL_COORD_SIGNED : DTFL_COORD_UNSIGNED,
+	    64 };
+	dtfl_time_class *k = dtfl_time_total(co);
+	__dtfl_mutable_antichain *map = __dtfl_alloc(sizeof *map);
+	__dtfl_antichain *ap = __dtfl_alloc(sizeof *ap);
+	int64_t val[16], cnt[16], v, q;
+	size_t nv = 0, i, steps = (size_t)pbt_int(tc, 1, 60);
+	uint64_t w, qw;
+
+	pbt_defer(tc, class_release, k);
+	__dtfl_mantichain_init(map, k);
+	pbt_defer(tc, mantichain_release, map);
+	__dtfl_antichain_init(ap, k);
+	pbt_defer(tc, antichain_release, ap);
+	while (steps-- > 0) {
+		int64_t d = pbt_int(tc, -2, 3);
+		bool have = false, le = false, lt = false;
+		int64_t least = 0;
+
+		v = pbt_int(tc, is_signed ? -3 : 0, 3);
+		w = is_signed ? dtfl_coord_from_i64(v) : (uint64_t)v;
+		for (i = 0; i < nv && val[i] != v; i++)
+			;
+		if (i == nv) {
+			if (nv == 16)
+				break;
+			val[nv] = v;
+			cnt[nv++] = 0;
+		}
+		cnt[i] += d;
+		__dtfl_mantichain_update(map, &w, d);
+		__dtfl_cb_clear(&map->changes);
+		(void)__dtfl_antichain_insert(ap, &w);
+		for (i = 0; i < nv; i++) {
+			if (cnt[i] > 0 && (!have || val[i] < least)) {
+				least = val[i];
+				have = true;
+			}
+		}
+		PBT_ASSERT(__dtfl_mantichain_frontier_len(map) == (have ? 1 : 0));
+		if (have) {
+			uint64_t lw = is_signed ? dtfl_coord_from_i64(least) :
+			    (uint64_t)least;
+
+			PBT_ASSERT(__dtfl_mantichain_frontier(map)[0] == lw);
+		}
+		q = pbt_int(tc, is_signed ? -4 : 0, 4);
+		qw = is_signed ? dtfl_coord_from_i64(q) : (uint64_t)q;
+		if (have) {
+			le = least <= q;
+			lt = least < q;
+		}
+		PBT_ASSERT(__dtfl_mantichain_less_equal(map, &qw) == le);
+		PBT_ASSERT(__dtfl_mantichain_less_than(map, &qw) == lt);
+		/* The antichain of every inserted time is its minimum. */
+		{
+			int64_t mn = val[0];
+
+			for (i = 1; i < nv; i++)
+				if (val[i] < mn)
+					mn = val[i];
+			PBT_ASSERT(__dtfl_antichain_len(ap) == 1);
+			PBT_ASSERT(__dtfl_antichain_less_equal(ap, &qw) == (mn <= q));
+			PBT_ASSERT(__dtfl_antichain_less_than(ap, &qw) == (mn < q));
+		}
+	}
+}
+
+static void
+prop_total_u64_model(pbt_tc *tc)
+{
+	total_model(tc, false);
+}
+
+static void
+prop_total_i64_model(pbt_tc *tc)
+{
+	total_model(tc, true);
+}
+
 static const pbt_prop props[] = {
 	{ "mutable_antichain_model", prop_mutable_antichain_model, 300 },
 	{ "antichain_insert_model", prop_antichain_insert_model, 300 },
 	{ "change_batch_model", prop_change_batch_model, 300 },
+	{ "change_batch_model_kw1", prop_change_batch_model_kw1, 300 },
+	{ "change_batch_model_kw3", prop_change_batch_model_kw3, 300 },
+	{ "total_u64_model", prop_total_u64_model, 300 },
+	{ "total_i64_model", prop_total_i64_model, 300 },
 };
 
 PBT_MAIN("antichain", props)
