@@ -182,43 +182,54 @@ sort_by_key(__dtfl_change_batch *cb)
  * some element is dirty.
  */
 /*
- * compact for one-word keys, the progress tracker's common case (a u64
- * time): the same sort, merge and retain on (key, delta) pairs, with the
- * key width a constant.  Short runs only; longer ones take the general
- * path.
+ * compact for short runs of fixed-width keys: the progress tracker's
+ * common cases are a u64 time (one key word) and a pointstamp, a
+ * location and a u64 time (three).  The same sort, merge and retain as
+ * the general path, with the entry width a constant.
  */
-static void
-compact_kw1(__dtfl_change_batch *cb, size_t n)
-{
-	uint64_t (*e)[2] = (uint64_t (*)[2])(void *)cb->updates.data;
-	size_t i, j, kept = 0;
-
-	for (i = 1; i < n; i++) {
-		uint64_t k = e[i][0], d = e[i][1];
-
-		for (j = i; j > 0 && e[j - 1][0] > k; j--) {
-			e[j][0] = e[j - 1][0];
-			e[j][1] = e[j - 1][1];
-		}
-		e[j][0] = k;
-		e[j][1] = d;
-	}
-	for (i = 0; i + 1 < n; i++) {
-		if (e[i][0] == e[i + 1][0]) {
-			e[i + 1][1] += e[i][1];
-			e[i][1] = 0;
-		}
-	}
-	for (i = 0; i < n; i++) {
-		if (e[i][1] == 0)
-			continue;
-		e[kept][0] = e[i][0];
-		e[kept][1] = e[i][1];
-		kept++;
-	}
-	cb->updates.len = kept;
-	cb->clean = kept;
+#define COMPACT_FIXED(name, KW)						\
+static void								\
+name(__dtfl_change_batch *cb, size_t n)					\
+{									\
+	uint64_t (*e)[KW + 1] =						\
+	    (uint64_t (*)[KW + 1])(void *)cb->updates.data;		\
+	uint64_t tmp[KW + 1];						\
+	size_t i, j, kept = 0;						\
+	unsigned w;							\
+									\
+	for (i = 1; i < n; i++) {					\
+		if (__dtfl_words_cmp(e[i - 1], e[i], KW) <= 0)		\
+			continue;					\
+		for (w = 0; w <= KW; w++)				\
+			tmp[w] = e[i][w];				\
+		for (j = i; j > 0 &&					\
+		    __dtfl_words_cmp(e[j - 1], tmp, KW) > 0; j--) {	\
+			for (w = 0; w <= KW; w++)			\
+				e[j][w] = e[j - 1][w];			\
+		}							\
+		for (w = 0; w <= KW; w++)				\
+			e[j][w] = tmp[w];				\
+	}								\
+	for (i = 0; i + 1 < n; i++) {					\
+		if (__dtfl_words_cmp(e[i], e[i + 1], KW) == 0) {	\
+			e[i + 1][KW] += e[i][KW];			\
+			e[i][KW] = 0;					\
+		}							\
+	}								\
+	for (i = 0; i < n; i++) {					\
+		if (e[i][KW] == 0)					\
+			continue;					\
+		if (kept != i)						\
+			for (w = 0; w <= KW; w++)			\
+				e[kept][w] = e[i][w];			\
+		kept++;							\
+	}								\
+	cb->updates.len = kept;						\
+	cb->clean = kept;						\
 }
+
+COMPACT_FIXED(compact_kw1, 1)
+COMPACT_FIXED(compact_kw3, 3)
 
 void
 __dtfl_cb_compact(__dtfl_change_batch *cb)
@@ -227,9 +238,15 @@ __dtfl_cb_compact(__dtfl_change_batch *cb)
 	unsigned kw = cb->kw, w;
 	uint64_t *base;
 
-	if (kw == 1 && n <= CB_SMALL_SORT && cb->clean < n && n > 1) {
-		compact_kw1(cb, n);
-		return;
+	if (n <= CB_SMALL_SORT && cb->clean < n && n > 1) {
+		if (kw == 1) {
+			compact_kw1(cb, n);
+			return;
+		}
+		if (kw == 3) {
+			compact_kw3(cb, n);
+			return;
+		}
 	}
 	if (cb->clean < n && n > 1) {
 		sort_by_key(cb);
@@ -271,7 +288,8 @@ __dtfl_cb_is_empty(__dtfl_change_batch *cb)
 {
 	if (cb->clean > cb->updates.len / 2)
 		return false;
-	__dtfl_cb_compact(cb);
+	if (cb->clean < cb->updates.len)
+		__dtfl_cb_compact(cb);
 	return cb->updates.len == 0;
 }
 
@@ -279,8 +297,7 @@ __dtfl_cb_is_empty(__dtfl_change_batch *cb)
 size_t
 __dtfl_cb_len(__dtfl_change_batch *cb)
 {
-	__dtfl_cb_compact(cb);
-	return cb->updates.len;
+	return __dtfl_cb_iter(cb);
 }
 
 /*

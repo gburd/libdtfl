@@ -314,16 +314,25 @@ lone_zero(const __dtfl_change_batch *cb)
 }
 
 /*
- * The model over one- or two-word keys.  With kw 1 the key is t[0] and
- * the model's second word stays 0, so the same model checks the
- * one-word fast path of compact.
+ * The model over one-, two- or three-word keys.  The model's key is two
+ * words: with kw 1 the key is t[0] and t[1] stays 0; with kw 3 the key
+ * is (t[0], 7, t[1]), a fixed middle word, so the same model checks the
+ * fixed-width fast paths of compact.
  */
+static void
+cb_key(unsigned kw, const uint64_t t[2], uint64_t key[3])
+{
+	key[0] = t[0];
+	key[1] = kw == 3 ? 7 : t[1];
+	key[2] = t[1];
+}
+
 static void
 change_batch_model(pbt_tc *tc, unsigned kw)
 {
 	__dtfl_change_batch *cbp = new_cb(tc, kw), *otherp = new_cb(tc, kw);
 	model m = { .n = 0 };
-	uint64_t t[2];
+	uint64_t t[2], key3[3];
 	size_t steps = (size_t)pbt_int(tc, 1, 150), i, n, j;
 	int64_t op;
 #define cb (*cbp)
@@ -337,7 +346,8 @@ change_batch_model(pbt_tc *tc, unsigned kw)
 			int64_t delta = pbt_int(tc, -3, 3);
 
 			model_update(&m, t, delta);
-			__dtfl_cb_update(&cb, t, delta);
+			cb_key(kw, t, key3);
+			__dtfl_cb_update(&cb, key3, delta);
 			/* Bounded dirt: maintain_bounds compacts past 32. */
 			PBT_ASSERT(cb.updates.len <= 32 ||
 			    cb.updates.len >> 1 < cb.clean);
@@ -374,7 +384,7 @@ change_batch_model(pbt_tc *tc, unsigned kw)
 			    kw) < 0);
 		for (j = 0; j < m.n; j++) {
 			if (m.t[j][0] == key[0] &&
-			    m.t[j][1] == (kw == 1 ? 0 : key[1]))
+			    m.t[j][1] == (kw == 1 ? 0 : kw == 3 ? key[2] : key[1]))
 				break;
 		}
 		PBT_ASSERT(j < m.n && m.count[j] == __dtfl_cb_delta(&cb, i));
@@ -395,11 +405,18 @@ prop_change_batch_model_kw1(pbt_tc *tc)
 	change_batch_model(tc, 1);
 }
 
+static void
+prop_change_batch_model_kw3(pbt_tc *tc)
+{
+	change_batch_model(tc, 3);
+}
+
 static const pbt_prop props[] = {
 	{ "mutable_antichain_model", prop_mutable_antichain_model, 300 },
 	{ "antichain_insert_model", prop_antichain_insert_model, 300 },
 	{ "change_batch_model", prop_change_batch_model, 300 },
 	{ "change_batch_model_kw1", prop_change_batch_model_kw1, 300 },
+	{ "change_batch_model_kw3", prop_change_batch_model_kw3, 300 },
 };
 
 PBT_MAIN("antichain", props)
