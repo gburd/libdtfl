@@ -45,3 +45,9 @@ __dtfl_chunker_finish(__dtfl_chunker *ch)
 {
 	return __dtfl_consolidator_finish(&ch->con);
 }
+
+void
+__dtfl_chunker_recycle(__dtfl_chunker *ch, __dtfl_batch *b)
+{
+	__dtfl_consolidator_recycle(&ch->con, b);
+}

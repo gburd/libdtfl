@@ -384,7 +384,7 @@ To keep the blast radius small:
 | reader isolation | FLUX MVCC on the view table, old versions from UNDO |
 | writer correctness | each transaction's delta is its own statements' OLD/NEW images; deltas applied in commit order under the view's maintenance lock |
 | multiset semantics | `dtfl_diff_i64` weights; delete/insert by multiplicity at apply |
-| aggregates incl. MIN/MAX retraction | `reduce` over the group's remaining multiset |
+| aggregates incl. MIN/MAX retraction | `count`/`sum` in the difference (O(change)); `reduce` over the group's remaining multiset for MIN/MAX (O(group)) |
 | cost proportional to change | persistent arrangements in the maintenance worker (placement 2) |
 | durability and recovery | WAL and UNDO for base and view tables; arrangements rebuilt from the committed view state and `last_n` |
 | bounded memory | compaction holds advanced as commits become durable |
@@ -459,6 +459,22 @@ commit, even one with no rows for that table; the probe is attached after
 the view's arrangement, so passing `n` means the trace is complete
 through `n`; and type descriptors passed to operators are bound to locals
 and freed (an inline nested `dtfl_type_pair` leaks).
+
+**Aggregates: keep them in the difference.**  A `reduce` recomputes each
+touched group from its whole multiset, so a commit costs the size of the
+groups it touches, not the size of the change.  `bench/ivm_latency`
+measures it (one worker, 100,000 orders, 10-row commits at 100 per
+second; dev host, so relative only): with 1,000 groups of about 100 rows
+a `reduce` commit takes about 450 us, with 16 groups of about 6,000
+rows about 17 ms, and the worker falls behind.  Moving the aggregate into
+the difference keeps it O(change): `dtfl_collection_explode` turns each
+`(region, amount)` into `region` with `amount` as its weight, and
+`dtfl_collection_count` then maintains the sum (and a plain `count` of
+the unexploded rows maintains `count(*)`).  That form took about 85 us
+per commit at both group sizes.  Use `explode` and `count` for COUNT,
+SUM and AVG (as sum over count), and `reduce` only for aggregates the
+difference cannot carry, MIN and MAX, whose cost then grows with the
+group.
 
 Record encoding (`examples/ivm/sqlrow.h` implements the fixed-width and
 NULL cases and documents the rest): libdtfl records are byte strings with a type descriptor

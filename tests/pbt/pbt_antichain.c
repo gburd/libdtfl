@@ -20,6 +20,9 @@
 #include "pbt.h"
 #include "progress/progress_int.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #define NT 64	/* model capacity: distinct times */
 
 typedef struct model {
@@ -503,12 +506,84 @@ prop_total_i64_model(pbt_tc *tc)
 	total_model(tc, true);
 }
 
+/*
+ * Long batches: compact must equal a reference compaction (sort by key
+ * with qsort, sum equal keys, drop zeros) for batches long enough to
+ * take the introsort's partitioning path, with key patterns that stress
+ * it: few distinct keys, already sorted, reversed, and random.
+ */
+static unsigned ref_kw;
+
+static int
+ref_cmp(const void *a, const void *b)
+{
+	return __dtfl_words_cmp(a, b, ref_kw);
+}
+
+static void
+prop_change_batch_long(pbt_tc *tc)
+{
+	unsigned kw = (unsigned)pbt_int(tc, 1, 4);
+	size_t n = (size_t)pbt_int(tc, 21, 3000), i, j, k, words = kw + 1;
+	int pattern = (int)pbt_int(tc, 0, 3);
+	uint64_t span = (uint64_t)pbt_int(tc, 1, 4000), seed;
+	__dtfl_change_batch *cbp = new_cb(tc, kw);
+	uint64_t *ref = __dtfl_alloc(n * words * sizeof *ref);
+	uint64_t key[5];
+
+	pbt_defer(tc, __dtfl_free, ref);
+	seed = (uint64_t)pbt_int(tc, 0, INT64_MAX);
+	for (i = 0; i < n; i++) {
+		uint64_t v;
+
+		seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+		v = (seed >> 17) % span;
+		if (pattern == 1)
+			v = i % span;
+		else if (pattern == 2)
+			v = (n - i) % span;
+		else if (pattern == 3)
+			v = (seed >> 17) % 3;
+		for (k = 0; k < kw; k++)
+			key[k] = k + 1 == kw ? v : (v >> (8 * (kw - k))) & 3;
+		__dtfl_cb_update(cbp, key, (int64_t)((seed >> 40) % 5) - 2);
+		memcpy(ref + i * words, key, kw * sizeof *key);
+		ref[i * words + kw] = (uint64_t)((int64_t)((seed >> 40) % 5) - 2);
+	}
+	/* Reference: sort, then sum runs of equal keys, then drop zeros. */
+	ref_kw = kw;
+	qsort(ref, n, words * sizeof *ref, ref_cmp);
+	for (i = 0, k = 0; i < n; i = j) {
+		uint64_t sum = 0;
+
+		for (j = i; j < n && __dtfl_words_cmp(ref + j * words,
+		    ref + i * words, kw) == 0; j++)
+			sum += ref[j * words + kw];
+		if (sum == 0)
+			continue;
+		memmove(ref + k * words, ref + i * words, kw * sizeof *ref);
+		ref[k * words + kw] = sum;
+		k++;
+	}
+	n = __dtfl_cb_iter(cbp);
+	/* maintain_bounds compacts as it goes; the result is the same. */
+	PBT_ASSERT(n == k || (k == 0 && n == 1 && __dtfl_cb_delta(cbp, 0) == 0));
+	if (k == 0)
+		return;
+	for (i = 0; i < n; i++) {
+		PBT_ASSERT(__dtfl_words_cmp(__dtfl_cb_key(cbp, i), ref + i * words,
+		    kw) == 0);
+		PBT_ASSERT(__dtfl_cb_delta(cbp, i) == (int64_t)ref[i * words + kw]);
+	}
+}
+
 static const pbt_prop props[] = {
 	{ "mutable_antichain_model", prop_mutable_antichain_model, 300 },
 	{ "antichain_insert_model", prop_antichain_insert_model, 300 },
 	{ "change_batch_model", prop_change_batch_model, 300 },
 	{ "change_batch_model_kw1", prop_change_batch_model_kw1, 300 },
 	{ "change_batch_model_kw3", prop_change_batch_model_kw3, 300 },
+	{ "change_batch_long", prop_change_batch_long, 300 },
 	{ "total_u64_model", prop_total_u64_model, 300 },
 	{ "total_i64_model", prop_total_i64_model, 300 },
 };

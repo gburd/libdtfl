@@ -149,6 +149,39 @@ __dtfl_batch_clear(__dtfl_batch *b)
 	__dtfl_vec_clear(&b->diffs);
 }
 
+void
+__dtfl_batch_drain_front(__dtfl_batch *b, size_t k)
+{
+	size_t n = __dtfl_batch_len(b), base, j;
+	size_t *o;
+
+	DTFL_ASSERT(k <= n && b->elem_drop == NULL);
+	DTFL_DEBUG_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	if (k == 0)
+		return;
+	o = (size_t *)(void *)b->offs.data;
+	base = o[k];
+	if (b->arena.len > base)
+		memmove(b->arena.data, b->arena.data + base,
+		    b->arena.len - base);
+	b->arena.len -= base;
+	for (j = 0; j <= n - k; j++)
+		o[j] = o[k + j] - base;
+	b->offs.len = n - k + 1;
+	if (b->tw != 0) {
+		if (n > k)
+			memmove(b->times.data, __dtfl_batch_time(b, k),
+			    (n - k) * b->tw * sizeof(uint64_t));
+		b->times.len = (n - k) * b->tw;
+	}
+	if (b->dw != 0) {
+		if (n > k)
+			memmove(b->diffs.data, __dtfl_batch_diff(b, k),
+			    (n - k) * b->dw);
+		b->diffs.len = (n - k) * b->dw;
+	}
+}
+
 /*
  * Reserves room for `rows` more records: the offsets, time and diff
  * columns exactly, and `bytes` more arena bytes.  A hint only; the batch
