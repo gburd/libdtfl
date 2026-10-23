@@ -94,9 +94,10 @@ cleanup() {
 		aws ec2 terminate-instances --instance-ids "$id" >/dev/null
 		aws ec2 wait instance-terminated --instance-ids "$id"
 	fi
-	# The interface can detach after the instance is gone: retry.
+	# The interface can detach minutes after the instance is gone (on a
+	# c6i.metal, longer than two): retry for ten minutes.
 	if [ -n "$sg" ]; then
-		for _ in $(seq 1 12); do
+		for _ in $(seq 1 60); do
 			aws ec2 delete-security-group --group-id "$sg" >/dev/null 2>&1 &&
 			    { log "security group deleted"; sg=""; break; }
 			sleep 10
