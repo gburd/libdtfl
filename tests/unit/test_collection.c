@@ -12,10 +12,17 @@
  * cancelling updates gone and no zero diffs.  A final Process run of
  * three workers inserts and retracts the same keys and converges to the
  * same net multiset, proving the model end to end across workers.
+ *
+ * collection__linear_frontier_interest_never counts schedules: the
+ * linear operators upstream builds on Operator::unary or timely's
+ * map/flat_map/filter (collection.rs Negate, Enter, Leave; map, filter,
+ * explode) declare FrontierInterest::Never, so an input advance with
+ * no records schedules none of them.
  */
 #include "dtfl_test.h"
 
 #include "dtfl/collection.h"
+#include "dtfl/log.h"
 #include "dtfl/record.h"
 #include "dtfl/time.h"
 #include "dtfl/timely.h"
@@ -455,11 +462,154 @@ DTFL_TEST(collection__inner_is_the_wrapped_stream)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* Linear operators: frontier changes alone do not schedule them       */
+/* ------------------------------------------------------------------ */
+
+#define LINEAR_OPS 8
+
+/* Schedule-start events of the linear operators, while `counting`. */
+typedef struct sched_count {
+	size_t ids[64];
+	size_t nids;
+	bool counting;
+	size_t starts;
+} sched_count;
+
+static const char *const linear_names[] = {
+	"Enter", "Map", "FlatMap", "Filter", "Negate", "Explode", "Leave"
+};
+
+static void
+count_linear_starts(const dtfl_log_batch *b, void *ctx)
+{
+	sched_count *sc = ctx;
+	size_t n = dtfl_log_batch_len(b), i, k;
+
+	for (i = 0; i < n; i++) {
+		switch (dtfl_log_event_kind_at(b, i)) {
+		case DTFL_LOG_OPERATES:
+			for (k = 0; k < sizeof linear_names / sizeof linear_names[0]; k++)
+				if (strcmp(dtfl_log_operates_name(b, i),
+				    linear_names[k]) == 0 &&
+				    sc->nids < sizeof sc->ids / sizeof sc->ids[0])
+					sc->ids[sc->nids++] = dtfl_log_operates_id(b, i);
+			break;
+		case DTFL_LOG_SCHEDULE:
+			if (!sc->counting || !dtfl_log_schedule_start(b, i))
+				break;
+			for (k = 0; k < sc->nids; k++)
+				if (sc->ids[k] == dtfl_log_schedule_id(b, i))
+					sc->starts++;
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+static void
+explode_unit(void *ctx, const void *rec, size_t len, dtfl_collection_emit *out)
+{
+	int64_t one = 1;
+
+	(void)ctx;
+	dtfl_collection_emit_pair(out, rec, len, &one);
+}
+
+typedef struct linear_ctx {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	dtfl_collection *outer, *result;
+} linear_ctx;
+
+static void
+build_linear_region(dtfl_scope *inner, void *arg)
+{
+	linear_ctx *c = arg;
+	dtfl_collection *steps[LINEAR_OPS];
+	dtfl_diff *r = dtfl_diff_i64();
+	size_t k;
+
+	steps[0] = dtfl_collection_enter(c->outer, inner);
+	steps[1] = dtfl_collection_map(steps[0], dtfl_type_u64(), map_double,
+	    DTFL_NOCTX);
+	steps[2] = dtfl_collection_flat_map(steps[1], dtfl_type_u64(),
+	    map_double, DTFL_NOCTX);
+	steps[3] = dtfl_collection_filter(steps[2], filter_small, DTFL_NOCTX);
+	steps[4] = dtfl_collection_negate(steps[3]);
+	steps[5] = dtfl_collection_explode(steps[4], dtfl_type_u64(), r,
+	    explode_unit, DTFL_NOCTX);
+	assert_not_null(steps[5]);
+	steps[6] = dtfl_collection_negate(steps[5]);
+	c->result = dtfl_collection_leave(steps[6]);
+	for (k = 0; k < 7; k++)
+		dtfl_collection_free(steps[k]);
+	dtfl_diff_free(r);
+}
+
+static void
+build_linear(dtfl_scope *scope, void *arg)
+{
+	linear_ctx *c = arg;
+	dtfl_collection *probed;
+
+	c->outer = dtfl_input_session_to_collection(c->in, scope);
+	assert_int(dtfl_scope_region(scope, "region", build_linear_region, c),
+	    ==, DTFL_OK);
+	probed = dtfl_collection_probe_with(c->result, c->probe);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(c->result);
+	dtfl_collection_free(c->outer);
+}
+
+DTFL_TEST(collection__linear_frontier_interest_never)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	static sched_count sc;
+	linear_ctx c;
+	uint64_t round;
+
+	(void)params; (void)data;
+	memset(&sc, 0, sizeof sc);
+	assert_int(dtfl_worker_log_subscribe(w, "timely", count_linear_starts,
+	    &sc, NULL), ==, DTFL_OK);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "linear", tc, build_linear, &c),
+	    ==, 0);
+	/* Enter, Map, FlatMap, Filter, Negate, Explode, Negate, Leave. */
+	assert_size(sc.nids, ==, LINEAR_OPS);
+	for (round = 1; round < 60; round++) {
+		probe_cond pc = { c.probe, round };
+
+		if (round == 2)
+			sc.counting = true;	/* the build's schedules are done */
+		dtfl_input_session_advance_to(c.in, &round);
+		dtfl_input_session_flush(c.in);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+	sc.counting = false;
+	/* No records, so no linear operator had input to read. */
+	assert_size(sc.starts, ==, 0);
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(collection__cancellation_consolidates_to_empty),
 	DTFL_T(collection__net_multiset_after_updates),
 	DTFL_T(collection__multi_worker_insert_retract_converges),
 	DTFL_T(collection__inner_is_the_wrapped_stream),
+	DTFL_T(collection__linear_frontier_interest_never),
 	DTFL_T_END
 };
 

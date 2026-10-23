@@ -177,6 +177,12 @@ build(dtfl_scope *scope, void *arg)
 	jc->count = c->count;
 	dtfl_op_builder_input(b, s1, dtfl_pact_exchange(route_by_key, NULL));
 	dtfl_op_builder_input(b, s2, dtfl_pact_exchange(route_by_key, NULL));
+	/*
+	 * As Operator::binary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
+	dtfl_op_builder_set_notify(b, 1, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, pair);
 	dtfl_op_builder_build(b, join_logic, jc, join_free);
 	out = dtfl_stream_probe_with(out, c->probe);

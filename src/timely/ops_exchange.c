@@ -41,6 +41,11 @@ dtfl_stream_exchange(dtfl_stream *st,
 	dtfl_stream *out;
 
 	dtfl_op_builder_input(b, st, dtfl_pact_exchange(route, ctx));
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	out = dtfl_op_builder_output(b, dtfl_stream_type(st));
 	dtfl_op_builder_build(b, exchange_logic, NULL, NULL);
 	return out;

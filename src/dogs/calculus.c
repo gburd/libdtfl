@@ -98,6 +98,11 @@ dtfl_collection_differentiate(dtfl_collection *c, dtfl_scope *child)
 	ut = __dtfl_update_type(rt, depth, dw);
 	b = dtfl_op_builder_new(child, "Differentiate");
 	dtfl_op_builder_input(b, inner->stream, dtfl_pact_pipeline());
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, differentiate_logic, dctx, __dtfl_free);
 	dtfl_type_free(ut);
@@ -170,6 +175,11 @@ dtfl_collection_integrate(dtfl_collection *c)
 	ut = __dtfl_update_type(rt, depth, dw);
 	b = dtfl_op_builder_new(dtfl_stream_scope(c->stream), "Integrate");
 	dtfl_op_builder_input(b, c->stream, dtfl_pact_pipeline());
+	/*
+	 * Operator::unary (generic/operator.rs): frontier
+	 * changes alone do not schedule.
+	 */
+	dtfl_op_builder_set_notify(b, 0, DTFL_NOTIFY_NEVER);
 	st = dtfl_op_builder_output(b, ut);
 	dtfl_op_builder_build(b, integrate_logic, ictx, __dtfl_free);
 	dtfl_type_free(ut);
