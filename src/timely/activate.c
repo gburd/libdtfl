@@ -305,8 +305,10 @@ __dtfl_activations_advance(__dtfl_activations *a)
 
 	/* bounds.drain(..clean) */
 	n = a->bounds.len - a->clean;
-	memmove(a->bounds.data, a->bounds.data + a->clean * sizeof(bound),
-	    n * sizeof(bound));
+	/* Never-activated bounds have no storage: NULL + 0 is undefined. */
+	if (a->clean > 0)
+		memmove(a->bounds.data, a->bounds.data + a->clean * sizeof(bound),
+		    n * sizeof(bound));
 	__dtfl_vec_truncate(&a->bounds, n);
 	b = (bound *)(void *)a->bounds.data;
 	sort_bounds(b, n, (const size_t *)(void *)a->slices.data);
