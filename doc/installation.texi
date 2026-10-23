@@ -80,7 +80,10 @@ cc myprog.c $(pkg-config --cflags --libs dtfl)
 @section Running the test suite
 
 @command{make check} runs the unit, property-based and distribution
-tests.  The project's full gate, @command{dev/check-all}, builds and
+tests.  Each test runs under a time limit, @env{DTFL_TEST_TIMEOUT}
+seconds (default 600; 0 turns it off): a test that hangs is killed and
+reported as FAIL, with a line in its log saying it timed out, instead of
+stalling the run.  The project's full gate, @command{dev/check-all}, builds and
 tests six configurations, each in its own build directory:
 
 @table @asis
