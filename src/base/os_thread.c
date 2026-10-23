@@ -126,6 +126,9 @@ __dtfl_process_wait(long pid)
 	do {
 		r = waitpid((pid_t)pid, &status, 0);
 	} while (r < 0 && errno == EINTR);
+	if (r < 0 && errno == ECHILD)	/* SIGCHLD ignored: reaped unseen */
+		return __dtfl_err(DTFL_ESTATE, "waitpid(%ld): %s", pid,
+		    strerror(errno));
 	if (r < 0)
 		return __dtfl_err(DTFL_EIO, "waitpid(%ld): %s", pid,
 		    strerror(errno));

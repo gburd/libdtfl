@@ -41,6 +41,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -705,6 +706,31 @@ DTFL_TEST(execute_forked_reports_a_failed_child)
 	return MUNIT_OK;
 }
 
+/*
+ * With SIGCHLD ignored the kernel reaps the children itself, and
+ * waitpid(2) fails with ECHILD instead of returning their status.  A
+ * good run must still return 0, and a failed one DTFL_EIO.
+ */
+DTFL_TEST(execute_forked_with_sigchld_ignored)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	alarm(3 * CHILD_ALARM);
+	(void)signal(SIGCHLD, SIG_IGN);
+	if (run_forked(DTFL_COMM_PROCESS, 3) != 0)
+		munit_errorf("a good run failed: %s", dtfl_last_error_detail());
+	assert_int(dtfl_config_set_mode(cfg, DTFL_COMM_PROCESS), ==, 0);
+	assert_int(dtfl_config_set_threads(cfg, 3), ==, 0);
+	assert_int(dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES), ==, 0);
+	assert_int(dtfl_execute(cfg, failing_worker, NULL, NULL), ==, DTFL_EIO);
+	assert_not_null(strstr(dtfl_last_error_detail(), "SIGCHLD"));
+	dtfl_config_free(cfg);
+	(void)signal(SIGCHLD, SIG_DFL);
+	alarm(0);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(execute_forked_rejects_cluster_and_sim)
 {
 	dtfl_config *cfg = dtfl_config_new();
@@ -828,6 +854,7 @@ static MunitTest tests[] = {
 	DTFL_T(execute_worker_rejects_bad_arguments),
 	DTFL_T(execute_forked_process_mode),
 	DTFL_T(execute_forked_reports_a_failed_child),
+	DTFL_T(execute_forked_with_sigchld_ignored),
 	DTFL_T(execute_forked_rejects_cluster_and_sim),
 	DTFL_T(execute_worker_sync_activator_wakes_transport_wait),
 	DTFL_T_END

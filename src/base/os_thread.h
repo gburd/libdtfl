@@ -49,8 +49,10 @@ int __dtfl_process_fork(long *pid, bool *is_child);
 /* Ends a forked child at once (_exit), with status 0 or 1. */
 DTFL_NORETURN void __dtfl_process_exit(bool ok);
 /*
- * Waits for child `pid`; returns 0 if it exited with status 0, else
- * DTFL_EIO with detail (the exit status or the signal).
+ * Waits for child `pid`; returns 0 if it exited with status 0,
+ * DTFL_ESTATE if its status is lost (ECHILD: the caller ignores
+ * SIGCHLD, so the kernel reaped it), else DTFL_EIO with detail (the
+ * exit status or the signal).
  */
 int __dtfl_process_wait(long pid);
 
