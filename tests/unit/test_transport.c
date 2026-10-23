@@ -94,11 +94,16 @@ DTFL_TEST(transport_socket_full_is_a_short_send)
 	t0 = now_ns();
 	a.wait(a.ctx, UINT64_C(20000000));
 	assert_ullong(now_ns() - t0, >=, UINT64_C(15000000));
-	/* Once the reader drains some, the writer's wait returns. */
+	/*
+	 * Once the reader drains it, the writer's wait returns at once, not
+	 * at its 5 s timeout: the short send made wait poll for POLLOUT.
+	 */
 	do {
 		assert_int(b.recv(b.ctx, 0, buf, sizeof buf, &got), ==, 0);
 	} while (got > 0);
+	t0 = now_ns();
 	a.wait(a.ctx, UINT64_C(5000000000));
+	assert_ullong(now_ns() - t0, <, UINT64_C(1000000000));
 	assert_int(a.send(a.ctx, 1, buf, 1, &sent), ==, 0);
 	assert_size(sent, ==, 1);
 	a.destroy(a.ctx);
