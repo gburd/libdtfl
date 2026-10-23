@@ -181,6 +181,45 @@ sort_by_key(__dtfl_change_batch *cb)
  * keys and discard any whose accumulation is zero.  Only does work if
  * some element is dirty.
  */
+/*
+ * compact for one-word keys, the progress tracker's common case (a u64
+ * time): the same sort, merge and retain on (key, delta) pairs, with the
+ * key width a constant.  Short runs only; longer ones take the general
+ * path.
+ */
+static void
+compact_kw1(__dtfl_change_batch *cb, size_t n)
+{
+	uint64_t (*e)[2] = (uint64_t (*)[2])(void *)cb->updates.data;
+	size_t i, j, kept = 0;
+
+	for (i = 1; i < n; i++) {
+		uint64_t k = e[i][0], d = e[i][1];
+
+		for (j = i; j > 0 && e[j - 1][0] > k; j--) {
+			e[j][0] = e[j - 1][0];
+			e[j][1] = e[j - 1][1];
+		}
+		e[j][0] = k;
+		e[j][1] = d;
+	}
+	for (i = 0; i + 1 < n; i++) {
+		if (e[i][0] == e[i + 1][0]) {
+			e[i + 1][1] += e[i][1];
+			e[i][1] = 0;
+		}
+	}
+	for (i = 0; i < n; i++) {
+		if (e[i][1] == 0)
+			continue;
+		e[kept][0] = e[i][0];
+		e[kept][1] = e[i][1];
+		kept++;
+	}
+	cb->updates.len = kept;
+	cb->clean = kept;
+}
+
 void
 __dtfl_cb_compact(__dtfl_change_batch *cb)
 {
@@ -188,6 +227,10 @@ __dtfl_cb_compact(__dtfl_change_batch *cb)
 	unsigned kw = cb->kw, w;
 	uint64_t *base;
 
+	if (kw == 1 && n <= CB_SMALL_SORT && cb->clean < n && n > 1) {
+		compact_kw1(cb, n);
+		return;
+	}
 	if (cb->clean < n && n > 1) {
 		sort_by_key(cb);
 		base = (uint64_t *)(void *)cb->updates.data;
