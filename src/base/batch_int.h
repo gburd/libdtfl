@@ -254,6 +254,20 @@ __dtfl_batch_push(__dtfl_batch *b, const void *rec, size_t len,
 }
 /* Reserves room for `rows` more records and `bytes` more arena bytes. */
 void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
+/*
+ * ensure_capacity for a buffer that flushes once it holds `cap_bytes` of
+ * records (no time or diff columns), made at the first push of a record
+ * of `len` bytes: one block with room for that many records of that size
+ * (counting each as at least a word) and the bytes of one record past
+ * the threshold, so a buffer of like-sized records never regrows.
+ */
+static inline __dtfl_batch *
+__dtfl_batch_new_buffer(size_t cap_bytes, size_t len)
+{
+	return __dtfl_batch_new_reserved(0, 0,
+	    cap_bytes / (len > sizeof(size_t) ? len : sizeof(size_t)) + 1,
+	    cap_bytes + len);
+}
 /* Appends record i of src. */
 void __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i);
 /* Appends records [i, i + count) of src in bulk (b != src). */

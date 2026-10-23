@@ -28,7 +28,7 @@ typedef struct exch_pusher {
 	const dtfl_type *type;		/* retained */
 	__dtfl_push **pushers;		/* owned; n entries */
 	size_t n;
-	__dtfl_batch **buffers;		/* per peer; owned */
+	__dtfl_batch **buffers;		/* per peer; owned; NULL until a push */
 	uint64_t (*route)(const void *, size_t, void *);
 	void *ctx;
 	uint64_t current[DTFL_TIME_MAX];
@@ -49,10 +49,10 @@ flush_buffer(exch_pusher *e, size_t i)
 {
 	void *bundle;
 
-	if (__dtfl_batch_len(e->buffers[i]) == 0)
+	if (e->buffers[i] == NULL)
 		return;
 	bundle = __dtfl_message_new(e->tc, e->current, e->buffers[i]);
-	e->buffers[i] = __dtfl_batch_new(0, 0);		/* fresh buffer */
+	e->buffers[i] = NULL;	/* the next push starts a fresh buffer */
 	__dtfl_push_send(e->pushers[i], __dtfl_message_class(), bundle);
 }
 
@@ -94,6 +94,10 @@ exch_push(__dtfl_push *p, void **msg)
 			const void *rec = __dtfl_batch_rec(m->data, k, &len);
 			size_t idx = (size_t)(route_record(e, rec, len) % e->n);
 
+			/* ensure_capacity: the builder's preferred capacity. */
+			if (e->buffers[idx] == NULL)
+				e->buffers[idx] = __dtfl_batch_new_buffer(
+				    DTFL_BUFFER_SIZE_BYTES, len);
 			__dtfl_batch_push(e->buffers[idx], rec, len, NULL, NULL);
 			/* partition: extract a container once it is full. */
 			if (__dtfl_batch_bytes(e->buffers[idx]) >=
@@ -148,7 +152,7 @@ __dtfl_push_exchange_new(const dtfl_time_class *tc, const dtfl_type *type,
 	e->n = n;
 	e->buffers = __dtfl_alloc(DTFL_MAX(n, 1) * sizeof(__dtfl_batch *));
 	for (i = 0; i < n; i++)
-		e->buffers[i] = __dtfl_batch_new(0, 0);
+		e->buffers[i] = NULL;
 	e->route = route;
 	e->ctx = ctx;
 	e->have_current = false;

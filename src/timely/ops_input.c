@@ -156,7 +156,7 @@ struct dtfl_input {
 	dtfl_time_class *tc;		/* retained; set at first to_stream */
 	unsigned depth;
 	__dtfl_vec regs;		/* input_reg */
-	__dtfl_batch *buffer;		/* records at now_at; owned */
+	__dtfl_batch *buffer;		/* records at now_at; owned; NULL until a send */
 	uint64_t now_at[DTFL_TIME_MAX];
 	bool have_time;			/* now_at valid (tc known) */
 	bool closed;
@@ -169,7 +169,7 @@ dtfl_input_new(const dtfl_type *type)
 
 	in->type = dtfl_type_retain(type);
 	__dtfl_vec_init(&in->regs, sizeof(input_reg));
-	in->buffer = __dtfl_batch_new(0, 0);
+	in->buffer = NULL;
 	return in;
 }
 
@@ -205,15 +205,18 @@ input_send_container(dtfl_input *in, __dtfl_batch *data)
 static void
 input_flush(dtfl_input *in)
 {
-	if (!in->have_time || __dtfl_batch_len(in->buffer) == 0)
+	if (!in->have_time || in->buffer == NULL)
 		return;
 	input_send_container(in, in->buffer);
-	in->buffer = __dtfl_batch_new(0, 0);
+	in->buffer = NULL;
 }
 
 void
 dtfl_input_send(dtfl_input *in, const void *rec, size_t len)
 {
+	/* ensure_capacity: one block for a buffer's worth of records. */
+	if (in->buffer == NULL)
+		in->buffer = __dtfl_batch_new_buffer(DTFL_BUFFER_SIZE_BYTES, len);
 	__dtfl_batch_push(in->buffer, rec, len, NULL, NULL);
 	/* Bound the buffer; a full buffer flushes to the current pushers. */
 	if (__dtfl_batch_bytes(in->buffer) >= DTFL_BUFFER_SIZE_BYTES)
