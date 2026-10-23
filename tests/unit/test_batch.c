@@ -485,10 +485,14 @@ DTFL_TEST(batch_move_rows_keeps_blocks_apart)
 		assert_size(src->arena.len, ==, 0);
 		assert_size(src->times.len, ==, 0);
 		assert_size(src->diffs.len, ==, 0);
-		/* src's spare storage is its own: refill it, free dst first. */
-		fill(src, 0, 20);
+		/*
+		 * src's spare storage is its own: refill it within the block
+		 * (so a column pointing into dst's block is not copied out
+		 * first), free dst, and read src back.
+		 */
+		fill(src, 0, 2);
 		__dtfl_batch_release(dst);
-		check_fill(src, 20);
+		check_fill(src, 2);
 		__dtfl_batch_release(src);
 	}
 	return MUNIT_OK;
