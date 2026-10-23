@@ -47,7 +47,13 @@ fi
 	$1 == "Provider:" { prov = $2; name = ""; next }
 	$1 == "Name:" && prov == "dtfl" { name = $2; next }
 	$1 == "Arguments:" && prov == "dtfl" && name != "" {
-		print name, NF - 1; name = ""; next
+		# One field per SIZE@LOCATION; aarch64 gcc writes a memory
+		# operand as 8@[x0, 8], so count only fields that start one.
+		n = 0
+		for (i = 2; i <= NF; i++)
+			if ($i ~ /^-?[0-9]+@/)
+				n++
+		print name, n; name = ""; next
 	}' | sort -u > "$tmp/elf"
 
 fail=0

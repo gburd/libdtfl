@@ -77,8 +77,11 @@ set of options.
 A library built with USDT probes (@option{--enable-usdt},
 @pxref{Installation}) carries static probes under the provider
 @code{dtfl}, which DTrace, SystemTap, @command{bpftrace} and
-@command{perf} can attach to with no change to the program.  An untraced probe is a single @code{nop}; the probes use no
-semaphores.  The probes fire once per operator schedule, park, unpark,
+@command{perf} can attach to with no change to the program.  The probes
+use no semaphores.  An untraced probe is a @code{nop}; under gcc its
+arguments are read only when a tracer is attached, while under clang
+the arguments are loaded into registers first, a few loads per probe.
+The probes fire once per operator schedule, park, unpark,
 batch and merge, never in a per-record loop.  Every integer argument is
 a @code{uint64_t}; addresses are @code{const void *} and are useful only
 to match one probe's firing with another's.
@@ -107,9 +110,12 @@ and @code{parker}.  The worker returns at once when it already has a
 wakeup pending.
 
 @item @code{dtfl:unpark} (1 argument)
-Some thread is waking a worker: @code{parker} (@code{const void *}), the
-same address as in that worker's @code{park}.  It fires on every wakeup,
-whether or not the worker is parked.
+Some thread is waking a parked or parking thread: @code{parker}
+(@code{const void *}).  For a worker it is the same address as in that
+worker's @code{park}.  The TCP send threads of a cluster also park and
+are woken this way; they have no @code{park} probe, so their addresses
+appear only here.  It fires on every wakeup, whether or not the target
+is parked.
 
 @item @code{dtfl:batch_seal} (3 arguments)
 A newly built batch enters a trace (an arrangement's, a reduce
@@ -127,7 +133,10 @@ finishes.  Arguments: @code{trace} (@code{const void *}), @code{level}
 updates for merge accounting), @code{len1} and @code{len2} (the input
 batches' update counts), and for @code{merge_end} @code{updates}, the
 merged batch's update count after compaction.  A merge proceeds in
-fueled steps across many operator schedules between the two.
+fueled steps across many operator schedules between the two.  A merge
+still in progress when its trace is dropped has no @code{merge_end}, so a
+script that keys on @code{trace} should forget a trace's open merges when
+the trace's operator ends.
 @end table
 @c usdt-probes-end
 
