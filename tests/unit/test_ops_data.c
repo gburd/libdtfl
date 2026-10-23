@@ -10,11 +10,18 @@
  * mirror tests/unit/test_op.c (a no-input source sending u64 records at
  * chosen times, and a collecting one-input sink).
  *
+ * flat_map__frontier_interest_never counts schedules: the record
+ * operators built on Operator::unary or ::binary (generic/operator.rs)
+ * declare FrontierInterest::Never, so a frontier change alone does not
+ * schedule them, and the cost of advancing an input past a chain of maps
+ * does not grow with the chain (examples/event_driven.rs).
+ *
  * Ported in part from timely-dataflow timely-v0.31.0
  *   timely/src/dataflow/operators/core/map.rs (test_builder)
  */
 #include "dtfl_test.h"
 
+#include "dtfl/log.h"
 #include "dtfl/record.h"
 #include "dtfl/timely.h"
 #include "dtfl/timely_ops.h"
@@ -637,9 +644,143 @@ DTFL_TEST(count__per_time)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* flat_map: frontier changes alone do not schedule it                 */
+/* ------------------------------------------------------------------ */
+
+/* FlatMap Schedule-start events seen while `counting` is set. */
+typedef struct sched_count {
+	size_t ids[1024];
+	size_t nids;
+	bool counting;
+	size_t starts;
+} sched_count;
+
+static void
+count_flat_map_starts(const dtfl_log_batch *b, void *ctx)
+{
+	sched_count *sc = ctx;
+	size_t n = dtfl_log_batch_len(b), i, k;
+
+	for (i = 0; i < n; i++) {
+		switch (dtfl_log_event_kind_at(b, i)) {
+		case DTFL_LOG_OPERATES:
+			if (strcmp(dtfl_log_operates_name(b, i), "FlatMap") == 0 &&
+			    sc->nids < sizeof sc->ids / sizeof sc->ids[0])
+				sc->ids[sc->nids++] = dtfl_log_operates_id(b, i);
+			break;
+		case DTFL_LOG_SCHEDULE:
+			if (!sc->counting || !dtfl_log_schedule_start(b, i))
+				break;
+			for (k = 0; k < sc->nids; k++)
+				if (sc->ids[k] == dtfl_log_schedule_id(b, i))
+					sc->starts++;
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+static void
+identity_unit(void *ctx, const uint64_t *time, const void *rec, size_t len,
+    dtfl_emit *out)
+{
+	(void)ctx; (void)time;
+	dtfl_emit_record(out, rec, len);
+}
+
+typedef struct chain_ctx {
+	dtfl_input *input;
+	dtfl_probe *probe;
+	size_t length;
+	dtfl_stream *outer, *result;
+} chain_ctx;
+
+static void
+build_chain_region(dtfl_scope *inner, void *arg)
+{
+	chain_ctx *c = arg;
+	dtfl_stream *s = dtfl_stream_enter(c->outer, inner);
+	size_t k;
+
+	for (k = 0; k < c->length; k++)
+		s = dtfl_stream_flat_map(s, dtfl_type_unit(), identity_unit,
+		    DTFL_NOCTX);
+	c->result = dtfl_stream_leave(s);
+}
+
+static void
+build_chain(dtfl_scope *scope, void *arg)
+{
+	chain_ctx *c = arg;
+
+	c->outer = dtfl_input_to_stream(c->input, scope);
+	assert_int(dtfl_scope_region(scope, "region", build_chain_region, c),
+	    ==, DTFL_OK);
+	dtfl_stream_probe_with(c->result, c->probe);
+}
+
+/*
+ * The event_driven.rs shape: input -> region(length maps) -> probe.
+ * Returns the FlatMap schedules taken by `rounds` input advances with
+ * no data, after the build's initial schedules.
+ */
+static size_t
+flat_map_schedules(size_t length, uint64_t rounds)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	static sched_count sc;
+	chain_ctx c;
+	uint64_t round;
+
+	memset(&sc, 0, sizeof sc);
+	assert_int(dtfl_worker_log_subscribe(w, "timely",
+	    count_flat_map_starts, &sc, NULL), ==, DTFL_OK);
+	c.input = dtfl_input_new(dtfl_type_unit());
+	c.probe = dtfl_probe_new();
+	c.length = length;
+	assert_int(dtfl_worker_dataflow(w, "chain", tc, build_chain, &c), ==, 0);
+	/* Settle the build: every operator runs once on its initial activation. */
+	round = 1;
+	dtfl_input_advance_to(c.input, &round);
+	while (dtfl_probe_less_than(c.probe, &round))
+		dtfl_worker_step(w);
+	dtfl_worker_step(w);
+	assert_size(sc.nids, ==, length);
+	sc.counting = true;
+	for (round = 2; round < rounds + 2; round++) {
+		dtfl_input_advance_to(c.input, &round);
+		while (dtfl_probe_less_than(c.probe, &round))
+			dtfl_worker_step(w);
+	}
+	sc.counting = false;
+	dtfl_input_close(c.input);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_worker_free(w);
+	return sc.starts;
+}
+
+DTFL_TEST(flat_map__frontier_interest_never)
+{
+	(void)params; (void)data;
+	/*
+	 * No records flow, so no map has input to read: advancing the
+	 * frontier must not schedule any of them, however long the chain.
+	 */
+	assert_size(flat_map_schedules(4, 50), ==, 0);
+	assert_size(flat_map_schedules(64, 50), ==, 0);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(dataflow_operators_core_map__test_builder),
 	DTFL_T(flat_map__variadic),
+	DTFL_T(flat_map__frontier_interest_never),
 	DTFL_T(filter__even),
 	DTFL_T(inspect__passthrough),
 	DTFL_T(concat__merges),
