@@ -69,6 +69,13 @@ typedef struct arrange_ctx {
 	__dtfl_trace_writer writer;
 	__dtfl_vec caps;		/* dtfl_cap *, lower envelope of batcher */
 	__dtfl_antichain prev_frontier;
+	/*
+	 * Scratch for the activation's frontier antichains (the strict
+	 * progress test, upper, the progress-only seal), which are never
+	 * live at once.  Owned; cleared before each use, so its storage is
+	 * kept across activations.
+	 */
+	__dtfl_antichain scratch;
 	const dtfl_type *rt;		/* record (whole) type; retained */
 	const dtfl_type *kt;		/* key type for the builder split */
 	const dtfl_type *vt;		/* value type (unit for key batches) */
@@ -173,15 +180,14 @@ arrange_logic(dtfl_op *op, void *vctx)
 
 	/* Strict progress only: skip when the frontier is unchanged. */
 	{
-		__dtfl_antichain cur;
+		__dtfl_antichain *cur = &c->scratch;
 		bool changed;
 
-		__dtfl_antichain_init(&cur, c->tc);
+		__dtfl_antichain_clear(cur);
 		for (i = 0; i < fn; i++)
-			__dtfl_antichain_insert(&cur,
+			__dtfl_antichain_insert(cur,
 			    frontier + (size_t)c->depth * i);
-		changed = !__dtfl_antichain_eq(&c->prev_frontier, &cur);
-		__dtfl_antichain_free(&cur);
+		changed = !__dtfl_antichain_eq(&c->prev_frontier, cur);
 		if (!changed) {
 			/* writer.exert() runs on every activation. */
 			__dtfl_trace_writer_exert(&c->writer);
@@ -210,9 +216,9 @@ arrange_logic(dtfl_op *op, void *vctx)
 	}
 
 	if (any_behind) {
-		__dtfl_antichain upper;
+		/* The re-used allocation for sealing batches. */
+		__dtfl_antichain *upper = &c->scratch;
 
-		__dtfl_antichain_init(&upper, c->tc);
 		/* Retire capabilities one at a time (arrange_core). */
 		for (i = 0; i < c->caps.len; i++) {
 			dtfl_cap *cap = *DTFL_VEC_AT(&c->caps, dtfl_cap *, i);
@@ -224,16 +230,16 @@ arrange_logic(dtfl_op *op, void *vctx)
 				continue;
 
 			/* upper = frontier join the later capabilities. */
-			__dtfl_antichain_clear(&upper);
+			__dtfl_antichain_clear(upper);
 			for (j = 0; j < fn; j++)
-				__dtfl_antichain_insert(&upper,
+				__dtfl_antichain_insert(upper,
 				    frontier + (size_t)c->depth * j);
 			for (j = i + 1; j < c->caps.len; j++)
-				__dtfl_antichain_insert(&upper,
+				__dtfl_antichain_insert(upper,
 				    dtfl_cap_time(*DTFL_VEC_AT(&c->caps,
 				    dtfl_cap *, j)));
 
-			batch = seal_batch(c, &upper);
+			batch = seal_batch(c, upper);
 			/*
 			 * writer.insert(batch.clone(), ...) then
 			 * output.give(batch): the writer takes one reference
@@ -296,7 +302,6 @@ arrange_logic(dtfl_op *op, void *vctx)
 			__dtfl_vec_free(&c->caps);
 			c->caps = newcaps;
 		}
-		__dtfl_antichain_free(&upper);
 	} else {
 		/*
 		 * No capability is behind the frontier: announce progress
@@ -304,24 +309,23 @@ arrange_logic(dtfl_op *op, void *vctx)
 		 * (discarding the readied updates) and seal the writer to the
 		 * frontier (an empty batch, not sent downstream).
 		 */
-		__dtfl_antichain front;
+		__dtfl_antichain *front = &c->scratch;
 		__dtfl_batch **chain;
 		size_t nchain, bi;
 		__dtfl_description desc;
 
-		__dtfl_antichain_init(&front, c->tc);
+		__dtfl_antichain_clear(front);
 		for (i = 0; i < fn; i++)
-			__dtfl_antichain_insert(&front,
+			__dtfl_antichain_insert(front,
 			    frontier + (size_t)c->depth * i);
-		__dtfl_merge_batcher_seal(&c->batcher, &front, &chain, &nchain,
+		__dtfl_merge_batcher_seal(&c->batcher, front, &chain, &nchain,
 		    &desc);
 		for (bi = 0; bi < nchain; bi++)
 			__dtfl_batch_release(chain[bi]);
 		if (chain != NULL)
 			__dtfl_free(chain);
 		__dtfl_description_free(&desc);
-		__dtfl_trace_writer_seal(&c->writer, &front);
-		__dtfl_antichain_free(&front);
+		__dtfl_trace_writer_seal(&c->writer, front);
 	}
 
 	/* Record the new input frontier. */
@@ -344,6 +348,7 @@ arrange_free(void *vctx)
 		dtfl_cap_drop(*DTFL_VEC_AT(&c->caps, dtfl_cap *, i));
 	__dtfl_vec_free(&c->caps);
 	__dtfl_antichain_free(&c->prev_frontier);
+	__dtfl_antichain_free(&c->scratch);
 	/*
 	 * The writer seals to the empty frontier on free (writer.rs Drop),
 	 * closing the trace.  The operator holds no reader of its own: the
@@ -441,6 +446,7 @@ arrange_core(dtfl_collection *c, bool keyed, const dtfl_type *kt,
 	__dtfl_chunker_init(&ac->chunker, c->type, depth, dc);
 	__dtfl_vec_init(&ac->caps, sizeof(dtfl_cap *));
 	__dtfl_antichain_init(&ac->prev_frontier, tc);
+	__dtfl_antichain_init(&ac->scratch, tc);
 	{
 		uint64_t minimum[DTFL_TIME_MAX] = { 0 };
 
