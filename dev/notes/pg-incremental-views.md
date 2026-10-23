@@ -460,21 +460,33 @@ the view's arrangement, so passing `n` means the trace is complete
 through `n`; and type descriptors passed to operators are bound to locals
 and freed (an inline nested `dtfl_type_pair` leaks).
 
+**Latency target.**  For the persistent maintenance worker, the engine's
+share of a commit (feed the delta, step until the view delta is
+complete) should stay under 1 ms at p99 at 1,000 commits per second for
+views whose aggregates are kept in the difference, so it is small
+beside the commit's own WAL flush.  `bench/ivm_latency` measures it: on
+a c7i.metal-24xl (one worker, clock pinned at 2.4 GHz), this note's
+`region_totals` view over 10,000 customers and 100,000 orders, with
+ten-row commits (5 inserts, 2 deletes, 3 updates) arriving on a fixed
+schedule, turns a commit into its view delta in 111 / 138 / 146 us
+(p50 / p99 / p99.9) at 1,000 commits per second and 110 / 138 / 147 us
+at 5,000, with 16 groups; 129 / 192 / 201 us with 1,000 groups.  The
+target is met.
+
 **Aggregates: keep them in the difference.**  A `reduce` recomputes each
 touched group from its whole multiset, so a commit costs the size of the
-groups it touches, not the size of the change.  `bench/ivm_latency`
-measures it (one worker, 100,000 orders, 10-row commits at 100 per
-second; dev host, so relative only): with 1,000 groups of about 100 rows
-a `reduce` commit takes about 450 us, with 16 groups of about 6,000
-rows about 17 ms, and the worker falls behind.  Moving the aggregate into
-the difference keeps it O(change): `dtfl_collection_explode` turns each
-`(region, amount)` into `region` with `amount` as its weight, and
-`dtfl_collection_count` then maintains the sum (and a plain `count` of
-the unexploded rows maintains `count(*)`).  That form took about 85 us
-per commit at both group sizes.  Use `explode` and `count` for COUNT,
-SUM and AVG (as sum over count), and `reduce` only for aggregates the
-difference cannot carry, MIN and MAX, whose cost then grows with the
-group.
+groups it touches, not the size of the change.  On the same host, with
+1,000 groups of about 100 rows a `reduce` commit takes 847 / 1,229 us
+(p50 / p99) at 1,000 commits per second and cannot keep up with 5,000;
+with 16 groups of about 6,000 rows it manages only 27 commits per
+second.  Moving the aggregate into the difference keeps it O(change):
+`dtfl_collection_explode` turns each `(region, amount)` into `region`
+with `amount` as its weight, and `dtfl_collection_count` then maintains
+the sum (and a plain `count` of the unexploded rows maintains
+`count(*)`), which gives the numbers above.  Use `explode` and `count`
+for COUNT, SUM and AVG (as sum over count), and `reduce` only for
+aggregates the difference cannot carry, MIN and MAX, whose cost then
+grows with the group.
 
 Record encoding (`examples/ivm/sqlrow.h` implements the fixed-width and
 NULL cases and documents the rest): libdtfl records are byte strings with a type descriptor
