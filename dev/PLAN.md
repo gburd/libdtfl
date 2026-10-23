@@ -536,6 +536,9 @@ Allocators:
 - `ProcessBinary`: zero-copy byte queues between threads.
 - `Cluster`: TCP between processes, one send thread and one receive
   thread per remote process, the same as upstream.
+- Process-hosted workers (ADR-0013): the Cluster allocator with one
+  worker per process over a host `dtfl_transport`, its network I/O
+  driven inline by the worker's step (`dtfl_execute_worker`).
 
 Parking and wakeup:
 
@@ -726,6 +729,8 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
      atomically;
    - `dtfl_event_link_sync`, the `link_sync::EventLink` port;
    - `dtfl_guards` (join and status);
+   - the `wake` member of a `dtfl_transport` (ADR-0013), which a
+     `dtfl_sync_activator` reaches through the worker's parker;
    - the global setters (`dtfl_set_alloc_hooks()`,
      `dtfl_set_panic_hook()`, `dtfl_set_log_hook()`,
      `dtfl_set_thread_hooks()` and `dtfl_set_sync_hooks()`).  The

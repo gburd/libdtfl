@@ -7,8 +7,9 @@
 
 libdtfl is built to run inside a host program, such as a database
 server, that supplies its own memory, error reporting, logging and
-threads.  The four host hooks of @ref{Error handling} route each of
-those boundaries through the host.  This chapter shows the whole
+threads.  The five host hooks of @ref{Error handling} route each of
+those boundaries through the host, and a byte transport lets the host
+connect workers that live in separate processes.  This chapter shows the whole
 embedding, using PostgreSQL as the example host.
 
 @section Wiring the boundaries
@@ -139,7 +140,7 @@ validating input before it reaches libdtfl removes most of the first kind.
 
 @section Hosts that control their own threads
 
-A host that cannot hand libdtfl free-running threads has two ways to
+A host that cannot hand libdtfl free-running threads has three ways to
 embed it.
 
 First, it can supply thread hooks whose @code{spawn} starts a thread
@@ -152,7 +153,7 @@ extension must not let libdtfl start threads at all, since
 @code{palloc} and @code{ereport} are not thread-safe and every libdtfl
 thread allocates through the hooks.  So an extension calls neither
 @code{dtfl_execute} nor @code{dtfl_diag_server_start} (the diagnostics
-server's thread), and uses the second way.
+server's thread), and uses the second or third way.
 
 Second, and simplest when the host already has an event loop, it can
 avoid @code{dtfl_execute} entirely and drive a single worker
@@ -167,6 +168,76 @@ while (dtfl_worker_has_dataflows(w))
         dtfl_worker_step(w);
 dtfl_worker_free(w);
 @end example
+
+Third, when the host already runs several processes (or tasks) and wants
+them to share one computation, each joins it as one worker with
+@code{dtfl_execute_worker(cfg, i, n, transport, fn, ctx)}, which runs
+worker @var{i} of @var{n} on the calling thread and starts no thread.
+The @code{dtfl_transport} is the host's: @code{send} and @code{recv}
+move bytes to and from each peer without blocking, @code{wait} blocks
+until a peer may have bytes or room or @code{wake} is called, and
+@code{wake} may be called from any thread.  The worker's own steps move
+the bytes, and it parks in @code{wait}.  @code{dtfl_transport_socket}
+is a ready-made transport over connected sockets, such as a
+@code{socketpair} mesh made before @code{fork}, and
+@code{dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES)} makes
+@code{dtfl_execute} build that mesh and fork the workers itself.
+@file{examples/embed/forked_workers.c} shows the whole pattern.
+
+@section PostgreSQL's concurrency models
+
+@table @asis
+@item Process per backend
+The whole computation runs in one backend as a standalone worker
+(the second way above), with the hooks of the previous sections.
+
+@item Background workers
+To spread one computation over several processes, the backend creates
+a DSM segment with one @code{shm_mq} for each ordered pair of
+participants, registers @var{n} - 1 dynamic background workers whose
+@code{bgw_main_arg} names the segment and the worker's index, and joins
+as worker 0 itself.  Every participant calls @code{dtfl_execute_worker}
+with a transport whose @code{send} and @code{recv} are
+@code{shm_mq_send} and @code{shm_mq_receive} with @code{nowait} set,
+whose @code{wait} is @code{WaitLatch} on @code{MyLatch} followed by
+@code{ResetLatch}, and whose @code{wake} is @code{SetLatch}.
+@code{shm_mq} sets the peer's latch when it writes or reads, which is
+exactly the condition @code{wait} must cover.  @code{dtfl_transport(3)}
+gives the code.
+
+@item AIO worker processes
+With @code{io_method=worker} the postmaster forks I/O workers that run
+a fixed loop over a shared submission ring, woken by @code{SetLatch}.
+They host no libdtfl worker, and libdtfl submits no asynchronous I/O:
+its spill files are read and written synchronously by the worker that
+owns them.  The ring-plus-latch pattern is the same one a DSM-ring
+transport uses, so a transport built for background workers works for
+any process the postmaster starts.
+
+@item A threaded backend
+A server whose backends are threads (or fibers on a runtime such as
+the libxtc-based multithreaded branch) can let libdtfl run several
+workers in one address space.  The thread hooks spawn them as the
+server's own threads or tasks, and @code{dtfl_set_sync_hooks} maps
+libdtfl's mutexes, condition variables, the word wait and wake it
+parks on, yield, sleep and the clock onto the server's primitives, so a
+parked worker yields its carrier instead of sleeping in the kernel.
+@code{palloc} must then be safe on those threads, which is the server's
+contract, not libdtfl's.
+@end table
+
+@section A fiber runtime
+
+A runtime whose tasks are fibers, such as libxtc, needs every wait to
+go through it.  @code{dtfl_set_sync_hooks} does that for locks, the
+parker, yield, sleep and the clock: an asynchronous mutex and condition
+variable are enough, since the parker builds on the condition when no
+@code{wait}/@code{wake} pair is given, and @code{self} should name the
+fiber, not its carrier, so the debug owner check survives migration.
+The thread hooks spawn tasks.  To keep sockets out of the picture too,
+each task runs @code{dtfl_execute_worker} over an in-memory transport
+built on the runtime's channels, whose @code{wait} parks the fiber and
+whose @code{wake} wakes it.
 
 @section What libdtfl never does
 

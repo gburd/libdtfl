@@ -17,6 +17,16 @@
 .Fn dtfl_set_thread_hooks "const dtfl_thread_hooks *hooks"
 .Ft int
 .Fn dtfl_set_sync_hooks "const dtfl_sync_hooks *hooks"
+.In dtfl/timely.h
+.Ft int
+.Fo dtfl_execute_worker
+.Fa "const dtfl_config *cfg"
+.Fa "size_t index"
+.Fa "size_t peers"
+.Fa "const dtfl_transport *transport"
+.Fa "dtfl_worker_fn fn"
+.Fa "void *ctx"
+.Fc
 .Sh DESCRIPTION
 libdtfl is built to run inside a host program, such as a database
 server, that supplies its own memory, error reporting, logging and
@@ -92,7 +102,7 @@ Worker-owned handles and that buffer are why a host must not move a
 worker or its handles between threads; the full contract is in
 .Xr dtfl 7 .
 .Ss Hosts that control their own threads
-A host that cannot hand libdtfl free-running threads has two ways to
+A host that cannot hand libdtfl free-running threads has three ways to
 embed it.
 .Pp
 First, it can supply thread hooks whose
@@ -104,8 +114,8 @@ The hook must start a thread in the same process: the workers of one
 .Fn dtfl_execute
 share memory.
 A PostgreSQL background worker is a separate process and cannot back
-these hooks, and a PostgreSQL extension must not let libdtfl start
-threads at all, since
+these hooks (the third way below is for that), and a PostgreSQL
+extension must not let libdtfl start threads at all, since
 .Fn palloc
 and
 .Fn ereport
@@ -115,7 +125,7 @@ So an extension calls neither
 .Fn dtfl_execute
 nor
 .Fn dtfl_diag_server_start ,
-and uses the second way.
+and uses the second or third way.
 .Pp
 Second, and simplest when the host already has an event loop, it can
 avoid
@@ -134,6 +144,104 @@ the host calls
 .Fn dtfl_worker_step
 from its own thread whenever it chooses, interleaving dataflow progress
 with its other work.
+.Pp
+Third, several processes or tasks the host created can share one
+computation, each joining it as one worker:
+.Bd -literal -offset indent
+dtfl_execute_worker(cfg, my_index, nworkers, &transport, worker_fn, ctx);
+.Ed
+.Pp
+The call runs worker
+.Fa my_index
+on the calling thread and starts no thread: the worker's own steps move
+its bytes through the host's
+.Vt dtfl_transport ,
+and it parks in the transport's
+.Fa wait .
+.Xr dtfl_transport 3
+gives the contract and a transport over PostgreSQL's
+.Ql shm_mq ;
+.Fn dtfl_transport_socket
+is a ready-made one over connected sockets, and
+.Xr dtfl_config_set_workers 3
+makes
+.Fn dtfl_execute
+fork its workers over a socketpair mesh.
+.Ss PostgreSQL's concurrency models
+.Bl -tag -width Ds
+.It Process per backend
+One backend runs the whole computation as a standalone worker (the
+second way), with the hooks in
+.Sx EXAMPLES .
+.It Background workers
+The backend creates a DSM segment holding a
+.Ql shm_mq
+for each ordered pair of participants, registers
+.Va n
+\- 1 dynamic background workers whose
+.Va bgw_main_arg
+names the segment and the worker's index, and joins as worker 0.
+Every participant installs the same hooks, attaches its queues and calls
+.Fn dtfl_execute_worker
+over the
+.Ql shm_mq
+transport.
+.Ql shm_mq
+sets a peer's latch when it writes or reads, so a transport whose
+.Fa wait
+is
+.Fn WaitLatch
+and whose
+.Fa wake
+is
+.Fn SetLatch
+covers every reason to wake.
+A participant that raises an error detaches its queues, its peers'
+.Fn shm_mq_receive
+returns
+.Dv SHM_MQ_DETACHED ,
+and they fail with a communication error, so a failure ends the whole
+computation rather than leaving it hung.
+.It AIO worker processes
+The I/O workers of
+.Ql io_method=worker
+run the postmaster's fixed loop and host no libdtfl worker; libdtfl
+submits no asynchronous I/O.
+Their shared ring woken by
+.Fn SetLatch
+is the pattern a DSM-ring transport follows, so the same transport
+serves any process the postmaster starts.
+.It Threaded backends
+In a server whose backends are threads or fibers, the thread hooks
+spawn workers as the server's threads or tasks, and
+.Xr dtfl_set_sync_hooks 3
+maps every lock and wait onto the server's primitives, so
+.Fn dtfl_execute
+runs several workers in one address space.
+.El
+.Ss Fiber runtimes
+A runtime whose tasks are fibers on a few carrier threads, such as
+libxtc, must see every wait.
+.Xr dtfl_set_sync_hooks 3
+routes locks, conditions, the parker, yield, sleep and the clock through
+it; an asynchronous mutex and condition are enough, since the parker
+builds on the condition when no
+.Fa wait
+and
+.Fa wake
+are given.
+Its
+.Fa self
+hook should name the fiber, so the debug owner check survives a
+migration between carriers.
+The thread hooks spawn tasks.
+To keep sockets out as well, each task runs
+.Fn dtfl_execute_worker
+over a transport made of the runtime's channels, whose
+.Fa wait
+parks the fiber and whose
+.Fa wake
+reschedules it.
 .Ss After a panic
 A panic hook that
 .Xr longjmp 3 Ns s
@@ -243,11 +351,14 @@ are stored unaligned in any case and read with
 The context belongs to libdtfl: allocate nothing else in it and make no
 child contexts under it, since the reset frees them too.
 .Sh SEE ALSO
+.Xr dtfl_config 3 ,
+.Xr dtfl_execute_worker 3 ,
 .Xr dtfl_set_alloc_hooks 3 ,
 .Xr dtfl_set_log_hook 3 ,
 .Xr dtfl_set_panic_hook 3 ,
 .Xr dtfl_set_sync_hooks 3 ,
 .Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl_transport 3 ,
 .Xr dtfl 7
 .Sh HISTORY
 Rust programs choose a global allocator, panic strategy, logging facade

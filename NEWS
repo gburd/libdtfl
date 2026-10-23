@@ -4,6 +4,25 @@ Version 0.1.0 (unreleased)
 
 	First development release.
 
+	Workers in processes, and a host runtime.  dtfl_execute_worker
+	joins the calling thread to an execution as worker i of n over
+	a dtfl_transport, the byte stream the cluster's network layer
+	is built on (upstream's Stream trait), and starts no thread:
+	the worker's own steps move its bytes and it parks in the
+	transport.  This lets PostgreSQL background workers share one
+	computation over shm_mq, and lets any host connect processes it
+	created.  dtfl_transport_socket is a ready-made transport over
+	connected sockets, and dtfl_config_set_workers with
+	DTFL_WORKERS_PROCESSES makes dtfl_execute fork its workers over
+	a socketpair mesh.  dtfl_set_sync_hooks, a fifth host hook,
+	routes every lock and wait libdtfl makes (mutexes, condition
+	variables, the word wait the parker sleeps on, yield, sleep, the
+	clock and the thread identity) through the host, so a fiber
+	runtime can keep its carriers out of the kernel.  The defaults
+	are unchanged.  examples/embed/forked_workers shows the
+	process pattern; dtfl_embedding(7) and the manual's Embedding
+	chapter cover each PostgreSQL concurrency model and fiber hosts.
+
 	A C11 port of timely dataflow (pinned at timely-v0.31.0),
 	differential dataflow (differential-dataflow-v0.25.1), and the
 	timely diagnostics tools.  Functionally complete: the timely
@@ -15,8 +34,8 @@ Version 0.1.0 (unreleased)
 	diagnostics WebSocket server with the dtfl-diag program; and the
 	DDIR dataflow compiler with the dtfl-ddir and dtfl-server tools.
 
-	Thread-safe, with allocation, panic, logging, and thread hooks for
-	embedding (for example in PostgreSQL).  A Texinfo manual and 73 man
+	Thread-safe, with allocation, panic, logging, thread and sync
+	hooks for embedding (for example in PostgreSQL).  A Texinfo manual and 73 man
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
