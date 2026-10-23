@@ -54,18 +54,23 @@ dist_check_SCRIPTS = \
 	tests/dist/test_docs.sh \
 	tests/dist/test_completion.sh
 TESTS += $(dist_check_SCRIPTS)
+# Every test runs under tests/run-test.sh, which kills it after
+# DTFL_TEST_TIMEOUT seconds (default 600) so a hang reports FAIL.
 # ThreadSanitizer cannot map its shadow memory under the high-entropy
 # ASLR of newer kernels (vm.mmap_rnd_bits > 28): it aborts with
 # "unexpected memory mapping".  setarch -R disables randomization for
-# the test process only.  Configure sets DTFL_TEST_WRAPPER for TSan builds.
-LOG_COMPILER = $(DTFL_TEST_WRAPPER)
+# the test process only; configure sets DTFL_TEST_WRAPPER to it for
+# TSan builds, and run-test.sh runs it inside the time limit.
+LOG_COMPILER = $(SHELL) $(top_srcdir)/tests/run-test.sh
 AM_TESTS_ENVIRONMENT = \
 	top_srcdir='$(abs_top_srcdir)'; export top_srcdir; \
+	DTFL_TEST_WRAPPER='$(DTFL_TEST_WRAPPER)'; export DTFL_TEST_WRAPPER; \
 	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM; \
 	DTFL_LDFLAGS='$(LDFLAGS)'; export DTFL_LDFLAGS;
 
 dist_man_MANS =
 EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \
+	tests/run-test.sh \
 	AGENTS.md debian flake.nix flake.lock dev src/libdtfl.map src/libdtfl.exp \
 	doc/snippets tests/corpus data
 
