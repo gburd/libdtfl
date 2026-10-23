@@ -42,8 +42,8 @@
  * "unavailable"; the sampler is a plain thread (upstream shells out to
  * ps).
  */
-#define _DEFAULT_SOURCE			/* getrusage, usleep */
-#define _POSIX_C_SOURCE 200809L		/* clock_gettime */
+#define _DEFAULT_SOURCE			/* getrusage */
+#define _POSIX_C_SOURCE 200809L		/* clock_gettime, nanosleep */
 
 #include "dtfl/record.h"
 #include "dtfl/time.h"
@@ -183,7 +183,9 @@ sampler(void *arg)
 	print_rss(r, "start");
 	while (!atomic_load(&r->stop)) {
 		/* Poll the stop flag every 50 ms between samples. */
-		usleep(50 * 1000);
+		struct timespec nap = { 0, 50 * 1000000L };
+
+		nanosleep(&nap, NULL);
 		ms += 50;
 		if (ms >= r->rss_every_secs * 1000u) {
 			ms = 0;

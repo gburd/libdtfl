@@ -143,3 +143,47 @@ DTFL_SIM_SEEDS=100000 DTFL_SIM_JOBS=16 make check-sim
 Each property prints PASS, FAIL or SKIP.  A failure prints the minimal
 case hegel shrank it to, including the simulator seed and faults, and a
 @env{DTFL_PBT_REPLAY} command that reruns that one case.
+
+@section Platform notes
+
+The test suite, with each sanitizer, passes on these platforms:
+
+@table @asis
+@item Linux x86_64 and arm64 (Debian 13, gcc 14 and clang 19)
+Everything, including ThreadSanitizer, the USDT probes (with
+@code{systemtap-sdt-dev}) and the property tests (hegel publishes
+@file{libhegel} for both).  The ThreadSanitizer tests run under
+@command{setarch -R}, which configure applies.
+
+@item FreeBSD 14 amd64 (base clang 21, and gcc 14 from ports)
+Use @command{gmake}.  Both compilers build and pass @command{make
+check} and @command{make distcheck}; clang passes under ASan, UBSan and
+TSan, gcc under ASan and UBSan.  Where they differ from Linux:
+
+@itemize @bullet
+@item
+The tests of a sanitizer build run with address randomization off,
+through @command{proccontrol -m aslr -s disable}, which configure
+applies.  gcc's @file{libasan} refuses to start under FreeBSD's ASLR
+(``This sanitizer is not compatible with enabled ASLR''); to run a
+gcc ASan program by hand, start it the same way.
+@item
+gcc has no ThreadSanitizer runtime on FreeBSD (the port ships no
+@file{libtsan}); configure stops on @option{--enable-tsan} with gcc.  Use
+clang.
+@item
+libthr allocates mutexes and condition variables with a private
+allocator that ThreadSanitizer does not intercept, which TSan
+misreports as a race inside @code{__thr_calloc}.
+@file{tests/tsan.supp} suppresses it, and @command{make check} passes
+it in @env{TSAN_OPTIONS}.  A program of yours run under TSan on FreeBSD
+needs the same suppressions.
+@item
+The USDT probes are off: FreeBSD's @file{sys/sdt.h} is the kernel's
+DTrace SDT header, not the userspace @code{STAP_PROBE} one, and configure
+detects that.  @file{tests/dist/test_usdt.sh} reports SKIP.
+@item
+hegel publishes no FreeBSD @file{libhegel}, so the property tests
+report SKIP and @command{make check-sim} exits 77.
+@end itemize
+@end table
