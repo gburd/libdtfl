@@ -363,6 +363,9 @@ __dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
 	__dtfl_batch *out;
 	__dtfl_vec scratch;
 
+	/* Checked before allocating, so a panic leaves nothing behind. */
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	DTFL_ASSERT(dc->width == b->dw);
 	if (__dtfl_batch_len(b) == 0)
 		return;
 	out = __dtfl_batch_new(b->tw, b->dw);
