@@ -91,7 +91,9 @@ DTFL_API void dtfl_set_panic_hook(dtfl_panic_fn fn, void *ctx);
  *
  * A hook routes libdtfl's diagnostics into the host's logging system;
  * a host like PostgreSQL maps the levels to elog(DEBUG1), elog(LOG),
- * elog(WARNING) and elog(ERROR).
+ * elog(WARNING) and elog(LOG).  Not elog(ERROR): the hook runs inside
+ * libdtfl, and an error that longjmps out leaves the worker unusable
+ * (dtfl_embedding(7)).
  */
 typedef enum dtfl_log_level {
 	DTFL_LOG_DEBUG,
@@ -110,10 +112,10 @@ typedef void (*dtfl_log_fn)(dtfl_log_level level, const char *msg, void *ctx);
 DTFL_API void dtfl_set_log_hook(dtfl_log_fn fn, void *ctx);
 
 /*
- * Thread-spawn hooks.  A host that supplies its own threads (for
- * example a PostgreSQL background worker) routes worker, network and
- * connection thread creation through these.  With no hooks set,
- * libdtfl uses pthreads.
+ * Thread-spawn hooks.  A host that manages its own threads routes
+ * worker, network and connection thread creation through these; each
+ * must start a thread in this process, since the workers of one
+ * execution share memory.  With no hooks set, libdtfl uses pthreads.
  *
  * spawn starts start(arg) on a new thread and stores an opaque handle
  * in *handle_out; it returns 0 on success or a DTFL_E* code.  join

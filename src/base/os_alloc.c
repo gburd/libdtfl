@@ -109,11 +109,18 @@ __dtfl_calloc(size_t n, size_t size)
 	return p;
 }
 
+/*
+ * realloc_fn and free_fn never see NULL: growing from nothing is a
+ * malloc_fn call, and freeing NULL is a no-op here.  Host allocators
+ * such as PostgreSQL's repalloc and pfree require a live pointer.
+ */
 void *
 __dtfl_realloc(void *ptr, size_t size)
 {
 	void *p;
 
+	if (ptr == NULL)
+		return __dtfl_alloc(size);
 	mark_hooks_used();
 	p = hooks.realloc_fn(ptr, size == 0 ? 1 : size, hooks.ctx);
 	if (DTFL_UNLIKELY(p == NULL))

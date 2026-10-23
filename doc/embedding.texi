@@ -17,40 +17,142 @@ A host installs the hooks once, before starting any computation.  Each
 hook is a function the host provides plus an opaque context pointer.
 
 @example
-static void *pg_malloc(size_t n, void *c) @{ return palloc(n); @}
+/*
+ * The context libdtfl allocates in.  The hooks are installed once per
+ * process, so they hold the address of this variable, not a context:
+ * the host points it at the right context before each call into a
+ * worker (see below).
+ */
+static MemoryContext dtfl_cxt;
+
+static void *pg_malloc(size_t n, void *c)
+@{ return MemoryContextAllocHuge(*(MemoryContext *)c, n); @}
 static void *pg_realloc(void *p, size_t n, void *c)
-@{ return repalloc(p, n); @}
+@{ return p ? repalloc_huge(p, n)
+           : MemoryContextAllocHuge(*(MemoryContext *)c, n); @}
 static void pg_free(void *p, void *c) @{ pfree(p); @}
 
 /* longjmp out of the computation; never returns */
 static void pg_panic(const char *msg, void *c)
 @{ ereport(ERROR, errmsg("dtfl: %s", msg)); @}
 
+/* never elog(ERROR) here: see "After a panic" */
 static void pg_log(dtfl_log_level lvl, const char *msg, void *c)
-@{ int e[] = @{ DEBUG1, LOG, WARNING, ERROR @}; elog(e[lvl], "%s", msg); @}
+@{ int e[] = @{ DEBUG1, LOG, WARNING, LOG @}; elog(e[lvl], "%s", msg); @}
 
-dtfl_alloc_hooks ah = @{ pg_malloc, pg_realloc, pg_free, NULL @};
+dtfl_cxt = AllocSetContextCreate(TopMemoryContext, "dtfl",
+    ALLOCSET_DEFAULT_SIZES);
+dtfl_alloc_hooks ah = @{ pg_malloc, pg_realloc, pg_free, &dtfl_cxt @};
 dtfl_set_alloc_hooks(&ah);
 dtfl_set_panic_hook(pg_panic, NULL);
 dtfl_set_log_hook(pg_log, NULL);
-dtfl_set_thread_hooks(&bgworker_hooks);  /* or drive standalone */
+/* no thread hooks: drive a standalone worker (below) */
 @end example
 
-The log levels map straight onto the host's own: @code{DTFL_LOG_DEBUG},
+Four details of the allocation hooks matter:
+
+@itemize
+@item
+Use the @emph{huge} allocation functions.  @code{palloc} and
+@code{repalloc} refuse requests over @code{MaxAllocSize} (1 GB less one
+byte), and the columns of a large arrangement grow past that.
+@code{MemoryContextAllocHuge} and @code{repalloc_huge} allow up to
+@code{MaxAllocHugeSize}.
+@item
+@code{repalloc} and @code{pfree} need a pointer @code{palloc} returned;
+@code{NULL} crashes the backend.  libdtfl never passes @code{NULL} to
+@code{realloc_fn} or @code{free_fn}: it grows an empty buffer with
+@code{malloc_fn} and skips freeing @code{NULL}.  The @code{p ?} test
+above costs nothing and keeps the hook correct with older releases.
+@item
+Allocate in a dedicated context, not @code{CurrentMemoryContext}, and
+reach it through a variable.  A query context is reset when the query
+ends, while a persistent dataflow outlives it; and resetting the
+worker's context is how the host discards a worker after an error.
+Since the hooks are process-wide and set once, the variable is what
+lets a host give each worker its own context: before any call that
+builds, feeds or steps a worker, set @code{dtfl_cxt} to that worker's
+context.  @code{repalloc} and @code{pfree} work on a chunk wherever it
+was allocated, so only allocation follows the variable.  Create every
+object a worker uses (time classes, diffs, record types, sessions,
+probes) while its context is selected, and share none across workers
+with different contexts.
+@item
+libdtfl's own objects need the alignment of @code{uint64_t},
+@code{double} and pointers, which @code{palloc}'s @code{MAXALIGN}
+provides.  Record and difference values are stored unaligned at
+arbitrary offsets in any case, so callbacks read them with
+@code{memcpy}; no allocator alignment changes that.
+@item
+The context belongs to libdtfl.  Allocate nothing of the host's own in
+it, and make no child contexts under it: a reset after an error frees
+them too.
+@end itemize
+
+The log levels map onto the host's own: @code{DTFL_LOG_DEBUG},
 @code{DTFL_LOG_INFO}, @code{DTFL_LOG_WARN} and @code{DTFL_LOG_ERROR}
-become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{ERROR}.  The
-panic hook is expected to @code{longjmp} (via @code{ereport(ERROR)}) out
-of the computation rather than return.
+become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{LOG}.  Not
+@code{ERROR}: the log hook runs inside libdtfl, and an error raised there
+unwinds through it (see below).  The panic hook is expected to
+@code{longjmp} (via @code{ereport(ERROR)}) out of the computation rather
+than return.
+
+@section After a panic, discard the worker
+
+A panic hook that @code{longjmp}s leaves the worker in an unknown state.
+The panic can come from deep inside an operator, with a structure half
+updated, a reference count not yet dropped, or a mutex held (queuing a
+cross-thread activation allocates while holding one).  Rust is the same:
+a panicking timely worker is not resumed.  So after the jump, nothing
+reached from that worker may be used again: not its handles, not
+@code{dtfl_worker_step}, not even @code{dtfl_worker_free}, which would
+walk the inconsistent structures.
+
+The host discards the worker by resetting its memory context with
+@code{MemoryContextReset}, which frees every chunk and leaves the context
+usable, and builds a new worker in it if it still needs the dataflow.
+Do not delete the context instead unless the hook variable is pointed
+at a live context before libdtfl allocates again: the hooks keep the
+variable's address, and a deleted context's memory can be handed to
+another context.  libdtfl's process-wide state (the hooks and their
+latches, the per-thread error buffer) is not touched by the jump.
+
+On Linux a standalone worker holds nothing but memory.  Elsewhere its
+mutexes and condition variables may own small libc allocations that a
+reset does not free, so each discarded worker leaks a little.  File
+descriptors the host passed in (to @code{dtfl_event_writer_new} or the
+replay functions) stay the host's to close.
+
+The same holds for an @code{ereport(ERROR)} raised inside a callback
+that libdtfl calls, such as an operator function, a sink or the log hook:
+it unwinds through libdtfl's frames.  So the log hook maps
+@code{DTFL_LOG_ERROR} to @code{LOG}, not @code{ERROR}, and a callback
+that can fail catches its own error, records it, and returns normally;
+the host checks the record after the step.
+
+For a long-lived dataflow this means one error rebuilds everything that
+worker held.  A host that keeps many views in one worker loses all of
+them to one error, so keep independent dataflows in separate workers
+(each with its own context), and make the rebuild path the same one used
+after a restart.  Panics are contract violations and allocation failure;
+validating input before it reaches libdtfl removes most of the first kind.
 
 @section Hosts that control their own threads
 
 A host that cannot hand libdtfl free-running threads has two ways to
 embed it.
 
-First, it can supply thread hooks whose @code{spawn} is backed by the
-host's own worker mechanism (a PostgreSQL background worker, for
-example).  @code{dtfl_execute} then starts and joins each worker through
-those hooks, and the rest of the program is unchanged.
+First, it can supply thread hooks whose @code{spawn} starts a thread
+the host manages.  @code{dtfl_execute} then starts and joins each worker
+through those hooks, and the rest of the program is unchanged.  The
+hook must start a thread in the same process: the workers of one
+@code{dtfl_execute} share memory.  A PostgreSQL background worker is a
+separate process, so it cannot back these hooks, and a PostgreSQL
+extension must not let libdtfl start threads at all, since
+@code{palloc} and @code{ereport} are not thread-safe and every libdtfl
+thread allocates through the hooks.  So an extension calls neither
+@code{dtfl_execute} nor @code{dtfl_diag_server_start} (the diagnostics
+server's thread), and uses the second way.
 
 Second, and simplest when the host already has an event loop, it can
 avoid @code{dtfl_execute} entirely and drive a single worker
