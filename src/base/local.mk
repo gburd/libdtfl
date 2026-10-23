@@ -8,6 +8,7 @@ base_sources = \
 	src/base/bytes.c \
 	src/base/hash.c \
 	src/base/os_alloc.c \
+	src/base/probes_int.h \
 	src/base/record.c \
 	src/base/sock_int.h \
 	src/base/util.c
@@ -66,3 +67,8 @@ TESTS += tests/unit/test_hooks
 tests_unit_test_hooks_SOURCES = tests/unit/test_hooks.c
 tests_unit_test_hooks_CFLAGS = $(TEST_CFLAGS)
 tests_unit_test_hooks_LDADD = $(INTERNAL_LIBS)
+
+# USDT probes (src/base/probes_int.h): the built library carries every
+# probe the manual lists (SKIP when configured without them).
+dist_check_SCRIPTS += tests/dist/test_usdt.sh
+TESTS += tests/dist/test_usdt.sh

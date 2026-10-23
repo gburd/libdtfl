@@ -19,6 +19,7 @@
  * are dense small integers handed out by this worker, so a vector
  * indexed by id holds them (a NULL entry means "no path").
  */
+#include "base/probes_int.h"
 #include "timely/worker_int.h"
 
 #include <stdio.h>
@@ -356,7 +357,11 @@ __dtfl_worker_step_or_park(__dtfl_worker *w, uint64_t timeout_ns)
 			__dtfl_worker_log_park(w, true, delay);
 			__dtfl_logger_flush(l);
 		}
+		DTFL_PROBE3(park, (uint64_t)w->allocator->index,
+		    (uint64_t)delay, (const void *)w->allocator->parker);
 		__dtfl_allocator_await_events(w->allocator, delay);
+		DTFL_PROBE2(park_end, (uint64_t)w->allocator->index,
+		    (const void *)w->allocator->parker);
 		if (l != NULL) {
 			__dtfl_worker_log_park(w, false, 0);
 			__dtfl_logger_release(l);

@@ -19,6 +19,7 @@
  * (input_messages) belong to the enter operators that write them and
  * outlive the subgraph (they are dropped with the dataflow).
  */
+#include "base/probes_int.h"
 #include "progress/operate_int.h"
 #include "timely/worker_int.h"
 
@@ -315,7 +316,13 @@ child_schedule(subgraph *sg, child_state *c)
 			}
 		__dtfl_worker_log_schedule(sg->worker, c->id, true);
 	}
+	DTFL_PROBE5(operator_start, (uint64_t)sg->worker->allocator->index,
+	    (uint64_t)sg->sched.path[0], (uint64_t)c->id, (uint64_t)c->index,
+	    (const char *)c->name);
 	incomplete = c->op->ops->schedule(c->op);
+	DTFL_PROBE5(operator_end, (uint64_t)sg->worker->allocator->index,
+	    (uint64_t)sg->sched.path[0], (uint64_t)c->id, (uint64_t)c->index,
+	    (uint64_t)incomplete);
 	if (c->logging)
 		__dtfl_worker_log_schedule(sg->worker, c->id, false);
 	return incomplete;

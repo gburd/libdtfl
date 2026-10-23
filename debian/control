@@ -6,7 +6,8 @@ Build-Depends:
  autoconf,
  automake,
  libtool,
- pkg-config
+ pkg-config,
+ systemtap-sdt-dev [linux-any]
 Standards-Version: 4.6.2
 Section: libs
 Homepage: https://codeberg.org/gregburd/libdtfl

@@ -28,6 +28,7 @@
 #define _POSIX_C_SOURCE 200809L	/* pthread_condattr_setclock */
 #endif
 
+#include "base/probes_int.h"
 #include "comm/comm_int.h"
 
 #include <errno.h>
@@ -128,6 +129,7 @@ futex_wait(_Atomic uint32_t *word, const struct timespec *rel)
 void
 __dtfl_parker_unpark(__dtfl_parker *p)
 {
+	DTFL_PROBE1(unpark, (const void *)p);
 	/* release: pairs with the acquire in park (see the state comment). */
 	if (atomic_exchange_explicit(&p->state, NOTIFIED,
 	    memory_order_release) == PARKED)
@@ -181,6 +183,7 @@ __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
 void
 __dtfl_parker_unpark(__dtfl_parker *p)
 {
+	DTFL_PROBE1(unpark, (const void *)p);
 	pthread_mutex_lock(&p->mu);
 	p->token = true;
 	pthread_cond_signal(&p->cv);

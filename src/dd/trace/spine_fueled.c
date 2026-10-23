@@ -26,6 +26,7 @@
  * consider_merges activate the owning operator while the logic still asks
  * for work, so an idle arrangement keeps merging toward one batch.
  */
+#include "base/probes_int.h"
 #include "dd/trace/trace_int.h"
 
 /* ------------------------------------------------------------------ */
@@ -374,6 +375,12 @@ insert_at(__dtfl_spine *s, __dtfl_batch_ord *batch, bool present, size_t index)
 			__dtfl_dd_log_merge(s->logger, s->operator_id, index,
 			    taken.present ? __dtfl_batch_ord_len(taken.batch) : 0,
 			    present ? __dtfl_batch_ord_len(batch) : 0, false, 0);
+		/* Only a two-input merge reaches merge_end; pair them. */
+		if (taken.present && present)
+			DTFL_PROBE4(merge_begin, (const void *)s,
+			    (uint64_t)index,
+			    (uint64_t)__dtfl_batch_ord_len(taken.batch),
+			    (uint64_t)__dtfl_batch_ord_len(batch));
 		ms_begin_merge(m, taken.batch, taken.present, batch, present,
 		    &s->logical_frontier);
 		break;
@@ -395,6 +402,10 @@ complete_at(__dtfl_spine *s, size_t index, bool *present)
 	if (from_parts && s->logger != NULL)
 		__dtfl_dd_log_merge(s->logger, s->operator_id, index, len1, len2,
 		    true, __dtfl_batch_ord_len(merged));
+	if (from_parts)
+		DTFL_PROBE5(merge_end, (const void *)s, (uint64_t)index,
+		    (uint64_t)len1, (uint64_t)len2,
+		    (uint64_t)__dtfl_batch_ord_len(merged));
 	return merged;
 }
 
@@ -683,6 +694,8 @@ __dtfl_spine_insert(__dtfl_spine *s, __dtfl_batch_ord *batch)
 	if (s->logger != NULL)
 		__dtfl_dd_log_batch(s->logger, s->operator_id,
 		    __dtfl_batch_ord_len(batch));
+	DTFL_PROBE3(batch_seal, (const void *)s, (const void *)batch,
+	    (uint64_t)__dtfl_batch_ord_len(batch));
 	DTFL_ASSERT(!__dtfl_antichain_eq(__dtfl_batch_ord_lower(batch),
 	    __dtfl_batch_ord_upper(batch)));
 	DTFL_ASSERT(__dtfl_antichain_eq(__dtfl_batch_ord_lower(batch),
