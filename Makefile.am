@@ -61,7 +61,8 @@ TESTS += $(dist_check_SCRIPTS)
 LOG_COMPILER = $(DTFL_TEST_WRAPPER)
 AM_TESTS_ENVIRONMENT = \
 	top_srcdir='$(abs_top_srcdir)'; export top_srcdir; \
-	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM;
+	CC='$(CC)'; export CC; CXX='$(CXX)'; export CXX; NM='$(NM)'; export NM; \
+	DTFL_LDFLAGS='$(LDFLAGS)'; export DTFL_LDFLAGS;
 
 dist_man_MANS =
 EXTRA_DIST = bootstrap COPYING README.md NEWS AUTHORS THANKS ChangeLog \

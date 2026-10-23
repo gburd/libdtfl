@@ -175,7 +175,8 @@ __dtfl_slices_get(const __dtfl_slices *s, size_t i, size_t *len)
 	}
 	o = (const size_t *)(void *)s->offs.data;
 	*len = o[i + 1] - o[i];
-	return s->arena.data + o[i];
+	/* Empty slices have no arena buffer: NULL + 0 is undefined. */
+	return s->arena.data == NULL ? NULL : s->arena.data + o[i];
 }
 
 /*
