@@ -89,12 +89,14 @@ AC_SUBST([TEST_WNO_CFLAGS])
 # Symbol visibility.  GNU ld, gold, lld and the BSD linkers take a version
 # script; Apple ld64 does not, and takes an exported-symbols list instead.
 # Probe rather than switch on host_os, so any linker that accepts the
-# version script uses it.
+# version script uses it.  The probe links an executable, so its script
+# must not hide anything: "local: *" hides environ, which FreeBSD's
+# crt1.o exports to libc, and GNU ld then refuses the link.
 # -------------------------------------------------------------------------
 AC_CACHE_CHECK([whether the linker accepts --version-script],
 	[dtfl_cv_ld_version_script],
 	[save_LDFLAGS="$LDFLAGS"
-	 printf 'V { global: main; local: *; };\n' > conftest.map
+	 printf 'V { global: *; };\n' > conftest.map
 	 LDFLAGS="$LDFLAGS -Wl,--version-script=conftest.map"
 	 AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
 		[dtfl_cv_ld_version_script=yes], [dtfl_cv_ld_version_script=no])
