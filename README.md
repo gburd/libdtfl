@@ -109,30 +109,49 @@ enforces them.
 
 Measured with `dev/bench-ec2` on a dedicated c7i.metal-24xl (Xeon
 Platinum 8488C, one socket, clock pinned at 2.4 GHz, C and Rust runs
-alternated, medians of three), against the pinned Rust build on the same
+alternated, medians of five), against the pinned Rust build on the same
 host:
 
-| `arrange` benchmark | 1 worker | 4 workers | 16 workers |
-|---|---|---|---|
-| `arrange` arm, C slower by | 1.20x | 1.38x | 1.39x |
-| `count` arm, C slower by | 1.32x | 1.36x | 1.38x |
+| `arrange` benchmark, C slower by | 1 | 2 | 4 | 8 | 16 | 48 workers |
+|---|---|---|---|---|---|---|
+| `arrange` arm | 1.17x | 1.17x | 1.30x | 1.05x | 1.32x | 1.41x |
+| `count` arm | 1.32x | 1.34x | 1.35x | 1.28x | 1.36x | 1.26x |
 
-Throughput is within 1.5 times of Rust at every worker count measured.
-Latency is not yet: in the benchmark's open-loop mode, which schedules
-requests on a fixed clock so a stall delays every request behind it, one
-worker at half the C build's capacity answers in 29 / 39 microseconds
-(p50 / p99) on the `arrange` arm against Rust's 10 / 14, and the cost of
-one step of an idle dataflow is 1.9 times Rust's.  Closing that gap is
-the plan's phase P16 (`dev/PLAN.md` section 10.1).
+On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz) the
+ratios are the same with workers packed on one socket or spread across
+both (1.27x to 1.40x at 1, 4 and 16 workers); spreading costs C and Rust
+alike, about 20% of throughput at 16 workers.
+
+The cost of a step is within 1.5 times too: timely's `barrier` example
+(an idle dataflow) runs a round in 1,839 ns against Rust's 1,350 with
+one worker and 1.10x with four, and its `event_driven` example (one of
+many dataflows advanced per round) runs 100,000 rounds in 0.27 s
+against 0.22 s, whether the dataflows hold 100 or 1,000 operators.
+
+Latency is not yet within 1.5 times.  In the benchmark's open-loop mode,
+which schedules requests on a fixed clock so a stall delays every
+request behind it, one worker at half the C build's capacity answers in
+24 / 31 microseconds (p50 / p99) on the `arrange` arm against Rust's
+10 / 14.  The C build still makes about twice Rust's allocation calls
+per record (0.047 against 0.024 on the `arrange` arm), and at 16 or
+more workers about half its futex calls are glibc's malloc arena locks.
+
+An incrementally maintained view (`bench/ivm_latency`: a join and a
+grouped sum over 100,000 rows, ten-row commits, one worker) turns a
+commit into its view delta in 111 / 138 microseconds (p50 / p99) at
+1,000 or 5,000 commits per second, when the sum is kept in the
+difference (`explode`, then `count`).  Computed with `reduce` instead,
+each commit costs the size of the groups it touches.
 
 The record and container design (ADR-0001, ADR-0002) is unchanged; the
 gains came from port bugs that kept arranged traces from compacting, a
 benchmark driver that drew deletions from the wrong generator, chunk
-sizes that ignored constant-width records, a lock-free queue between
-workers in place of a mutex, upstream's chunk recycling and capacity
-reservation, and inline fast paths for 8-byte records, one-word times
-and 64-bit integer differences, each checked against the general path by
-a test.
+sizes that ignored constant-width records, operators that ran on every
+frontier change where upstream's do not, a lock-free queue between
+workers in place of a mutex, upstream's chunk and buffer recycling and
+capacity reservation, and fast paths for 8-byte records, one-word times
+and keys, short change batches and 64-bit integer differences, each
+checked against the general path by a test.
 
 `bench/experiments/arrange` takes the Rust binary's arguments, so one
 command line runs both: `arrange keys recs rate work comp [-w N ...]

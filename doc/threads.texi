@@ -57,3 +57,27 @@ multi-worker suites, by Helgrind on the typed-process allocator, and by
 a symbol-table check that fails on any writable or thread-local symbol
 in the shared library outside the allowlisted hook and error-buffer
 globals.
+
+@section Placing workers on cores and sockets
+
+libdtfl does not pin its worker threads.  A host that wants placement
+gives it through the thread hooks: its @code{spawn} callback starts the
+thread and sets its affinity before calling @code{start}, or the program
+runs under @command{taskset} or @command{numactl}.  Worker @var{i}'s
+thread is the @var{i}-th spawned; network threads follow the workers.
+
+Measured on a two-socket c6i.metal (2 x 32 cores, clock pinned at
+2.9 GHz, the pinned @code{arrange} benchmark, 16 workers):
+
+@multitable @columnfractions .30 .25 .25 .20
+@headitem Placement @tab C records/s @tab Rust records/s @tab C slower by
+@item packed (one socket) @tab 69.4M @tab 93.2M @tab 1.34x
+@item spread (alternating) @tab 56.3M @tab 78.3M @tab 1.39x
+@end multitable
+
+Spreading costs both builds about the same, a fifth of their
+throughput, because exchanged data and progress messages cross the
+socket interconnect.  Pack workers onto one socket while they fit, and
+spread only when one socket's cores or memory bandwidth are not
+enough.  @command{dev/bench-ec2 --placement packed|spread} reruns the
+comparison.
