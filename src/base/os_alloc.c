@@ -242,6 +242,16 @@ dtfl_last_error_detail(void)
 	return err_detail;
 }
 
+void
+dtfl_set_error_detail(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(err_detail, sizeof err_detail, fmt, ap);
+	va_end(ap);
+}
+
 const char *
 dtfl_strerror(int err)
 {

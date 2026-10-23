@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 18, 2026
+.Dd October 23, 2026
 .Dt DTFL_CONFIG_NEW 3
 .Os
 .Sh NAME
@@ -184,6 +184,59 @@ if a child fails, exits non-zero or is killed.
 Use
 .Xr dtfl_execute_worker 3
 directly for processes the host creates itself.
+.Pp
+Forked workers have the limits of any
+.Xr fork 2
+without
+.Xr exec 3 :
+.Bl -bullet
+.It
+In a parent that already runs other threads, a child starts with only
+the forking thread, and a lock another thread held at the fork stays
+held for ever.
+The child allocates through the allocation hooks, so
+.Xr malloc 3
+or the host's allocator must be safe to use after a fork in a
+multithreaded process (glibc's is); call
+.Fn dtfl_execute
+before starting threads where that is not so.
+.It
+A child ends with
+.Xr _exit 2 ,
+not
+.Xr exit 3 :
+.Xr atexit 3
+handlers do not run and
+.Xr stdio 3
+buffers are not flushed.
+Output a worker writes with
+.Xr printf 3
+to a pipe or a file is lost unless the worker calls
+.Xr fflush 3 ;
+anything buffered in the parent before the call is copied into every
+child and dropped there, not written twice.
+.It
+The parent learns a child's result from
+.Xr waitpid 2 .
+If the caller has set
+.Dv SIGCHLD
+to
+.Dv SIG_IGN ,
+the kernel reaps the children and
+.Xr waitpid 2
+fails with
+.Er ECHILD ;
+each child then also reports success or failure on a pipe, so
+.Fn dtfl_execute
+still returns 0 for a good run, but a failure detail cannot name the
+exit status or the signal.
+.It
+The mesh sockets and status pipes are close-on-exec
+.Pf ( Dv SOCK_CLOEXEC
+where available), so a program another thread of the parent runs with
+.Xr exec 3
+meanwhile does not hold a worker's stream open.
+.El
 .Pp
 .Fn dtfl_config_set_mode
 and

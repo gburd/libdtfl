@@ -48,6 +48,16 @@ DTFL_TEST(alloc_hooks_route_allocation)
 	return MUNIT_OK;
 }
 
+/* A host callback can leave the reason for the code it returns. */
+DTFL_TEST(set_error_detail_reaches_last_error_detail)
+{
+	(void)params; (void)data;
+	dtfl_set_error_detail("shm_mq_send: %s to worker %d", "detached", 3);
+	assert_string_equal(dtfl_last_error_detail(),
+	    "shm_mq_send: detached to worker 3");
+	return MUNIT_OK;
+}
+
 /*
  * Hooks with PostgreSQL's contract: repalloc and pfree require a pointer
  * palloc returned, so a NULL pointer is a crash there.  Count the calls
@@ -230,6 +240,7 @@ static MunitTest tests[] = {
 	DTFL_T(vec_push_remove),
 	DTFL_T(fnv1a_known_vectors),
 	DTFL_T(strerror_covers_codes),
+	DTFL_T(set_error_detail_reaches_last_error_detail),
 	DTFL_T_END
 };
 

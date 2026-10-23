@@ -85,6 +85,21 @@ and may return early.
 .Fa wake
 wakes a thread waiting on
 .Fa word .
+The check and the sleep must be atomic with respect to
+.Fa wake ,
+as in
+.Xr futex 2 :
+a
+.Fa wake
+that comes after
+.Fa wait
+has read
+.Fa *word
+must end that wait.
+A
+.Fa wait
+that reads the word and then sleeps unconditionally loses such a
+wakeup, and the worker sleeps until its timeout, or for ever.
 Each worker parks on one of these words.
 Without this group the parker uses the condition group if it is set,
 and
@@ -124,6 +139,17 @@ as its last argument, and must be thread-safe.
 C11 atomics are not hooked: they never block.
 Socket I/O is not hooked either.
 .Pp
+Thread-local state is not hooked.
+The buffer behind
+.Xr dtfl_last_error_detail 3
+is
+.Vt _Thread_local ,
+so under a fiber runtime it belongs to the carrier thread, not the
+fiber: fibers on one carrier share it, and a fiber that moves to
+another carrier between a failing call and reading the detail reads
+the other carrier's buffer.
+Read the detail before anything that can yield.
+.Pp
 The hooks are process-wide and fixed before first use.
 The first mutex, condition, parker or clock read libdtfl makes latches
 them, so install them before any libdtfl call other than the hook
@@ -135,32 +161,119 @@ Returns 0 on success, or a
 .Dv DTFL_E*
 code.
 .Sh EXAMPLES
-A fiber runtime with an asynchronous mutex and a notifier per worker
-maps its primitives like this (the
-.Li rt_
-names are the host's):
+libxtc has an asynchronous mutex,
+.Vt xtc_amutex_t ,
+which parks the calling fiber instead of its carrier, and a notifier,
+.Vt xtc_notify_t ,
+which wakes one waiter or stores the signal for the next wait.
+It has no condition variable, so the host builds one: a queue of
+waiters, each with its own notifier, guarded by an
+.Vt xtc_amutex_t
+of its own.
+A waiter joins the queue before it releases the caller's mutex, and a
+signal stored in its notifier is not lost, so a signal between the two
+still ends the wait.
+Signalling under the queue's lock keeps a waiter that timed out from
+freeing its notifier while a signaller holds it.
 .Bd -literal -offset indent
-static int mi(void **m, void *c) { return rt_mutex_create((rt_mutex **)m); }
-static void md(void *m, void *c) { rt_mutex_destroy(m); }
-static void ml(void *m, void *c) { rt_mutex_lock(m, -1); }
-static void mu(void *m, void *c) { rt_mutex_unlock(m); }
+typedef struct waiter { struct waiter *next; xtc_notify_t *n; } waiter;
+typedef struct xcond { xtc_amutex_t *lk; waiter *head; } xcond;
+
+static int mi(void **m, void *c)
+{ return xtc_amutex_create((xtc_amutex_t **)m) == XTC_OK ? 0 : DTFL_ENOMEM; }
+static void md(void *m, void *c) { xtc_amutex_destroy(m); }
+static void ml(void *m, void *c) { (void)xtc_amutex_lock(m, -1); }
+static void mu(void *m, void *c) { (void)xtc_amutex_unlock(m); }
+
+static int ci(void **cv, void *c)
+{
+	xcond *k = calloc(1, sizeof *k);
+	if (k == NULL || xtc_amutex_create(&k->lk) != XTC_OK) {
+		free(k);
+		return DTFL_ENOMEM;
+	}
+	*cv = k;
+	return 0;
+}
+static void cd(void *cv, void *c)
+{ xtc_amutex_destroy(((xcond *)cv)->lk); free(cv); }
+
 static void cw(void *cv, void *m, uint64_t ns, void *c)
-{ rt_cond_wait(cv, m, ns == UINT64_MAX ? -1 : (int64_t)ns); }
-static void yl(void *c) { rt_yield(); }
-static void sl(uint64_t ns, void *c) { rt_sleep((int64_t)ns); }
-static uintptr_t me(void *c) { return (uintptr_t)rt_self(); }
+{
+	xcond *k = cv;
+	waiter w = { NULL, NULL }, **pp;
+
+	(void)xtc_notify_create(&w.n);	/* or keep one per fiber */
+	(void)xtc_amutex_lock(k->lk, -1);
+	for (pp = &k->head; *pp != NULL; pp = &(*pp)->next)
+		;
+	*pp = &w;
+	(void)xtc_amutex_unlock(k->lk);
+	(void)xtc_amutex_unlock(m);
+	(void)xtc_notify_wait(w.n,
+	    ns > INT64_MAX ? -1 : (int64_t)ns);
+	(void)xtc_amutex_lock(k->lk, -1);
+	for (pp = &k->head; *pp != NULL; pp = &(*pp)->next)
+		if (*pp == &w) {	/* timed out: still queued */
+			*pp = w.next;
+			break;
+		}
+	(void)xtc_amutex_unlock(k->lk);
+	xtc_notify_destroy(w.n);
+	(void)xtc_amutex_lock(m, -1);
+}
+static void wake_some(xcond *k, bool all)
+{
+	(void)xtc_amutex_lock(k->lk, -1);
+	do {
+		waiter *w = k->head;
+		if (w == NULL)
+			break;
+		k->head = w->next;
+		(void)xtc_notify_signal(w->n);
+	} while (all);
+	(void)xtc_amutex_unlock(k->lk);
+}
+static void cs(void *cv, void *c) { wake_some(cv, false); }
+static void cb(void *cv, void *c) { wake_some(cv, true); }
+
+static void yl(void *c) { xtc_yield(); }
+static void sl(uint64_t ns, void *c)
+{ (void)xtc_proc_sleep(ns > INT64_MAX ? INT64_MAX : (int64_t)ns); }
+
+/* xtc_pid_t is 64 bits; off a loop xtc_self() is XTC_PID_NONE. */
+static uintptr_t me(void *c)
+{
+	xtc_pid_t p = xtc_self();
+	uint64_t id = (uint64_t)p.loop_id << 48 |
+	    (uint64_t)p.local_id << 32 | p.gen;
+
+	if (xtc_pid_is_none(p))
+		return (uintptr_t)pthread_self();
+	return sizeof(uintptr_t) >= 8 ? (uintptr_t)id :
+	    (uintptr_t)(id ^ id >> 32);
+}
 
 dtfl_sync_hooks h = { mi, md, ml, mu, ci, cd, cw, cs, cb,
     NULL, NULL, yl, sl, NULL, me, NULL };
 dtfl_set_sync_hooks(&h);
 .Ed
 .Pp
+.Fa self
+packs the whole
+.Vt xtc_pid_t
+into the
+.Vt uintptr_t ,
+folding its halves together where that is 32 bits wide.
+A collision there only weakens the debug check; what matters is that
+one fiber always gets the same value, wherever it runs.
+.Pp
 With no
 .Fa wait
 and
 .Fa wake ,
-each worker parks on the runtime's condition, so a parked worker yields
-its carrier instead of sleeping in
+each worker parks on this condition, so a parked worker yields its
+carrier instead of sleeping in
 .Xr futex 2 .
 .Sh ERRORS
 .Bl -tag -width DTFL_ESTATE
@@ -172,6 +285,7 @@ libdtfl has already locked, waited or read the clock.
 .El
 .Sh SEE ALSO
 .Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl_strerror 3 ,
 .Xr dtfl 7 ,
 .Xr dtfl_embedding 7
 .Sh HISTORY

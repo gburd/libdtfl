@@ -182,6 +182,12 @@ is a ready-made transport over connected sockets, such as a
 @code{socketpair} mesh made before @code{fork}, and
 @code{dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES)} makes
 @code{dtfl_execute} build that mesh and fork the workers itself.
+Forked workers carry the usual limits of @code{fork} without
+@code{exec}: in a multithreaded parent the allocator must be safe to
+use after the fork, children end with @code{_exit}, so unflushed
+@code{stdio} output is lost, and with @code{SIGCHLD} ignored the
+result comes from a status pipe and a failure cannot name the exit
+status; @code{dtfl_config(3)} lists them.
 @file{examples/embed/forked_workers.c} shows the whole pattern.
 
 @section PostgreSQL's concurrency models
@@ -208,11 +214,11 @@ gives the code.
 @item AIO worker processes
 With @code{io_method=worker} the postmaster forks I/O workers that run
 a fixed loop over a shared submission ring, woken by @code{SetLatch}.
-They host no libdtfl worker, and libdtfl submits no asynchronous I/O:
-its spill files are read and written synchronously by the worker that
-owns them.  The ring-plus-latch pattern is the same one a DSM-ring
-transport uses, so a transport built for background workers works for
-any process the postmaster starts.
+They cannot host a libdtfl worker, and libdtfl submits no asynchronous
+I/O: its spill files are read and written synchronously by the worker
+that owns them.  The ring-plus-latch pattern is the same one a DSM-ring
+transport uses, and that transport serves backends and background
+workers, the processes that can call @code{dtfl_execute_worker}.
 
 @item A threaded backend
 A server whose backends are threads (or fibers on a runtime such as
@@ -232,9 +238,17 @@ A runtime whose tasks are fibers, such as libxtc, needs every wait to
 go through it.  @code{dtfl_set_sync_hooks} does that for locks, the
 parker, yield, sleep and the clock: an asynchronous mutex and condition
 variable are enough, since the parker builds on the condition when no
-@code{wait}/@code{wake} pair is given, and @code{self} should name the
-fiber, not its carrier, so the debug owner check survives migration.
-The thread hooks spawn tasks.  To keep sockets out of the picture too,
+@code{wait}/@code{wake} pair is given.  libxtc has no condition
+variable, so the host builds one from @code{xtc_notify_t} and
+@code{xtc_amutex_t}; @code{dtfl_set_sync_hooks(3)} gives the code.  A
+@code{wait}/@code{wake} pair, if the host supplies one, must check the
+word and sleep atomically with respect to @code{wake}, as
+@code{futex(2)} does.  @code{self} should name the fiber, not its
+carrier, so the debug owner check survives migration; @code{xtc_self}
+returns a 64-bit @code{xtc_pid_t}, which the hook packs into a
+@code{uintptr_t}.  The buffer behind @code{dtfl_last_error_detail} is
+per OS thread, so fibers that share a carrier share it: read the detail
+before the fiber can yield.  The thread hooks spawn tasks.  To keep sockets out of the picture too,
 each task runs @code{dtfl_execute_worker} over an in-memory transport
 built on the runtime's channels, whose @code{wait} parks the fiber and
 whose @code{wake} wakes it.

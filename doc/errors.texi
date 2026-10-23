@@ -39,7 +39,11 @@ end of stream.
 @code{dtfl_last_error_detail} returns a human-readable string with
 context for the most recent error on the calling thread, or an empty
 string if there is none; it is valid until the next libdtfl call on the
-same thread.  A typical check:
+same thread.  The buffer is per OS thread, so under a fiber runtime the
+fibers on one carrier thread share it.  A host callback that returns a
+code to libdtfl, such as a transport returning @code{DTFL_EIO}, sets
+the reason with @code{dtfl_set_error_detail}, which takes a
+@code{printf} format.  A typical check:
 
 @example
 if (dtfl_execute(cfg, worker, ctx, NULL) != 0)

@@ -19,7 +19,10 @@ Version 0.1.0 (unreleased)
 	variables, the word wait the parker sleeps on, yield, sleep, the
 	clock and the thread identity) through the host, so a fiber
 	runtime can keep its carriers out of the kernel.  The defaults
-	are unchanged.  examples/embed/forked_workers shows the
+	are unchanged.  dtfl_set_error_detail lets a host callback,
+	such as a transport returning DTFL_EIO, leave the reason that
+	dtfl_last_error_detail and the panic message report.
+	examples/embed/forked_workers shows the
 	process pattern; dtfl_embedding(7) and the manual's Embedding
 	chapter cover each PostgreSQL concurrency model and fiber hosts.
 

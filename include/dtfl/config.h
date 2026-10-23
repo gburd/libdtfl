@@ -124,10 +124,10 @@ DTFL_API uint64_t dtfl_config_seed(const dtfl_config *cfg);
  *   destroy   (optional) frees ctx; libdtfl never calls it, the owner
  *             does.
  *
- * send, recv and shutdown return 0 or a DTFL_E* code (DTFL_EIO with
- * dtfl_last_error_detail() for a failure); a failure panics the worker
- * with upstream's "timely communication error" message.  See
- * dtfl_transport(3).
+ * send, recv and shutdown return 0 or a DTFL_E* code (DTFL_EIO for a
+ * failure, after dtfl_set_error_detail() with the reason); a failure
+ * panics the worker with upstream's "timely communication error"
+ * message, which carries that reason.  See dtfl_transport(3).
  */
 typedef struct dtfl_transport {
 	int (*send)(void *ctx, size_t peer, const void *buf, size_t len,

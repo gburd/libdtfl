@@ -51,9 +51,17 @@ DTFL_API const char *dtfl_strerror(int err);
 /*
  * Returns context for the most recent error reported on the calling
  * thread, or "" if there is none.  The string is valid until the next
- * libdtfl call on the same thread.
+ * libdtfl call on the same thread.  The buffer is per OS thread
+ * (_Thread_local), so fibers that share a carrier thread share it.
  */
 DTFL_API const char *dtfl_last_error_detail(void);
+
+/*
+ * Sets the calling thread's error detail, printf-style, for a host
+ * callback (a dtfl_transport, say) that returns a DTFL_E* code to
+ * libdtfl and wants the reason to reach dtfl_last_error_detail().
+ */
+DTFL_API void dtfl_set_error_detail(const char *fmt, ...) DTFL_PRINTF(1, 2);
 
 /* Allocation hooks.  All library allocation goes through these. */
 typedef struct dtfl_alloc_hooks {
@@ -157,9 +165,12 @@ DTFL_API int dtfl_set_thread_hooks(const dtfl_thread_hooks *hooks);
  *                limit) and reacquires it; spurious returns are allowed.
  *   wait, wake   wait sleeps while *word == expect, for at most
  *                timeout_ns; it may return early.  wake wakes a
- *                thread waiting on word.  The worker parker sleeps on
- *                these; without them it uses the condition group if
- *                set, else futex(2) or a pthread condition.
+ *                thread waiting on word.  As with futex(2), the check
+ *                and the sleep must be atomic with respect to wake: a
+ *                wake after wait read the word must end that wait, or
+ *                the parker loses the wakeup.  The worker parker
+ *                sleeps on these; without them it uses the condition
+ *                group if set, else futex(2) or a pthread condition.
  *   yield        a spin's back-off (default sched_yield).
  *   sleep        sleeps about ns nanoseconds (default nanosleep).
  *   clock        monotonic nanoseconds (default CLOCK_MONOTONIC); drives
@@ -170,6 +181,8 @@ DTFL_API int dtfl_set_thread_hooks(const dtfl_thread_hooks *hooks);
  *                pthread_self).
  *
  * Every callback may run on any libdtfl thread and must be thread-safe.
+ * Thread-local state is not hooked: the dtfl_last_error_detail() buffer
+ * belongs to the OS (carrier) thread, not to a fiber.
  */
 typedef struct dtfl_sync_hooks {
 	int (*mutex_init)(void **mutex, void *ctx);

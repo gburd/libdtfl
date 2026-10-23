@@ -118,7 +118,7 @@ typedef struct dtfl_transport {
 	int (*recv)(void *ctx, size_t peer, void *buf, size_t cap, size_t *got);
 	void (*wait)(void *ctx, uint64_t timeout_ns);
 	void (*wake)(void *ctx);
-	void (*shutdown)(void *ctx, size_t peer);	/* optional */
+	int (*shutdown)(void *ctx, size_t peer);	/* optional */
 	void (*destroy)(void *ctx);			/* optional */
 	void *ctx;
 } dtfl_transport;
@@ -133,8 +133,13 @@ int dtfl_transport_socket(const int *fds, size_t nfds, size_t self,
   same buffer before anything else to that peer, which is the retry
   contract of `shm_mq_send(..., nowait = true)`.  `recv` copies up to
   `cap` bytes; zero means none now, `DTFL_EOF` that the peer will send
-  no more.  Either returns `DTFL_EIO` (with detail) on failure, which
-  the driver turns into upstream's "timely communication error" panic.
+  no more.  Either returns `DTFL_EIO` on failure, after setting the
+  reason with `dtfl_set_error_detail`, and the driver turns that into
+  upstream's "timely communication error" panic carrying the reason.
+- With `shutdown` set, a peer's stream ends in `DTFL_EOF` after its
+  zero-length header, and the driver reads on to that `DTFL_EOF` and
+  panics if bytes follow the header, as `recv_loop` does.  Without
+  `shutdown` the driver stops reading a peer at its header.
 - `wait` blocks until a peer may have bytes, a peer whose last send was
   short may take more, `wake` was called, or the timeout passes.
   Spurious returns are allowed.  `wake` may be called from any thread
@@ -208,7 +213,10 @@ dtfl_workers dtfl_config_workers(const dtfl_config *cfg);
   returns `DTFL_EIO` with detail if any exits non-zero or is killed.
   Other modes return `DTFL_EINVAL`; a platform without `fork` returns
   `DTFL_ENOTSUP`.  `fork` and `waitpid` live in `src/base/os_thread.c`
-  beside `pthread_create`.
+  beside `pthread_create`.  Each child also writes its result to a
+  pipe, which the parent reads only when `waitpid` fails with `ECHILD`
+  (the caller ignores `SIGCHLD`).  The mesh and pipes are
+  close-on-exec.
 - Host-created processes (PostgreSQL backends and background workers)
   call `dtfl_execute_worker` directly with their own transport.
 

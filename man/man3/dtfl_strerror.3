@@ -1,10 +1,11 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 10, 2026
+.Dd October 23, 2026
 .Dt DTFL_STRERROR 3
 .Os
 .Sh NAME
 .Nm dtfl_strerror ,
 .Nm dtfl_last_error_detail ,
+.Nm dtfl_set_error_detail ,
 .Nm dtfl_version
 .Nd libdtfl error reporting and version
 .Sh LIBRARY
@@ -16,6 +17,8 @@ Timely and differential dataflow library
 .Fn dtfl_strerror "int err"
 .Ft const char *
 .Fn dtfl_last_error_detail "void"
+.Ft void
+.Fn dtfl_set_error_detail "const char *fmt" "..."
 .Ft const char *
 .Fn dtfl_version "void"
 .Sh DESCRIPTION
@@ -28,10 +31,27 @@ returns a static description of a code.
 returns a description of the most recent error on the calling thread,
 including the values involved, or the empty string.
 The string remains valid until the calling thread's next libdtfl call.
+.Fn dtfl_set_error_detail
+formats
+.Fa fmt
+as
+.Xr printf 3
+does into the same buffer.
+It is for host callbacks that return a
+.Dv DTFL_E*
+code to libdtfl, such as a
+.Xr dtfl_transport 3
+returning
+.Dv DTFL_EIO ,
+so that the reason reaches the panic message or the caller.
 .Fn dtfl_version
 returns the library version string.
 .Sh RETURN VALUES
-All three return non-NULL strings that the caller must not free.
+.Fn dtfl_strerror ,
+.Fn dtfl_last_error_detail
+and
+.Fn dtfl_version
+return non-NULL strings that the caller must not free.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 int rc = dtfl_execute(&cfg, worker_main, NULL, &guards);
@@ -60,11 +80,20 @@ The feature is not supported in this build.
 End of stream.
 .El
 .Sh SEE ALSO
+.Xr dtfl_set_sync_hooks 3 ,
+.Xr dtfl_transport 3 ,
 .Xr dtfl 7
 .Sh HISTORY
 These replace Rust's
 .Vt Result
 error values.
 .Sh THREAD SAFETY
-All three may be called from any thread.
-The detail buffer is per thread.
+All four may be called from any thread.
+The detail buffer is per OS thread
+.Pq Vt _Thread_local .
+Under a fiber runtime it belongs to the carrier thread, not the fiber:
+fibers that share a carrier share it, and a fiber that migrates to
+another carrier between a failing call and
+.Fn dtfl_last_error_detail
+reads the other carrier's buffer.
+Read the detail before anything that can yield or migrate the fiber.

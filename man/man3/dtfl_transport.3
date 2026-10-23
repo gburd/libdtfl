@@ -135,8 +135,12 @@ and
 .Fa shutdown
 return 0, or a
 .Dv DTFL_E*
-code with detail for
-.Xr dtfl_last_error_detail 3 .
+code.
+Before returning
+.Dv DTFL_EIO
+a host transport sets the reason with
+.Xr dtfl_set_error_detail 3 ,
+which the panic message then carries.
 An error makes the worker panic with upstream's
 .Dq timely communication error
 message.
@@ -189,8 +193,10 @@ static int pgx_send(void *c, size_t p, const void *b, size_t len,
 {
 	shm_mq_result r = shm_mq_send(((pgx *)c)->out[p], len, b,
 	    true, true);  /* nowait; keeps its place on WOULD_BLOCK */
-	if (r == SHM_MQ_DETACHED)
+	if (r == SHM_MQ_DETACHED) {
+		dtfl_set_error_detail("shm_mq to worker %zu detached", p);
 		return DTFL_EIO;
+	}
 	*sent = r == SHM_MQ_SUCCESS ? len : 0;
 	return 0;
 }
@@ -213,9 +219,13 @@ static int pgx_recv(void *c, size_t p, void *buf, size_t cap,
 }
 static void pgx_wait(void *c, uint64_t ns)
 {
+	/* Round up: a timeout under 1 ms must not become a 0 ms poll. */
+	long ms = ns == UINT64_MAX ? -1 :
+	    ns / 1000000 >= LONG_MAX ? LONG_MAX :
+	    (long)((ns + 999999) / 1000000);
+
 	(void)WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH |
-	    (ns == UINT64_MAX ? 0 : WL_TIMEOUT),
-	    ns == UINT64_MAX ? -1 : (long)(ns / 1000000), PG_WAIT_EXTENSION);
+	    (ms < 0 ? 0 : WL_TIMEOUT), ms, PG_WAIT_EXTENSION);
 	ResetLatch(MyLatch);
 	CHECK_FOR_INTERRUPTS();
 }
