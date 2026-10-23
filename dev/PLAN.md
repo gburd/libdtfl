@@ -829,6 +829,12 @@ need extra tools.
    the WebSocket frame parser), the DDIR parser, and `dtfl-diag`'s
    input path.  Crashing inputs go into `tests/corpus/` and stay there
    as regression tests.
+9. **Simulator coverage** (`make check-sim`, needs hegel).  The
+   multi-worker properties run under `DTFL_COMM_SIM` with a drawn seed,
+   worker count, progress mode, worker stalls and bounded delivery
+   delays that keep each channel's FIFO order (D8).
+   `DTFL_SIM_SEEDS` cases per property, sharded by `DTFL_SIM_JOBS`;
+   100,000 seeds before 1.0 (P16.7).
 
 Rules carried over from the maintainer's other C projects:
 

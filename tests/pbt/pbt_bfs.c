@@ -13,8 +13,14 @@
  * exact distance map and that the loop terminates (bounded worker steps
  * plus probe done), so a diverging fixpoint shows up as a timeout, not a
  * wrong answer.
+ *
+ * bfs_multiworker runs the same graph on two to four workers over a drawn
+ * execution (pbt_sim.h), so the iterative scope's nested progress
+ * tracking runs under real threads and under simulated schedules with
+ * faults; the workers' outputs together must equal the reference.
  */
 #include "pbt.h"
+#include "pbt_sim.h"
 
 #include "dtfl/algo.h"
 #include "dtfl/collection.h"
@@ -197,8 +203,99 @@ prop_bfs_equals_reference(pbt_tc *tc)
 		}
 }
 
+/* ------------------------------------------------------------------ */
+/* Multi-worker bfs over a drawn execution.                             */
+/* ------------------------------------------------------------------ */
+
+#define MAXW 4
+
+typedef struct mw_env {
+	const graph *g;
+	dtfl_time_class *tc;
+	const dtfl_type *pair;
+	collected out[MAXW];
+} mw_env;
+
+/* Worker 0 feeds the graph; every worker returns at once (pbt_sim.h). */
+static void
+mw_worker(dtfl_worker *w, void *arg)
+{
+	mw_env *e = arg;
+	size_t idx = dtfl_worker_index(w);
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	unsigned char buf[16];
+	unsigned i;
+
+	c.roots = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.edges = dtfl_input_session_new(e->pair, r);
+	c.probe = dtfl_probe_new();
+	c.out = &e->out[idx];
+	(void)dtfl_worker_dataflow(w, "bfs_mw", e->tc, build_bfs, &c);
+	if (idx == 0) {
+		dtfl_put_u64(buf, e->g->root);
+		dtfl_input_session_insert(c.roots, buf, 8);
+		for (i = 0; i < e->g->nedges; i++) {
+			dtfl_put_u64(buf, e->g->src[i]);
+			dtfl_put_u64(buf + 8, e->g->dst[i]);
+			dtfl_input_session_insert(c.edges, buf, 16);
+		}
+	}
+	dtfl_input_session_close(c.roots);
+	dtfl_input_session_close(c.edges);
+	dtfl_probe_free(c.probe);
+	dtfl_diff_free(r);
+}
+
+static void
+mw_free(void *arg)
+{
+	mw_env *e = arg;
+
+	dtfl_time_class_free(e->tc);
+	dtfl_type_free(e->pair);
+}
+
+static void
+prop_bfs_multiworker(pbt_tc *tc)
+{
+	static mw_env e;
+	graph g;
+	pbt_exec x;
+	uint32_t ref[MAXNODE];
+	unsigned i, node, dist;
+	size_t w;
+
+	g.nnodes = (unsigned)pbt_int(tc, 1, MAXNODE);
+	g.nedges = (unsigned)pbt_int(tc, 0, MAXEDGE);
+	g.root = (unsigned)pbt_int(tc, 0, (int)g.nnodes - 1);
+	for (i = 0; i < g.nedges; i++) {
+		g.src[i] = (uint8_t)pbt_int(tc, 0, (int)g.nnodes - 1);
+		g.dst[i] = (uint8_t)pbt_int(tc, 0, (int)g.nnodes - 1);
+	}
+	pbt_exec_draw(tc, &x, 2, MAXW);
+	memset(&e, 0, sizeof e);
+	e.g = &g;
+	e.tc = dtfl_time_u64();
+	e.pair = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+	pbt_defer(tc, mw_free, &e);
+	PBT_ASSERT(pbt_exec_run(tc, &x, mw_worker, &e) == 0);
+
+	ref_bfs(&g, ref);
+	for (node = 0; node < g.nnodes; node++)
+		for (dist = 0; dist < MAXNODE; dist++) {
+			int64_t want = (ref[node] != INF && ref[node] == dist)
+			    ? 1 : 0, got = 0;
+
+			for (w = 0; w < x.threads; w++)
+				got += e.out[w].net[node][dist];
+			PBT_ASSERT(got == want);
+		}
+}
+
 static const pbt_prop props[] = {
 	{ "bfs_equals_reference", prop_bfs_equals_reference, 100 },
+	{ "bfs_multiworker", prop_bfs_multiworker, 50 },
 };
 
 PBT_MAIN("bfs", props)

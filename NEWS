@@ -28,6 +28,23 @@ Version 0.1.0 (unreleased)
 	dtfl_trace_stats_get reports a trace's layers, batches, pending
 	batches, merges in progress, updates and bytes, for monitoring.
 
+	make check-sim runs the multi-worker property tests under the
+	simulator with drawn seeds, worker stalls and delivery delays that
+	keep each channel's FIFO order; DTFL_SIM_SEEDS and DTFL_SIM_JOBS
+	size the run (see the manual's Installation chapter).
+
+	Known issue, inherited from timely 0.31.0: if an input that feeds
+	an exchange is advanced past its first epoch, sent to, flushed,
+	its worker stepped, and the input then closed with nothing sent
+	since, the records still buffered in the exchange are never sent
+	and the dataflow never completes.  Advancing instead of closing
+	delays them until the next send.  Closing or advancing right after
+	the flush, before any step, avoids it.  See dev/upstream-notes.md.
+
+	The input operator no longer asks to be scheduled when it is built,
+	as upstream's does not.  It used to, which made the hang above
+	reachable without the first advance.
+
 	USDT static probes under the provider dtfl, for DTrace, SystemTap,
 	bpftrace and perf: operator_start and operator_end, park,
 	park_end and unpark, batch_seal, and merge_begin and merge_end.
