@@ -31,11 +31,12 @@
  * production lets a frontier pass a time with a message still in
  * flight, which the late check sees.
  *
- * DTFL_PBT_FLUSH_STEPS=on also flushes after a drawn subset of records
- * and steps the worker before closing.  That reaches an upstream hang
- * (dev/upstream-notes.md, "Counter drops a flush"; tests/corpus/seeds.txt)
- * and stays off until the pin moves past it.  The draw is made either
- * way, so a reproduce blob means the same case with or without it.
+ * Each worker also flushes after a drawn subset of records and steps
+ * before closing.  That reached a hang inherited from the pin, which
+ * libdtfl fixes (dev/upstream-notes.md, "Counter drops a flush";
+ * tests/corpus/seeds.txt).  DTFL_PBT_FLUSH_STEPS=off skips those flushes.
+ * The draw is made either way, so a reproduce blob means the same case
+ * with or without it.
  */
 #include "pbt.h"
 #include "pbt_sim.h"
@@ -407,8 +408,8 @@ typedef struct nmw_env {
 	size_t n;
 	/* Own steps after the flush and after the advance at each epoch. */
 	uint8_t steps[NMW_MAXW][NMW_EPOCHS][2];
-	/* DTFL_PBT_FLUSH_STEPS: flush after record i, then take this many
-	 * own steps, less one; 0 = no flush. */
+	/* Unless DTFL_PBT_FLUSH_STEPS=off: flush after record i, then take
+	 * this many own steps, less one; 0 = no flush. */
 	uint8_t flush_after[NMW_MAXRECS];
 	bool flush_steps;
 	const dtfl_type *type;		/* pair(u64, u64): key, index */
@@ -550,8 +551,8 @@ prop_notify_multiworker(pbt_tc *tc)
 		e.epochs[i] = epoch;
 		e.flush_after[i] = (uint8_t)pbt_int(tc, 0, 3);
 	}
-	e.flush_steps = getenv("DTFL_PBT_FLUSH_STEPS") != NULL &&
-	    strcmp(getenv("DTFL_PBT_FLUSH_STEPS"), "on") == 0;
+	e.flush_steps = getenv("DTFL_PBT_FLUSH_STEPS") == NULL ||
+	    strcmp(getenv("DTFL_PBT_FLUSH_STEPS"), "off") != 0;
 	pbt_exec_draw(tc, &x, 2, NMW_MAXW);
 	for (w = 0; w < x.threads; w++)
 		for (t = 0; t < NMW_EPOCHS; t++) {
