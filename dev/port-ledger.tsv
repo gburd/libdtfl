@@ -94,7 +94,7 @@ timely-dataflow	timely/src/dataflow/channels/mod.rs	182	src/timely/message.c	P4	
 timely-dataflow	timely/src/dataflow/channels/pact.rs	228	src/timely/pact.c	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pullers/counter.rs	74	src/timely/pull_counter.c	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pullers/mod.rs	2	src/timely/timely_int.h	P4	done	
-timely-dataflow	timely/src/dataflow/channels/pushers/counter.rs	45	src/timely/push_counter.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pushers/counter.rs	45	src/timely/push_counter.c	P4	done	divergence: forwards a flush when data was pushed since the last one, not only while produced is undrained (timely #824), ADR D12
 timely-dataflow	timely/src/dataflow/channels/pushers/exchange.rs	149	src/timely/push_exchange.c	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pushers/mod.rs	13	src/timely/timely_int.h	P4	done	
 timely-dataflow	timely/src/dataflow/channels/pushers/progress.rs	71	src/timely/push_progress.c	P4	done	

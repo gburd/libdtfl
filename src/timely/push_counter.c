@@ -10,9 +10,15 @@
  *
  * A pushing Counter updates a shared produced change batch
  * (time -> +record_count) on each data push, then forwards to its
- * pushee.  A flush (NULL) is forwarded only when produced is dirty, so
- * an idle output does not announce progress.  The produced batch belongs
- * to the operator and outlives the pusher.
+ * pushee.  A flush (NULL) is forwarded only when the Counter is dirty,
+ * so an idle output does not announce progress.  The produced batch
+ * belongs to the operator and outlives the pusher.
+ *
+ * Divergence (ADR-0012, 2026-10-23): upstream calls the Counter dirty
+ * while produced is non-empty, but the owning operator drains produced
+ * when it is scheduled, so a flush after that drain was dropped and an
+ * Exchange behind the Counter kept its buffered records forever.  Here
+ * the Counter is also dirty from a data push until the next flush.
  */
 #include "timely/timely_int.h"
 
@@ -20,6 +26,7 @@ typedef struct push_counter {
 	__dtfl_push base;
 	__dtfl_push *pushee;		/* owned */
 	__dtfl_change_batch *produced;	/* not owned */
+	bool pushed;			/* data pushed since the last flush */
 } push_counter;
 
 static void
@@ -32,10 +39,15 @@ counter_push(__dtfl_push *p, void **msg)
 		int64_t count = (int64_t)__dtfl_batch_len(m->data);
 
 		__dtfl_cb_update(c->produced, m->time, count);
+		c->pushed = true;
+		__dtfl_push_push(c->pushee, msg);
+		return;
 	}
 	/* only propagate NULL (flush) if dirty */
-	if (*msg != NULL || !__dtfl_cb_is_empty(c->produced))
+	if (c->pushed || !__dtfl_cb_is_empty(c->produced)) {
+		c->pushed = false;
 		__dtfl_push_push(c->pushee, msg);
+	}
 }
 
 static void
@@ -57,6 +69,7 @@ __dtfl_push_counter_new(__dtfl_push *inner, __dtfl_change_batch *produced)
 	c->base.ops = &counter_ops;
 	c->pushee = inner;
 	c->produced = produced;
+	c->pushed = false;
 	return &c->base;
 }
 
