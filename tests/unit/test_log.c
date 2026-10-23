@@ -173,6 +173,9 @@ DTFL_TEST(reentrant_log_panics)
 	reentrant_logger = __dtfl_log_registry_get(r, "r");
 	__dtfl_logger_log(reentrant_logger, "first", 5);
 	DTFL_EXPECT_PANIC(__dtfl_logger_flush(reentrant_logger));
+	/* The panic left in_action set, so these free without flushing. */
+	__dtfl_logger_release(reentrant_logger);
+	__dtfl_log_registry_free(r);
 	return MUNIT_OK;
 }
 
