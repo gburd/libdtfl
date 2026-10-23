@@ -62,18 +62,6 @@ __dtfl_cb_is_dirty(const __dtfl_change_batch *cb)
 	return cb->updates.len > cb->clean;
 }
 
-/*
- * Maintain the bounds of pending (non-compacted) updates versus clean
- * (compacted) data, compacting only once enough work has accumulated:
- * more than 32 elements and at least half of them not clean.
- */
-static void
-maintain_bounds(__dtfl_change_batch *cb)
-{
-	if (cb->updates.len > 32 && cb->updates.len >> 1 >= cb->clean)
-		__dtfl_cb_compact(cb);
-}
-
 /* Appends every update of `src` (extend); `src` is unchanged. */
 void
 __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
@@ -82,7 +70,7 @@ __dtfl_cb_extend(__dtfl_change_batch *cb, const __dtfl_change_batch *src)
 	DTFL_ASSERT(cb != src);
 	DTFL_ASSERT(cb->kw == src->kw);
 	__dtfl_vec_push_n(&cb->updates, src->updates.data, src->updates.len);
-	maintain_bounds(cb);
+	__dtfl_cb_maintain_bounds(cb);
 }
 
 /* Swaps entries i and j word by word. */
@@ -129,7 +117,8 @@ insertion_sort(__dtfl_change_batch *cb, size_t n)
 {
 	unsigned kw = cb->kw, w;
 	size_t i, j, words = (size_t)kw + 1;
-	uint64_t *base = (uint64_t *)(void *)cb->updates.data, tmp[DTFL_TIME_MAX + 3];
+	uint64_t *base = (uint64_t *)(void *)cb->updates.data;
+	uint64_t tmp[DTFL_TIME_MAX + 3];
 
 	DTFL_ASSERT(words <= DTFL_TIME_MAX + 3);
 	for (i = 1; i < n; i++) {
@@ -177,11 +166,6 @@ sort_by_key(__dtfl_change_batch *cb)
 	}
 }
 
-/*
- * Compact the internal representation: sort by key, consolidate equal
- * keys and discard any whose accumulation is zero.  Only does work if
- * some element is dirty.
- */
 /*
  * compact for short runs of fixed-width keys: the progress tracker's
  * common cases are a u64 time (one key word) and a pointstamp, a
@@ -232,6 +216,11 @@ name(__dtfl_change_batch *cb, size_t n)					\
 COMPACT_FIXED(compact_kw1, 1)
 COMPACT_FIXED(compact_kw3, 3)
 
+/*
+ * Compact the internal representation: sort by key, consolidate equal
+ * keys and discard any whose accumulation is zero.  Only does work if
+ * some element is dirty.
+ */
 void
 __dtfl_cb_compact(__dtfl_change_batch *cb)
 {
