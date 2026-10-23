@@ -154,9 +154,11 @@ from a different generator than Rust's `StdRng`.
 
 libdtfl routes allocation, panic, diagnostic logging, and thread creation
 through host hooks, so it embeds in a host such as PostgreSQL (alloc to
-palloc, panic to ereport, log to elog, threads to background workers, or a
-single-thread cooperative mode).  See `dtfl_embedding(7)` and the worked
-skeleton in `examples/embed/`.  `examples/ivm/` shows an incrementally
+`MemoryContextAllocHuge`/`repalloc_huge`, panic to ereport, log to elog,
+and one worker stepped on the backend's own thread).  A panic that
+longjmps out leaves that worker unusable: the host discards it, for
+example by deleting its memory context, and rebuilds.  See
+`dtfl_embedding(7)` and the worked skeleton in `examples/embed/`.  `examples/ivm/` shows an incrementally
 maintained SQL view driven one commit at a time, and a harness that models
 PostgreSQL transactions and transition tables around it.
 

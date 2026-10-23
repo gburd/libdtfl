@@ -39,17 +39,50 @@
 /* example build and run standalone.                                   */
 /* ------------------------------------------------------------------ */
 
-/* palloc/pfree/repalloc allocate in the current memory context, which
- * the server frees in bulk at transaction or query end.  The stub uses
- * libc so the example is self-contained; a real extension would use a
- * long-lived MemoryContext created for the dataflow so a mid-query
- * ereport(ERROR) does not leak (the context is reset on abort). */
-static void *pg_palloc(size_t n)        { return malloc(n); }
-static void *pg_repalloc(void *p, size_t n) { return realloc(p, n); }
-static void  pg_pfree(void *p)          { free(p); }
-
 /* elog/ereport levels.  The real values come from utils/elog.h. */
 enum { PG_DEBUG1, PG_LOG, PG_WARNING, PG_ERROR };
+
+/* MaxAllocSize and MaxAllocHugeSize from utils/memutils.h. */
+#define PG_MAX_ALLOC_SIZE	((size_t)0x3fffffff)	/* 1 GB - 1 */
+#define PG_MAX_ALLOC_HUGE_SIZE	(SIZE_MAX / 2)
+
+static void pg_stub_fatal(const char *what);
+
+/*
+ * MemoryContextAllocHuge, repalloc_huge and pfree, in a dedicated
+ * long-lived context (dtfl_context below).  The stubs use libc so the
+ * example runs standalone, but they enforce the server's contract, so
+ * a hook that breaks it fails here as it would crash a backend:
+ * repalloc and pfree need a pointer palloc returned (NULL crashes), and
+ * plain palloc and repalloc refuse more than MaxAllocSize (1 GB - 1),
+ * which a large arrangement's columns exceed.  The _huge forms allow up
+ * to MaxAllocHugeSize.
+ */
+static void *
+pg_alloc_huge(size_t n)
+{
+	if (n > PG_MAX_ALLOC_HUGE_SIZE)
+		pg_stub_fatal("invalid memory alloc request size");
+	return malloc(n);
+}
+
+static void *
+pg_repalloc_huge(void *p, size_t n)
+{
+	if (p == NULL)
+		pg_stub_fatal("repalloc of a NULL pointer");
+	if (n > PG_MAX_ALLOC_HUGE_SIZE)
+		pg_stub_fatal("invalid memory alloc request size");
+	return realloc(p, n);
+}
+
+static void
+pg_pfree(void *p)
+{
+	if (p == NULL)
+		pg_stub_fatal("pfree of a NULL pointer");
+	free(p);
+}
 
 /* A real ereport(ERROR, ...) does not return: it longjmps to the
  * nearest PG_TRY via PG_exception_stack.  The stub models that with a
@@ -74,24 +107,64 @@ pg_elog(int level, const char *msg)
 	}
 }
 
+/* A crash in a real backend; here, a message and abort(). */
+static void
+pg_stub_fatal(const char *what)
+{
+	fprintf(stderr, "pg stub: %s\n", what);
+	abort();
+}
+
 /* ------------------------------------------------------------------ */
 /* The four libdtfl host hooks, mapped to PostgreSQL.                  */
 /* ------------------------------------------------------------------ */
 
-/* 1. Allocation -> palloc/pfree.  All libdtfl allocation routes here,
- * so every byte lives in the host's memory context and is reclaimed
- * with it.  __dtfl_alloc never returns NULL: on failure it calls the
- * panic hook (below), the way Rust aborts, so these wrappers do not
- * check for NULL -- palloc itself ereport(ERROR)s on OOM, which the
- * panic hook's longjmp turns into a clean unwind. */
-static void *hook_malloc(size_t size, void *ctx)        { (void)ctx; return pg_palloc(size); }
-static void *hook_realloc(void *p, size_t size, void *ctx){ (void)ctx; return pg_repalloc(p, size); }
-static void  hook_free(void *p, void *ctx)              { (void)ctx; pg_pfree(p); }
+/*
+ * 1. Allocation -> MemoryContextAllocHuge / repalloc_huge / pfree in
+ * one long-lived context made for the dataflow (in a real extension,
+ * AllocSetContextCreate(TopMemoryContext, "dtfl", ...), passed as ctx).
+ * Every byte lives in that context, so discarding the worker after an
+ * error is MemoryContextDelete (see the panic hook).  The _huge forms
+ * matter: plain palloc stops at 1 GB.  libdtfl never passes NULL to
+ * realloc_fn or free_fn, but the realloc hook checks anyway, so it is
+ * also safe with an older libdtfl.  palloc ereport(ERROR)s on OOM
+ * rather than returning NULL, which unwinds like a panic.
+ */
+static void *
+hook_malloc(size_t size, void *ctx)
+{
+	(void)ctx;
+	return pg_alloc_huge(size);
+}
 
-/* 2. Panic -> ereport(ERROR).  A contract violation or allocation
+static void *
+hook_realloc(void *p, size_t size, void *ctx)
+{
+	(void)ctx;
+	return p != NULL ? pg_repalloc_huge(p, size) : pg_alloc_huge(size);
+}
+
+static void
+hook_free(void *p, void *ctx)
+{
+	(void)ctx;
+	pg_pfree(p);
+}
+
+/*
+ * 2. Panic -> ereport(ERROR).  A contract violation or allocation
  * failure calls this; it must not return.  Mapping it to
  * ereport(ERROR) turns a libdtfl panic into a normal PostgreSQL error
- * that unwinds the current query rather than crashing the backend. */
+ * that unwinds the current query rather than crashing the backend.
+ *
+ * The longjmp leaves the worker in an unknown state: a structure half
+ * updated, a mutex held.  Nothing reached from it may be used again,
+ * not even freed with dtfl_worker_free.  The catch site discards the
+ * worker by deleting its memory context, and rebuilds from durable
+ * state if it needs the dataflow again.  The same holds for an
+ * ereport(ERROR) raised inside a callback libdtfl calls (an operator
+ * function, a sink, the log hook): it unwinds through libdtfl's frames.
+ */
 static void
 hook_panic(const char *msg, void *ctx)
 {
@@ -118,20 +191,18 @@ hook_log(dtfl_log_level level, const char *msg, void *ctx)
 }
 
 /*
- * 4. Threads.  A PostgreSQL backend is single-threaded and must not
- * spawn raw pthreads.  Two faithful options; this skeleton takes (b),
- * the one most extensions want, and documents (a):
+ * 4. Threads.  A PostgreSQL backend is single-threaded, and palloc,
+ * ereport and the rest of the server are not thread-safe.  So: do NOT
+ * set thread hooks and do NOT call dtfl_execute.  Drive one worker by
+ * hand with dtfl_worker_new_standalone() and dtfl_worker_step(), so the
+ * dataflow runs entirely on the backend's (or background worker's) own
+ * thread, interleaved with its other work.  This is what run_dataflow()
+ * below does.
  *
- *  (a) Background workers: implement spawn by RegisterDynamicBackground-
- *      Worker + WaitForBackgroundWorkerStartup, returning the handle;
- *      join by WaitForBackgroundWorkerShutdown.  Then dtfl_execute runs
- *      a real multi-worker computation across bgworkers.
- *
- *  (b) Single-thread cooperative: do NOT set thread hooks and do NOT
- *      call dtfl_execute.  Drive one worker by hand with
- *      dtfl_worker_new_standalone() and dtfl_worker_step(), so the
- *      dataflow runs entirely on the backend's own thread, interleaved
- *      with the query.  This is what run_dataflow() below does.
+ * Thread hooks cannot be backed by background workers: a background
+ * worker is a separate process, while the workers of one dtfl_execute
+ * share one address space (their channels, batches and reference
+ * counts are plain memory).  A spawn hook must start a thread.
  */
 
 /* ------------------------------------------------------------------ */
@@ -250,10 +321,13 @@ main(void)
 	}
 	dtfl_set_panic_hook(hook_panic, NULL);
 	dtfl_set_log_hook(hook_log, NULL);
-	(void)threads;	/* see option (a) above to wire bgworkers */
+	(void)threads;	/* no thread hooks: see 4 above */
 
 	/* PG_TRY: a libdtfl panic longjmps here via the panic hook, so the
-	 * query errors out cleanly instead of crashing the backend. */
+	 * query errors out cleanly instead of crashing the backend.  The
+	 * worker is then unusable: PG_CATCH deletes the dtfl memory context
+	 * (MemoryContextDelete), which frees every byte the worker held,
+	 * and never calls into it again.  The hooks stay installed. */
 	pg_in_try = 1;
 	if (sigsetjmp(pg_error_jmp, 1) != 0) {
 		pg_in_try = 0;

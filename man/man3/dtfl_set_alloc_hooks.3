@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 10, 2026
+.Dd October 23, 2026
 .Dt DTFL_SET_ALLOC_HOOKS 3
 .Os
 .Sh NAME
@@ -37,6 +37,30 @@ returns it, for any object type
 .Pq Vt max_align_t ;
 libdtfl stores atomic counters and arbitrary records in it.
 .Pp
+libdtfl never calls
+.Fa realloc_fn
+or
+.Fa free_fn
+with a
+.Dv NULL
+pointer: an empty buffer grows through
+.Fa malloc_fn ,
+and freeing
+.Dv NULL
+is skipped.
+So an allocator whose reallocate and free functions need a live pointer,
+such as PostgreSQL's
+.Fn repalloc
+and
+.Fn pfree ,
+can be hooked in directly.
+A size of zero is passed as one.
+Single requests can be large: the columns of a big arrangement grow
+past a gigabyte, so a host allocator with a size cap (PostgreSQL's
+.Fn palloc
+stops at 1 GB) must use its unlimited form
+.Pq Fn MemoryContextAllocHuge , Fn repalloc_huge .
+.Pp
 The panic hook is called when a caller violates a library contract,
 for example by using a capability for the wrong output, and when an
 allocation hook returns
@@ -49,6 +73,23 @@ out.
 If it returns, libdtfl calls
 .Xr abort 3 .
 The default hook prints the message to standard error and aborts.
+.Pp
+A hook that
+.Xr longjmp 3 Ns s
+out leaves the worker that panicked in an unknown state: a structure
+may be half updated, a reference count not yet dropped, or a mutex held.
+Nothing reached from that worker may be used again, including
+.Fn dtfl_worker_step
+and
+.Fn dtfl_worker_free .
+Discard it by releasing its memory wholesale (for example by deleting
+the host memory context the allocation hooks draw from), and build a
+new worker if the computation is still needed.
+With
+.Fn dtfl_execute ,
+the whole execution is lost, since its workers share state.
+The process-wide hooks remain installed and valid.
+Rust is the same: a panicking timely worker is not resumed.
 .Fn dtfl_set_panic_hook
 with a
 .Dv NULL

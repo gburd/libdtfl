@@ -322,6 +322,48 @@ update never committed, and the rebuild starts from the committed state.
 libdtfl's trace spill is a memory tool, not a durability mechanism, and
 is not used for recovery.
 
+### 4.6 Errors inside the engine
+
+The panic hook maps a libdtfl panic (a contract violation, or allocation
+failure) to `ereport(ERROR)`, which longjmps out.  That leaves the
+standalone worker in an unknown state: the panic can fire with a
+structure half updated or a mutex held, so nothing reached from the
+worker may be touched again, not even `dtfl_worker_free`
+(`dtfl_set_panic_hook(3)`).  The same is true of an `ereport(ERROR)`
+raised inside a callback libdtfl calls, such as the row encoder in a
+`map` function or the `inspect` sink that collects `dMV`.
+
+What that means per placement:
+
+- **Placement 1** builds and drops the dataflow inside the transaction,
+  so an error costs nothing beyond the transaction it already aborts.
+  Allocate in a context that the abort resets.
+- **Placement 2** loses the worker, and with it every arrangement it
+  holds.  One error rebuilds every view in that worker, by the same
+  path as section 4.5's restart recovery.  The maintenance worker must
+  therefore allocate all libdtfl memory in one dedicated context made
+  for it (a child of `TopMemoryContext`, not a per-transaction context),
+  delete that context in its `PG_CATCH`, and rebuild from the view
+  tables at their `last_n`.  The backend whose commit was in flight
+  gets an error and its transaction aborts, so no view table is left
+  inconsistent.
+
+To keep the blast radius small:
+
+- Validate rows before they reach libdtfl (record lengths, `NULL`
+  handling), so the contract-violation panics cannot fire from user data.
+- Keep callbacks from raising errors: the encoder and the sink catch
+  their own `ereport` with `PG_TRY`, record the failure, return normally,
+  and the worker raises it after `dtfl_worker_step` returns.
+- Partition views across workers (one worker per view, or per group of
+  views over the same base tables), each with its own context, so one
+  error rebuilds one group.
+- Allocation hooks use `MemoryContextAllocHuge` and `repalloc_huge`:
+  plain `palloc` refuses requests over 1 GB, and a large arrangement's
+  columns grow past that.  `repalloc` and `pfree` reject `NULL`;
+  libdtfl never passes it, and the hook in `dtfl_embedding(7)` checks
+  anyway.
+
 
 ## 5. How the requirements are met
 
@@ -478,11 +520,13 @@ These are open design work, not solved by the substrate:
   apply them in a background transaction.  It removes the commit-time
   serialization and gives up read-your-writes on the view.  The libdtfl
   side is identical; only the capture and apply points move.
-- **Performance.**  libdtfl is correct but measured about 2.6x slower
-  than Rust differential dataflow on `count` throughput and 2.7x on the
-  `arrange` arm, same host (`bench/experiments/arrange`).  Per-commit cost is
-  flat over thousands of commits now that arranged traces compact
-  (`tests/unit/test_longrun.c` guards it).  The comparison that matters for
+- **Performance.**  On a dedicated bare-metal host, libdtfl's throughput
+  is within 1.4x of Rust differential dataflow on the pinned `arrange`
+  benchmark at 1 to 16 workers (README, Performance).  Latency is not
+  yet: one worker's open-loop p99 is about 3x Rust's, and an idle step
+  costs about 1.9x.  Per-commit cost is flat over thousands of commits
+  now that arranged traces compact (`tests/unit/test_longrun.c` guards
+  it).  The comparison that matters for
   IVM is maintenance cost versus REFRESH and versus trigger-based IVM at
   realistic delta sizes; run that before drawing conclusions.
 - **Views over views.**  Maintaining a view whose base is another

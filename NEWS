@@ -20,6 +20,20 @@ Version 0.1.0 (unreleased)
 	pages, both gate-checked.  Validated on Linux x86_64 (gcc), FreeBSD
 	(clang), and Linux riscv64 (gcc).
 
+	Embedding fixes.  The allocation hooks never receive a NULL
+	pointer in realloc_fn or free_fn: an empty buffer grows through
+	malloc_fn.  The PostgreSQL hooks in dtfl_embedding(7) used
+	repalloc, which crashes on NULL, and palloc, which refuses more
+	than 1 GB; they now use MemoryContextAllocHuge and repalloc_huge
+	in a dedicated memory context, and examples/embed enforces the
+	server's contract so a broken hook fails make check.  The manual
+	and dtfl_set_panic_hook(3) now say what a longjmping panic hook
+	leaves behind: the worker is unusable and must be discarded, for
+	example by deleting its memory context.  Thread hooks must start
+	threads in the same process, so a PostgreSQL background worker
+	cannot back them; the earlier documentation said it could.
+	man dtfl_set_panic_hook now finds its page.
+
 	dtfl_config_set_idle_merge_effort (differential's
 	Config::idle_merge_effort) lets arrangement, reduce and upsert
 	operators keep merging their traces while their input is idle,

@@ -18,6 +18,16 @@ dtflinclude_HEADERS += include/dtfl/base.h include/dtfl/dtfl.h \
 	include/dtfl/record.h
 dist_man_MANS += man/man3/dtfl_set_alloc_hooks.3 man/man3/dtfl_strerror.3 \
 	man/man3/dtfl_type.3 man/man3/dtfl_put_u64.3 man/man7/dtfl.7
+# dtfl_set_panic_hook is documented in dtfl_set_alloc_hooks(3); install
+# the name as a link so man(1) and the pages' cross-references find it.
+install-data-hook: install-base-man-links
+uninstall-hook: uninstall-base-man-links
+install-base-man-links:
+	cd $(DESTDIR)$(man3dir) && rm -f dtfl_set_panic_hook.3 && \
+	    $(LN_S) dtfl_set_alloc_hooks.3 dtfl_set_panic_hook.3
+uninstall-base-man-links:
+	rm -f $(DESTDIR)$(man3dir)/dtfl_set_panic_hook.3
+.PHONY: install-base-man-links uninstall-base-man-links
 EXTRA_DIST += src/base/exports.sym
 
 check_PROGRAMS += tests/unit/test_base
