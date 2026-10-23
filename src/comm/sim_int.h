@@ -92,9 +92,6 @@ uint64_t __dtfl_sim_clock(void *sim);
 /* Moves virtual time forward by `ns` (saturating). */
 void __dtfl_sim_advance(void *sim, uint64_t ns);
 
-/* The group's faults (never NULL; all zero when none were given). */
-const __dtfl_sim_faults *__dtfl_sim_faults_of(void *sim);
-
 /*
  * The faults a DTFL_COMM_SIM run of `cfg` injects; internal, for the
  * property tests (tests/pbt/pbt_sim.h).  Copied; NULL clears them.

@@ -118,8 +118,10 @@ if [ "$status" -ne 0 ]; then
 	exit 1
 fi
 if [ "$skipped" -ne 0 ]; then
+	# A qualification target that ran nothing must not look green to a
+	# caller that only reads the exit status (AGENTS.md section 4).
 	echo "check-sim: SKIP (no property ran; configure --with-hegel)"
-else
-	echo "check-sim: PASS"
+	exit 77
 fi
+echo "check-sim: PASS"
 exit 0

@@ -103,7 +103,9 @@ communication layer, join, count, notification order and an iterative
 bfs.
 
 It needs a build configured @option{--with-hegel}; without it every
-property reports SKIP.  Two variables size the run:
+property reports SKIP and @command{make check-sim} fails with status 77,
+so a qualification script cannot mistake a run that tested nothing for
+a pass.  Two variables size the run:
 
 @table @env
 @item DTFL_SIM_SEEDS

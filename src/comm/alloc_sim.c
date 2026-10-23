@@ -483,12 +483,6 @@ __dtfl_sim_of(__dtfl_allocator *a)
 	return a->ops == &sim_ops ? ((sim_alloc *)a)->shared : NULL;
 }
 
-const __dtfl_sim_faults *
-__dtfl_sim_faults_of(void *sim)
-{
-	return &((sim_shared *)sim)->faults;
-}
-
 uint64_t
 __dtfl_sim_rand(void *sim)
 {

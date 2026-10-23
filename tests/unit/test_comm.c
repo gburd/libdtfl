@@ -1122,6 +1122,63 @@ sim_run(uint64_t seed, const __dtfl_sim_faults *f, __dtfl_vec *trace,
 	return err[0] == '\0' ? rounds : 0;
 }
 
+/*
+ * The fault-free simulator's delivery trace for seeds 1 to 8, as
+ * (rounds, FNV-1a of the trace bytes), recorded from the simulator
+ * before fault injection existed (build at a71fbaf).  A run with no
+ * faults, or with every fault setting zero, must reproduce them: the
+ * fault code may not draw from the scheduler's generator unless a
+ * fault is enabled.
+ */
+static const struct { size_t rounds; uint64_t fnv; } sim_golden[8] = {
+	{ 10, UINT64_C(0x965235656208aeb3) }, { 13, UINT64_C(0xe565dd74551e50a3) },
+	{ 18, UINT64_C(0x8adf3ddf65626f33) }, { 9, UINT64_C(0xe2ede305273b8f73) },
+	{ 10, UINT64_C(0x37ad6077cf624433) }, { 12, UINT64_C(0xc5f2e1ed6061a5a3) },
+	{ 11, UINT64_C(0xe2438b79c017b8b3) }, { 9, UINT64_C(0xebba260c15267263) },
+};
+
+static uint64_t
+trace_fnv(const __dtfl_vec *tr)
+{
+	uint64_t h = UINT64_C(1469598103934665603);
+	size_t i;
+
+	for (i = 0; i < tr->len * tr->elem; i++) {
+		h ^= tr->data[i];
+		h *= UINT64_C(1099511628211);
+	}
+	return h;
+}
+
+DTFL_TEST(sim_fault_free_matches_golden)
+{
+	__dtfl_sim_faults none;
+	char err[256] = "";
+	uint64_t seed;
+	int pass;
+
+	(void)params; (void)data;
+	memset(&none, 0, sizeof none);
+	atomic_store(&test_msg_live, 0);
+	for (seed = 1; seed <= 8; seed++) {
+		for (pass = 0; pass < 2; pass++) {
+			__dtfl_vec tr;
+			size_t r;
+
+			__dtfl_vec_init(&tr, 2 * sizeof(uint64_t));
+			r = sim_run(seed, pass == 0 ? NULL : &none, &tr, err,
+			    sizeof err);
+			if (err[0] != '\0')
+				munit_errorf("%s", err);
+			assert_size(r, ==, sim_golden[seed - 1].rounds);
+			assert_uint64(trace_fnv(&tr), ==, sim_golden[seed - 1].fnv);
+			__dtfl_vec_free(&tr);
+		}
+	}
+	assert_long(atomic_load(&test_msg_live), ==, 0);
+	return MUNIT_OK;
+}
+
 DTFL_TEST(sim_deterministic_per_seed)
 {
 	__dtfl_vec t1, t2, t3;
@@ -1376,6 +1433,7 @@ static MunitTest tests[] = {
 	DTFL_T(process_unbuilt_builder_is_released),
 	DTFL_T(broadcaster_clones_all_but_first),
 	DTFL_T(splitmix64_reference_values),
+	DTFL_T(sim_fault_free_matches_golden),
 	DTFL_T(sim_deterministic_per_seed),
 	DTFL_T(sim_delay_keeps_fifo),
 	DTFL_T(sim_flush_and_drop),
