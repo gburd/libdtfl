@@ -13,6 +13,7 @@ zc_sources = \
 	src/comm/zc_push_pull.c \
 	src/comm/zc_tcp.c \
 	src/comm/transport_socket.c \
+	src/comm/zc_inline.c \
 	src/comm/zc_allocator.c \
 	src/comm/zc_initialize.c \
 	src/comm/zc_allocator_process.c

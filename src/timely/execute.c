@@ -16,6 +16,10 @@
  * does.  The simulation mode runs all workers on the calling thread,
  * round-robin by a seeded schedule, until every worker's function has
  * returned and every dataflow has completed.
+ *
+ * dtfl_execute_worker (ADR-0013) runs one worker of a multi-process
+ * execution on the calling thread, with its network I/O driven inline
+ * over a host transport (src/comm/zc_inline.c).
  */
 #include "timely/scope_int.h"
 #include "base/os_thread.h"
@@ -23,6 +27,7 @@
 #include "comm/sim_int.h"
 
 #include <stdio.h>
+#include <string.h>
 
 struct dtfl_guards {
 	size_t n;
@@ -39,6 +44,7 @@ typedef struct worker_start {
 	void *ctx;
 	size_t index;
 	const dtfl_config *cfg;	/* borrowed; for log subscriptions */
+	struct __dtfl_inline_net *net;	/* inline driver, or NULL */
 } worker_start;
 
 /*
@@ -52,6 +58,7 @@ run_worker(worker_start *ws)
 	dtfl_worker pub;
 	__dtfl_allocator *a = __dtfl_allocator_build(ws->builder);
 
+	__dtfl_inline_net_attach_built(ws->net);
 	pub.w = __dtfl_worker_new(a, ws->mode, true, NULL, NULL);
 	pub.standalone = false;
 	if (ws->cfg != NULL) {
@@ -143,6 +150,38 @@ dtfl_guards_join(dtfl_guards *g)
 	__dtfl_free(g->starts);
 	__dtfl_free(g);
 	return status;
+}
+
+int
+dtfl_execute_worker(const dtfl_config *cfg, size_t index, size_t peers,
+    const dtfl_transport *t, dtfl_worker_fn fn, void *ctx)
+{
+	struct __dtfl_inline_net *net;
+	worker_start ws;
+
+	if (fn == NULL || peers == 0 || index >= peers)
+		return __dtfl_err(DTFL_EINVAL,
+		    "dtfl_execute_worker: need fn and index < peers");
+	if (peers > 1 && (t == NULL || t->send == NULL || t->recv == NULL ||
+	    t->wait == NULL || t->wake == NULL))
+		return __dtfl_err(DTFL_EINVAL,
+		    "dtfl_execute_worker: transport needs send, recv, wait "
+		    "and wake");
+	memset(&ws, 0, sizeof ws);
+	ws.builder = __dtfl_inline_builder(cfg, index, peers, t, &net);
+	ws.mode = cfg != NULL ? dtfl_config_progress_mode(cfg) :
+	    DTFL_PROGRESS_DEMAND;
+	ws.fn = fn;
+	ws.ctx = ctx;
+	ws.index = index;
+	ws.cfg = cfg;
+	ws.net = net;
+	run_worker(&ws);
+	if (net != NULL) {
+		__dtfl_inline_net_finish(net);
+		__dtfl_inline_net_free(net);
+	}
+	return DTFL_OK;
 }
 
 /* execute_directly: one Thread worker on the calling thread. */

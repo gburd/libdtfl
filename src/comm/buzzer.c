@@ -23,6 +23,12 @@
  * (no futex, or a host that supplied mutex and condition hooks but no
  * wait/wake) a mutex and a condition guard a boolean token instead.
  * The choice is made per parker, at creation (ADR-0013).
+ *
+ * A third kind sleeps through callbacks (__dtfl_parker_new_with): the
+ * word machine stays, but the sleep is the callback's (a transport's
+ * wait) and an unpark of a PARKED parker calls the wake callback.  Its
+ * park returns after one sleep, even with no unpark: the sleep may end
+ * for bytes on the transport, which the worker reads when it steps.
  */
 #include "base/os_sync.h"
 #include "base/probes_int.h"
@@ -40,6 +46,20 @@ struct __dtfl_parker {
 	 */
 	atomic_size_t refs;
 	bool word;	/* the word path; else mu/cv/token.  Immutable. */
+	/* Callback sleep and wake (NULL: none); immutable. */
+	void (*sleep)(void *ctx, uint64_t timeout_ns);
+	void (*wake)(void *ctx);
+	void *cb_ctx;
+	/*
+	 * Detach protocol for the callbacks: an unparker increments
+	 * wakers, then calls wake only if detached is still false, then
+	 * decrements.  __dtfl_parker_detach sets detached, then waits for
+	 * wakers to reach zero.  All four accesses are seq_cst, so either
+	 * the detacher sees the increment and waits, or the unparker sees
+	 * detached and skips the call.
+	 */
+	atomic_bool detached;
+	atomic_uint wakers;
 	/*
 	 * The token on the word path.  unpark's release swap synchronizes
 	 * with park's acquire read of NOTIFIED, so whatever the unparking
@@ -133,6 +153,57 @@ word_park(__dtfl_parker *p, uint64_t timeout_ns)
 	(void)atomic_exchange_explicit(&p->state, EMPTY, memory_order_acquire);
 }
 
+__dtfl_parker *
+__dtfl_parker_new_with(void (*sleep)(void *ctx, uint64_t timeout_ns),
+    void (*wake)(void *ctx), void *ctx)
+{
+	__dtfl_parker *p = __dtfl_calloc(1, sizeof *p);
+
+	atomic_init(&p->refs, 1);
+	atomic_init(&p->state, EMPTY);
+	atomic_init(&p->detached, false);
+	atomic_init(&p->wakers, 0);
+	p->word = true;
+	p->sleep = sleep;
+	p->wake = wake;
+	p->cb_ctx = ctx;
+	return p;
+}
+
+void
+__dtfl_parker_detach(__dtfl_parker *p)
+{
+	atomic_store_explicit(&p->detached, true, memory_order_seq_cst);
+	while (atomic_load_explicit(&p->wakers, memory_order_seq_cst) != 0)
+		__dtfl_yield();
+}
+
+static void
+cb_unpark(__dtfl_parker *p)
+{
+	/* release: pairs with the acquire in cb_park, as word_unpark. */
+	if (atomic_exchange_explicit(&p->state, NOTIFIED,
+	    memory_order_release) != PARKED)
+		return;
+	atomic_fetch_add_explicit(&p->wakers, 1, memory_order_seq_cst);
+	if (!atomic_load_explicit(&p->detached, memory_order_seq_cst))
+		p->wake(p->cb_ctx);
+	atomic_fetch_sub_explicit(&p->wakers, 1, memory_order_seq_cst);
+}
+
+static void
+cb_park(__dtfl_parker *p, uint64_t timeout_ns)
+{
+	/* NOTIFIED -> EMPTY and return, or EMPTY -> PARKED. */
+	if (atomic_fetch_sub_explicit(&p->state, 1,
+	    memory_order_acquire) == NOTIFIED)
+		return;
+	if (!atomic_load_explicit(&p->detached, memory_order_seq_cst))
+		p->sleep(p->cb_ctx, timeout_ns);
+	/* PARKED or NOTIFIED -> EMPTY; a NOTIFIED here was this wakeup. */
+	(void)atomic_exchange_explicit(&p->state, EMPTY, memory_order_acquire);
+}
+
 static void
 cond_unpark(__dtfl_parker *p)
 {
@@ -168,7 +239,9 @@ void
 __dtfl_parker_unpark(__dtfl_parker *p)
 {
 	DTFL_PROBE1(unpark, (const void *)p);
-	if (p->word)
+	if (p->sleep != NULL)
+		cb_unpark(p);
+	else if (p->word)
 		word_unpark(p);
 	else
 		cond_unpark(p);
@@ -177,7 +250,9 @@ __dtfl_parker_unpark(__dtfl_parker *p)
 void
 __dtfl_parker_park(__dtfl_parker *p, uint64_t timeout_ns)
 {
-	if (p->word)
+	if (p->sleep != NULL)
+		cb_park(p, timeout_ns);
+	else if (p->word)
 		word_park(p, timeout_ns);
 	else
 		cond_park(p, timeout_ns);

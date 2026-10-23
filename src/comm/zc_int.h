@@ -428,4 +428,26 @@ void __dtfl_tcp_builders(__dtfl_allocator_builder **inner, size_t threads,
     __dtfl_allocator_builder **builders, __dtfl_mpsc ***net_promises,
     __dtfl_mpsc ***net_futures);
 
+/*
+ * Makes the allocator `b` builds call pump(ctx) at the start of every
+ * receive and the end of every release, on the worker's thread: the
+ * inline network driver (zc_inline.c).  For an unbuilt TcpBuilder only.
+ */
+void __dtfl_tcp_builder_set_pump(__dtfl_allocator_builder *b,
+    void (*pump)(void *), void *ctx);
+
+/* ------------------------------------------------------------------ */
+/* zc_inline.c: the inline network driver (ADR-0013)                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The far end of one worker's TcpAllocator queues, driven from the
+ * worker's own step over a transport, for a process that hosts exactly
+ * one worker.  Built by __dtfl_inline_builder (init_int.h); owned by the
+ * worker's thread.  The allocator calls __dtfl_inline_pump every
+ * receive and release.
+ */
+typedef struct __dtfl_inline_net __dtfl_inline_net;
+void __dtfl_inline_pump(void *n);
+
 #endif /* DTFL_ZC_INT_H */

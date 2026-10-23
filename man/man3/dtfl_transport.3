@@ -46,7 +46,9 @@ moves the bytes and never looks at them.
 A host supplies its own transport to run workers over the
 interprocess channel it already has, such as PostgreSQL's
 .Ql shm_mq ,
-a ring in shared memory, or a runtime's asynchronous sockets.
+a ring in shared memory, or a runtime's asynchronous sockets, and
+passes it to
+.Xr dtfl_execute_worker 3 .
 .Bl -tag -width "shutdown"
 .It Fa send
 Takes up to
@@ -231,6 +233,7 @@ The self-pipe could not be created or a descriptor's flags set.
 .El
 .Sh SEE ALSO
 .Xr dtfl_config 3 ,
+.Xr dtfl_execute_worker 3 ,
 .Xr dtfl_embedding 7
 .Sh HISTORY
 Timely's network threads are generic over a

@@ -43,6 +43,29 @@ int __dtfl_comm_initialize(const dtfl_config *cfg,
 void __dtfl_comms_guard_join(__dtfl_comms_guard *guard);
 
 /*
+ * dtfl_execute_worker's communication (ADR-0013): a builder for worker
+ * `index` of `peers`, one per process, whose network I/O is driven
+ * inline over `t` (borrowed).  *net is the driver; after building the
+ * allocator on this thread call __dtfl_inline_net_attach_built(*net),
+ * and after destroying it __dtfl_inline_net_finish and _free.  With
+ * peers == 1 the builder is a Thread builder and *net is NULL.
+ */
+struct __dtfl_inline_net;
+__dtfl_allocator_builder *__dtfl_inline_builder(const dtfl_config *cfg,
+    size_t index, size_t peers, const dtfl_transport *t,
+    struct __dtfl_inline_net **net);
+void __dtfl_inline_net_attach_built(struct __dtfl_inline_net *net);
+/*
+ * After the allocator is destroyed: writes what is left and an end of
+ * stream to every peer, then reads every peer to its end of stream.
+ * Panics like recv_loop on a peer that closes early or sends after its
+ * end.
+ */
+void __dtfl_inline_net_finish(struct __dtfl_inline_net *n);
+/* Frees the driver; no wake reaches the transport after this. */
+void __dtfl_inline_net_free(struct __dtfl_inline_net *n);
+
+/*
  * create_sockets (networking.rs): build the full TCP mesh among
  * `processes` processes.  On success fills *fds_out, a newly allocated
  * array of `processes` fds with my_index == -1 and a connected socket

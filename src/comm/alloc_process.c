@@ -310,6 +310,13 @@ process_builder_destroy(__dtfl_allocator_builder *b)
 void
 __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders)
 {
+	__dtfl_process_builders_parked(peers, NULL, builders);
+}
+
+void
+__dtfl_process_builders_parked(size_t peers, __dtfl_parker *const *parkers,
+    __dtfl_allocator_builder **builders)
+{
 	process_shared *s = __dtfl_alloc(sizeof *s);
 	size_t i;
 
@@ -324,7 +331,8 @@ __dtfl_process_builders(size_t peers, __dtfl_allocator_builder **builders)
 		process_builder *pb = __dtfl_alloc(sizeof *pb);
 
 		s->counters[i] = __dtfl_mpsc_new(sizeof(size_t), NULL, NULL);
-		s->buzzers[i] = __dtfl_parker_new();
+		s->buzzers[i] = parkers != NULL ?
+		    __dtfl_parker_retain(parkers[i]) : __dtfl_parker_new();
 		pb->base.build = process_build;
 		pb->base.destroy = process_builder_destroy;
 		pb->shared = s;
