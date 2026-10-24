@@ -1,0 +1,149 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 23, 2026
+.Dt DTFL_SET_ALLOC_HOOKS 3
+.Os
+.Sh NAME
+.Nm dtfl_set_alloc_hooks ,
+.Nm dtfl_set_panic_hook
+.Nd install libdtfl allocation and panic hooks
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft int
+.Fn dtfl_set_alloc_hooks "const dtfl_alloc_hooks *hooks"
+.Ft void
+.Fn dtfl_set_panic_hook "dtfl_panic_fn fn" "void *ctx"
+.Sh DESCRIPTION
+All memory that libdtfl allocates comes from the allocation hooks.
+.Fn dtfl_set_alloc_hooks
+installs a
+.Vt dtfl_alloc_hooks
+structure whose
+.Fa malloc_fn ,
+.Fa realloc_fn
+and
+.Fa free_fn
+members are called with the structure's
+.Fa ctx .
+It must be called before libdtfl allocates anything, and at most once.
+Passing
+.Dv NULL
+restores the libc allocator, again only before first use.
+The hooks must return memory aligned for libdtfl's own objects:
+the alignment of
+.Vt uint64_t ,
+.Vt double ,
+pointers and C11 atomics of those, which is 8 bytes on common 64-bit
+platforms.
+.Xr malloc 3
+and PostgreSQL's
+.Fn palloc
+both qualify.
+Record and difference values are stored unaligned, at arbitrary offsets,
+whatever the allocator returns; callbacks read them with
+.Xr memcpy 3 .
+.Pp
+libdtfl never calls
+.Fa realloc_fn
+or
+.Fa free_fn
+with a
+.Dv NULL
+pointer: an empty buffer grows through
+.Fa malloc_fn ,
+and freeing
+.Dv NULL
+is skipped.
+So an allocator whose reallocate and free functions need a live pointer,
+such as PostgreSQL's
+.Fn repalloc
+and
+.Fn pfree ,
+can be hooked in directly.
+A size of zero is passed as one.
+Single requests can be large: the columns of a big arrangement grow
+past a gigabyte, so a host allocator with a size cap (PostgreSQL's
+.Fn palloc
+stops at 1 GB) must use its unlimited form
+.Pq Fn MemoryContextAllocHuge , Fn repalloc_huge .
+.Pp
+The panic hook is called when a caller violates a library contract,
+for example by using a capability for the wrong output, and when an
+allocation hook returns
+.Dv NULL .
+The hook receives a message and
+.Fa ctx ,
+and must not return: it may abort, exit, or
+.Xr longjmp 3
+out.
+If it returns, libdtfl calls
+.Xr abort 3 .
+The default hook prints the message to standard error and aborts.
+.Pp
+A hook that
+.Xr longjmp 3 Ns s
+out leaves the worker that panicked in an unknown state: a structure
+may be half updated, a reference count not yet dropped, or a mutex held.
+Nothing reached from that worker may be used again, including
+.Fn dtfl_worker_step
+and
+.Fn dtfl_worker_free .
+Discard it by releasing its memory wholesale (for example by resetting
+the host memory context the allocation hooks draw from), and build a
+new worker if the computation is still needed.
+The hooks are set once per process, so whatever
+.Fa ctx
+names must stay valid for the next worker: reset a context rather than
+deleting it, or have
+.Fa ctx
+point at a variable the host updates.
+With
+.Fn dtfl_execute ,
+the whole execution is lost, since its workers share state.
+The process-wide hooks remain installed and valid.
+Rust is the same: a panicking timely worker is not resumed.
+.Fn dtfl_set_panic_hook
+with a
+.Dv NULL
+.Fa fn
+restores the default.
+.Sh RETURN VALUES
+.Fn dtfl_set_alloc_hooks
+returns 0 on success, or one of the errors below.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void *my_malloc(size_t n, void *ctx) { return malloc(n); }
+static void *my_realloc(void *p, size_t n, void *ctx) { return realloc(p, n); }
+static void my_free(void *p, void *ctx) { free(p); }
+
+dtfl_alloc_hooks h = { my_malloc, my_realloc, my_free, NULL };
+if (dtfl_set_alloc_hooks(&h) != 0)
+	errx(1, "%s", dtfl_last_error_detail());
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ESTATE
+.It Bq Er DTFL_ESTATE
+The library has already allocated memory.
+.It Bq Er DTFL_EINVAL
+A hook member is
+.Dv NULL .
+.El
+.Sh SEE ALSO
+.Xr dtfl_set_log_hook 3 ,
+.Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl_strerror 3 ,
+.Xr dtfl 7 ,
+.Xr dtfl_embedding 7
+.Sh HISTORY
+Rust programs choose a global allocator at link time and abort on
+allocation failure; these hooks are the C equivalent of both.
+.Sh THREAD SAFETY
+Both functions must be called before the first
+.Fn dtfl_execute .
+They are two of the five process-wide host hooks; the others install a
+diagnostic log sink, thread-spawn callbacks and synchronization
+primitives.
+See
+.Xr dtfl_embedding 7 .

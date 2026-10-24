@@ -2,174 +2,176 @@
 # status: todo | wip | done | excluded | deferred | subsumed.  A row is done only when its target
 # exists, carries the provenance header, and every test-ledger row it owns passes.
 repo	upstream_path	lines	target	phase	status	note
-timely-dataflow	bytes/src/lib.rs	268	src/base/bytes.c	P1	todo	divergence: adopts the post-pin aliasing hardening (#821), ADR D12
-timely-dataflow	communication/examples/comm_hello.rs	65	examples/comm/comm_hello.c	P2	todo	
-timely-dataflow	communication/examples/lgalloc.rs	131	examples/comm/refill.c	P2	todo	lgalloc is a Rust crate; demonstrate the refill hook with mmap(2)
-timely-dataflow	communication/examples/spill_stress.rs	238	examples/comm/spill_stress.c	P12	todo	
-timely-dataflow	communication/src/allocator/canary.rs	22	src/comm/alloc_canary.c	P2	todo	
-timely-dataflow	communication/src/allocator/counters.rs	145	src/comm/alloc_counters.c	P2	todo	
-timely-dataflow	communication/src/allocator/generic.rs	150	src/comm/alloc_generic.c	P2	todo	
-timely-dataflow	communication/src/allocator/mod.rs	235	src/comm/allocator.c	P2	todo	
-timely-dataflow	communication/src/allocator/process.rs	236	src/comm/alloc_process.c	P2	todo	
-timely-dataflow	communication/src/allocator/thread.rs	106	src/comm/alloc_thread.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/allocator.rs	333	src/comm/zc_allocator.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/allocator_process.rs	266	src/comm/zc_allocator_process.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/bytes_exchange.rs	236	src/comm/zc_bytes_exchange.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/bytes_slab.rs	128	src/comm/zc_bytes_slab.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/initialize.rs	135	src/comm/zc_initialize.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/mod.rs	18	src/comm/comm_int.h	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/push_pull.rs	140	src/comm/zc_push_pull.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/spill.rs	287	src/comm/spill.c	P2	todo	the allocators take Option<SpillPolicyFn> (allocator/mod.rs:120-164)
-timely-dataflow	communication/src/allocator/zero_copy/stream.rs	47	src/comm/zc_stream.c	P2	todo	
-timely-dataflow	communication/src/allocator/zero_copy/tcp.rs	225	src/comm/zc_tcp.c	P2	todo	
-timely-dataflow	communication/src/buzzer.rs	19	src/comm/buzzer.c	P2	todo	
-timely-dataflow	communication/src/initialize.rs	448	src/comm/initialize.c	P2	todo	flags parsed without getopt(3) global state (D7)
-timely-dataflow	communication/src/lib.rs	190	src/comm/comm_int.h	P2	todo	Push/Pull/Bytesable become internal vtables
-timely-dataflow	communication/src/logging.rs	59	src/comm/comm_log.c	P2	todo	
-timely-dataflow	communication/src/networking.rs	172	src/comm/networking.c	P2	todo	
-timely-dataflow	container/src/lib.rs	294	src/base/batch.c	P1	todo	the record batch is the only container (D2)
-timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	todo	
+timely-dataflow	bytes/src/lib.rs	268	src/base/bytes.c	P1	done	divergence: adopts the post-pin aliasing hardening (#821), ADR D12
+timely-dataflow	communication/examples/comm_hello.rs	65	examples/comm/comm_hello.c	P2	excluded	drives the raw communication allocator directly (allocate a typed channel, send/recv, count down peers); the port keeps the allocator internal and reaches communication only through the dataflow worker (PLAN D7/D9, AGENTS 5.2).  A public raw-allocator surface is a deliberate non-goal; the allocators are exercised through the worker by test_comm and every execution-mode test.  See ADR-0012 (2026-10-15)
+timely-dataflow	communication/examples/lgalloc.rs	131	examples/comm/refill.c	P2	excluded	demonstrates lgalloc's refill hook (a Rust crate) over the raw allocator; same exclusion as comm_hello -- the raw allocator is internal (PLAN D7/D9).  The memory refill hook itself is covered by dtfl_set_alloc_hooks.  See ADR-0012 (2026-10-15)
+timely-dataflow	communication/examples/spill_stress.rs	238	examples/comm/spill_stress.c	P12	excluded	excluded with comm_hello and lgalloc (PLAN D7/D9, ADR-0012): it drives the raw communication layer directly, MergeQueue::new_pair, BytesPush/BytesPull and the spill policies from timely_communication::allocator::zero_copy, with no worker; libdtfl keeps that layer internal and reaches communication only through dtfl_execute.  The MergeQueue spill round trip is covered by tests/unit/test_spill.c (merge_queue_spill_roundtrip_mock) and test_wire.c (merge_queue_*)
+timely-dataflow	communication/src/allocator/canary.rs	22	src/comm/alloc_canary.c	P2	done	reports from an explicit drop call
+timely-dataflow	communication/src/allocator/counters.rs	145	src/comm/alloc_counters.c	P2	done	
+timely-dataflow	communication/src/allocator/generic.rs	150	src/comm/alloc_generic.c	P2	done	the enums become the allocator and builder vtables
+timely-dataflow	communication/src/allocator/mod.rs	235	src/comm/allocator.c	P2	done	the Process enum dispatch is the vtable; the spill hook reaches ProcessBinary through __dtfl_process_binary_builders, refill stays simplified
+timely-dataflow	communication/src/allocator/process.rs	236	src/comm/alloc_process.c	P2	done	no build-time Buzzer exchange: parkers are created with the builders
+timely-dataflow	communication/src/allocator/thread.rs	106	src/comm/alloc_thread.c	P2	done	
+timely-dataflow	communication/src/allocator/zero_copy/allocator.rs	333	src/comm/zc_allocator.c	P2	done	TcpAllocator wrapping the typed Process allocator; broadcast uses the trait default (Broadcaster), not the override
+timely-dataflow	communication/src/allocator/zero_copy/allocator_process.rs	266	src/comm/zc_allocator_process.c	P2	done	a short frame in receive() panics where upstream prints and spins
+timely-dataflow	communication/src/allocator/zero_copy/bytes_exchange.rs	236	src/comm/zc_bytes_exchange.c	P2	done	
+timely-dataflow	communication/src/allocator/zero_copy/bytes_slab.rs	128	src/comm/zc_bytes_slab.c	P2	done	BytesRefill not ported: buffers from __dtfl_bytes_new, unbounded stash (upstream default Hooks)
+timely-dataflow	communication/src/allocator/zero_copy/initialize.rs	135	src/comm/zc_initialize.c	P2	done	create_sockets mesh plus initialize_networking_from_sockets (each network thread asks Hooks.log_fn for its logger) and the CommsGuard that joins the network threads
+timely-dataflow	communication/src/allocator/zero_copy/mod.rs	18	src/comm/comm_int.h	P2	done	module glue; the TcpBuilder/send/recv declarations live in zc_int.h
+timely-dataflow	communication/src/allocator/zero_copy/push_pull.rs	140	src/comm/zc_push_pull.c	P2	done	PullerInner wrapped in counters::Puller for the Tcp allocator
+timely-dataflow	communication/src/allocator/zero_copy/spill.rs	287	src/comm/spill.c	P2	done	SpillPolicyFn is __dtfl_spill_fn, built by dtfl_config_set_spill_file and passed into every MergeQueue pair of ProcessBinary, the TcpBuilder recv queues and the send-loop queues
+timely-dataflow	communication/src/allocator/zero_copy/stream.rs	47	src/comm/transport_socket.c	P2	done	the Stream trait is the public dtfl_transport vtable (ADR-0013); transport_socket.c implements it for sockets, blocking for the cluster threads and non-blocking under poll(2) for dtfl_transport_socket
+timely-dataflow	communication/src/allocator/zero_copy/tcp.rs	225	src/comm/zc_tcp.c	P2	done	send_loop and recv_loop, with the pin's StateEvent/MessageEvent logging through the per-thread logger
+timely-dataflow	communication/src/buzzer.rs	19	src/comm/buzzer.c	P2	done	Buzzer is a reference to an explicit per-worker parker (futex on Linux)
+timely-dataflow	communication/src/initialize.rs	448	src/comm/initialize.c	P2	done	flags parsed without getopt(3) global state (D7), in src/comm/config.c; try_build has Thread, Process, ProcessBinary, Sim and Cluster (the TCP mesh)
+timely-dataflow	communication/src/lib.rs	190	src/comm/comm_int.h	P2	done	Push/Pull/Bytesable become internal vtables
+timely-dataflow	communication/src/logging.rs	59	src/comm/comm_log.c	P2	done	the CommunicationEvent encoder (Message/State/Setup) for the "communication" stream, byte-faithful to the wire format (D9) and round-trip tested through the subscriber API (dtfl/log.h).  Emitted from the network threads as at the pin: each send/recv thread gets its own logger from Hooks.log_fn (__dtfl_comm_log_hook, built from a "communication" dtfl_config_log_subscribe) and logs StateEvent start/stop and a MessageEvent per header, including the final zero-length header.  Setup is defined but not logged at the pin.  Test: tcp cluster_two_process_comm_logging
+timely-dataflow	communication/src/networking.rs	172	src/comm/networking.c	P2	done	MessageHeader; the socket setup (create_sockets, start/await_connections) is ported in src/comm/zc_initialize.c
+timely-dataflow	container/src/lib.rs	294	src/base/batch.c	P1	done	the record batch is the only container (D2)
+timely-dataflow	logging/src/lib.rs	310	src/base/log_registry.c	P2	done	
 timely-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	todo	manual chapter rewritten for C
-timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	todo	
+timely-dataflow	mdbook/src/SUMMARY.md	40	doc/libdtfl.texi	P0	done	manual skeleton and menu
+timely-dataflow	mdbook/src/chapter_0/chapter_0.md	3	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_0.md	43	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_1.md	162	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_2.md	21	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_0/chapter_0_3.md	23	doc/timely/chapter_0.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1.md	27	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_1.md	150	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_2.md	78	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_1/chapter_1_3.md	90	doc/timely/chapter_1.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2.md	27	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_1.md	42	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_2.md	72	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_3.md	191	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_4.md	282	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_2/chapter_2_5.md	414	doc/timely/chapter_2.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3.md	36	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_1.md	19	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_2.md	43	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_3.md	70	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_3/chapter_3_4.md	7	doc/timely/chapter_3.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_1.md	131	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_2.md	122	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_3.md	112	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_4.md	215	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_4/chapter_4_5.md	167	doc/timely/chapter_4.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5.md	1	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_1.md	202	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_2.md	160	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_3.md	34	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/chapter_5/chapter_5_4.md	378	doc/timely/chapter_5.texi	P4	done	manual chapter rewritten for C
+timely-dataflow	mdbook/src/introduction.md	7	doc/timely/introduction.texi	P4	done	
 timely-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-timely-dataflow	timely/examples/barrier.rs	30	examples/timely/barrier.c	P4	todo	
-timely-dataflow	timely/examples/bfs.rs	139	examples/timely/bfs.c	P4	todo	
-timely-dataflow	timely/examples/capture_recv.rs	27	examples/timely/capture_recv.c	P4	todo	
-timely-dataflow	timely/examples/capture_send.rs	18	examples/timely/capture_send.c	P4	todo	
+timely-dataflow	timely/examples/barrier.rs	30	examples/timely/barrier.c	P4	done	
+timely-dataflow	timely/examples/bfs.rs	139	examples/timely/bfs.c	P4	done	fixed small graph for a checkable reachable set; single worker
+timely-dataflow	timely/examples/capture_recv.rs	27	examples/timely/capture_recv.c	P4	done	listens on 127.0.0.1:(8000+i) per source worker, accepts one connection each, replays all into one dataflow via dtfl_event_reader_replay; runs end to end against capture_send (0..9 replayed).  Binds loopback (D12)
+timely-dataflow	timely/examples/capture_send.rs	18	examples/timely/capture_send.c	P4	done	connects to 127.0.0.1:(8000+index), streams 0..10 captured into a dtfl_event_writer over the socket; the transport (dtfl_event_writer_*/dtfl_event_reader_replay) is implemented in event.c/replay.c and covered by the binary round trip in tests/unit/test_capture.c
 timely-dataflow	timely/examples/columnar.rs	250	-	-	subsumed	D2: records are byte strings in refcounted batches; custom containers and Rc sharing have no C counterpart
-timely-dataflow	timely/examples/distinct.rs	56	examples/timely/distinct.c	P4	todo	
-timely-dataflow	timely/examples/event_driven.rs	54	examples/timely/event_driven.c	P4	todo	
-timely-dataflow	timely/examples/exchange.rs	45	examples/timely/exchange.c	P4	todo	
-timely-dataflow	timely/examples/flow_controlled.rs	33	examples/timely/flow_controlled.c	P4	todo	
-timely-dataflow	timely/examples/hashjoin.rs	106	examples/timely/hashjoin.c	P4	todo	
-timely-dataflow	timely/examples/hello.rs	32	examples/timely/hello.c	P4	todo	
-timely-dataflow	timely/examples/logging-recv.rs	30	examples/timely/logging-recv.c	P4	todo	reads the BatchLogger stream (PLAN D9); upstream expects a TimelySetup element nothing produces
-timely-dataflow	timely/examples/logging-send.rs	140	examples/timely/logging-send.c	P4	todo	
-timely-dataflow	timely/examples/logging_replay.rs	81	examples/timely/logging_replay.c	P4	todo	
-timely-dataflow	timely/examples/loopdemo.rs	124	examples/timely/loopdemo.c	P4	todo	
-timely-dataflow	timely/examples/openloop.rs	123	examples/timely/openloop.c	P4	todo	
-timely-dataflow	timely/examples/pagerank.rs	218	examples/timely/pagerank.c	P4	todo	
-timely-dataflow	timely/examples/pingpong.rs	24	examples/timely/pingpong.c	P4	todo	
+timely-dataflow	timely/examples/distinct.rs	56	examples/timely/distinct.c	P4	done	
+timely-dataflow	timely/examples/event_driven.rs	54	examples/timely/event_driven.c	P4	done	bounded round cap
+timely-dataflow	timely/examples/exchange.rs	45	examples/timely/exchange.c	P4	done	deterministic completion line in place of the non-deterministic timing/rate
+timely-dataflow	timely/examples/flow_controlled.rs	33	examples/timely/flow_controlled.c	P4	done	
+timely-dataflow	timely/examples/hashjoin.rs	106	examples/timely/hashjoin.c	P4	done	fixed relations for a checkable join count; random mode kept
+timely-dataflow	timely/examples/hello.rs	32	examples/timely/hello.c	P4	done	
+timely-dataflow	timely/examples/logging-recv.rs	30	examples/timely/logging-recv.c	P4	excluded	replays a stream of (Duration, TimelySetup, TimelyEvent) log records as dataflow data; the port's logging is a structured subscriber API (dtfl/log.h -> dtfl_log_batch), not logging-as-data, so there is no public TimelyEvent record type to flow through a dataflow.  The log streams are exercised by logging-send and the diagnostics console.  See ADR-0012 (2026-10-15)
+timely-dataflow	timely/examples/logging-send.rs	140	examples/timely/logging-send.c	P4	done	registers a "timely" log subscriber (dtfl_worker_log_subscribe), runs input -> consolidate -> probe, re-registers the subscriber so the first dataflow's events reach LOG1 and the second's reach LOG2, and prints the deterministic Operates/Channels structure events.  Divergence: the public subscriber API exposes the timely/differential/communication streams, not timely/progress, timely/reachability, timely/summary or a user stream, so those and the non-deterministic throughput line are dropped; single worker
+timely-dataflow	timely/examples/logging_replay.rs	81	examples/timely/logging_replay.c	P4	excluded	same as logging-recv: replay needs the logged TimelyEvent fed into an EventLink as dataflow records, but logging is a subscriber API with no public TimelyEvent record type.  Covered instead by logging-send plus the diagnostics console.  See ADR-0012 (2026-10-15)
+timely-dataflow	timely/examples/loopdemo.rs	124	examples/timely/loopdemo.c	P4	done	wall-clock bounded by rate*duration_s
+timely-dataflow	timely/examples/openloop.rs	123	examples/timely/openloop.c	P4	done	wall-clock bounded by rate*duration_s
+timely-dataflow	timely/examples/pagerank.rs	218	examples/timely/pagerank.c	P4	done	fixed graph for checkable iteration stats; single worker; binary_notify in place of binary_frontier
+timely-dataflow	timely/examples/pingpong.rs	24	examples/timely/pingpong.c	P4	done	
 timely-dataflow	timely/examples/rc.rs	32	-	-	subsumed	D2: records are byte strings in refcounted batches; custom containers and Rc sharing have no C counterpart
-timely-dataflow	timely/examples/sequence.rs	24	examples/timely/sequence.c	P4	todo	
-timely-dataflow	timely/examples/simple.rs	8	examples/timely/simple.c	P4	todo	
-timely-dataflow	timely/examples/spill_compare.rs	288	examples/timely/spill_compare.c	P12	todo	
-timely-dataflow	timely/examples/threadless.rs	34	examples/timely/threadless.c	P4	todo	
-timely-dataflow	timely/examples/unionfind.rs	95	examples/timely/unionfind.c	P4	todo	
-timely-dataflow	timely/examples/unordered_input.rs	18	examples/timely/unordered_input.c	P4	todo	
-timely-dataflow	timely/examples/wordcount.rs	67	examples/timely/wordcount.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/mod.rs	182	src/timely/message.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pact.rs	228	src/timely/pact.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pullers/counter.rs	74	src/timely/pull_counter.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pullers/mod.rs	2	src/timely/timely_int.h	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pushers/counter.rs	45	src/timely/push_counter.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pushers/exchange.rs	149	src/timely/push_exchange.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pushers/mod.rs	13	src/timely/timely_int.h	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pushers/progress.rs	71	src/timely/push_progress.c	P4	todo	
-timely-dataflow	timely/src/dataflow/channels/pushers/tee.rs	151	src/timely/push_tee.c	P4	todo	
-timely-dataflow	timely/src/dataflow/mod.rs	27	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/capability.rs	546	src/timely/capability.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/capture.rs	151	src/timely/capture.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	307	src/timely/event.c	P3	todo	BatchLogger needs Event; bincode framing (D9)
-timely-dataflow	timely/src/dataflow/operators/core/capture/extract.rs	83	src/timely/extract.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/mod.rs	97	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/timely/replay.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/concat.rs	90	src/timely/ops_concat.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/exchange.rs	54	src/timely/ops_exchange.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_filter.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/input.rs	538	src/timely/ops_input.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/inspect.rs	156	src/timely/ops_inspect.c	P4	todo	inspect_time, inspect_batch, inspect_container are public API at the pin; removed upstream later (#817)
-timely-dataflow	timely/src/dataflow/operators/core/map.rs	172	src/timely/ops_map.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/mod.rs	35	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/ok_err.rs	85	src/timely/ops_ok_err.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/partition.rs	87	src/timely/ops_partition.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/probe.rs	236	src/timely/ops_probe.c	P4	todo	
+timely-dataflow	timely/examples/sequence.rs	24	examples/timely/sequence.c	P4	done	round-capped with a short per-round sleep so the Duration frontier releases pushes; drops the catchup dataflow before join
+timely-dataflow	timely/examples/simple.rs	8	examples/timely/simple.c	P4	done	
+timely-dataflow	timely/examples/spill_compare.rs	288	examples/timely/spill_compare.c	P12	done	the Hooks::spill factory is dtfl_config_set_spill_file (dir, threshold, head reserve), a built-in port of the example's file_spill module (src/comm/spill_file.c) installed on every ProcessBinary and Cluster MergeQueue; a user BytesSpill callback is not exposed.  Defaults shrunk to 64 MB / 4 MB threshold / 2 MB reserve for the smoke test (--total-gb still accepted); stdout keeps the configuration and a per-worker received count and checksum, progress, production/drain and RSS samples go to stderr, and RSS comes from /proc/self/statm or getrusage instead of ps
+timely-dataflow	timely/examples/threadless.rs	34	examples/timely/threadless.c	P4	done	
+timely-dataflow	timely/examples/unionfind.rs	95	examples/timely/unionfind.c	P4	done	fixed small graph for a checkable spanning-forest count; random mode kept
+timely-dataflow	timely/examples/unordered_input.rs	18	examples/timely/unordered_input.c	P4	done	
+timely-dataflow	timely/examples/wordcount.rs	67	examples/timely/wordcount.c	P4	done	unary_notify in place of unary_frontier
+timely-dataflow	timely/src/dataflow/channels/mod.rs	182	src/timely/message.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pact.rs	228	src/timely/pact.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pullers/counter.rs	74	src/timely/pull_counter.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pullers/mod.rs	2	src/timely/timely_int.h	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pushers/counter.rs	45	src/timely/push_counter.c	P4	done	divergence: forwards a flush when data was pushed since the last one, not only while produced is undrained (timely #824), ADR D12
+timely-dataflow	timely/src/dataflow/channels/pushers/exchange.rs	149	src/timely/push_exchange.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pushers/mod.rs	13	src/timely/timely_int.h	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pushers/progress.rs	71	src/timely/push_progress.c	P4	done	
+timely-dataflow	timely/src/dataflow/channels/pushers/tee.rs	151	src/timely/push_tee.c	P4	done	
+timely-dataflow	timely/src/dataflow/mod.rs	27	include/dtfl/timely.h	P4	done	re-export umbrella: Stream/StreamVec (dtfl_stream), Scope (dtfl_scope), InputHandle/InputHandleVec (dtfl_input), ProbeHandle (dtfl_probe) all declared/exported; OperatorSlot is the C builder's reserve/install, subsumed
+timely-dataflow	timely/src/dataflow/operators/capability.rs	546	src/timely/capability.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/capture.rs	151	src/timely/capture.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/event.rs	307	src/timely/event.c	P3	done	BatchLogger needs Event; bincode framing (D9)
+timely-dataflow	timely/src/dataflow/operators/core/capture/extract.rs	83	src/timely/extract.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/mod.rs	97	include/dtfl/timely.h	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/capture/replay.rs	131	src/timely/replay.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/concat.rs	90	src/timely/ops_concat.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/enterleave.rs	311	src/timely/ops_enterleave.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/exchange.rs	54	src/timely/ops_exchange.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/feedback.rs	140	src/timely/ops_feedback.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/filter.rs	39	src/timely/ops_filter.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/input.rs	538	src/timely/ops_input.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/inspect.rs	156	src/timely/ops_inspect.c	P4	done	inspect_time, inspect_batch, inspect_container are public API at the pin; removed upstream later (#817)
+timely-dataflow	timely/src/dataflow/operators/core/map.rs	172	src/timely/ops_map.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/mod.rs	35	include/dtfl/timely.h	P4	done	re-export umbrella: every core operator trait (Capture/Concat/Enter/Leave/Exchange/Feedback/Filter/Input/Inspect/Map/OkErr/Partition/Probe/ToStream/Reclock/UnorderedInput) reaches an exported dtfl_* function
+timely-dataflow	timely/src/dataflow/operators/core/ok_err.rs	85	src/timely/ops_ok_err.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/partition.rs	87	src/timely/ops_partition.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/probe.rs	236	src/timely/ops_probe.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/core/rc.rs	80	-	-	subsumed	D2: records are byte strings in refcounted batches; fan-out never copies
-timely-dataflow	timely/src/dataflow/operators/core/reclock.rs	83	src/timely/ops_reclock.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/core/to_stream.rs	98	src/timely/ops_to_stream.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/core/unordered_input.rs	168	src/timely/ops_unordered_input.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/generic/builder_raw.rs	250	src/timely/builder_raw.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	359	src/timely/builder.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/core/reclock.rs	83	src/timely/ops_reclock.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/core/to_stream.rs	98	src/timely/ops_to_stream.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/core/unordered_input.rs	168	src/timely/ops_unordered_input.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/generic/builder_raw.rs	250	src/timely/builder_raw.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/generic/builder_rc.rs	359	src/timely/builder.c	P4	done	
 timely-dataflow	timely/src/dataflow/operators/generic/builder_ref.rs	5	-	-	excluded	TODO stub upstream, not compiled
-timely-dataflow	timely/src/dataflow/operators/generic/handles.rs	194	src/timely/handles.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/generic/mod.rs	15	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/generic/notificator.rs	442	src/timely/notificator.c	P4	todo	public API at the pin; removed upstream later (#819)
-timely-dataflow	timely/src/dataflow/operators/generic/operator.rs	588	src/timely/operator.c	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/generic/operator_info.rs	23	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/mod.rs	43	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/aggregate.rs	105	src/timely/ops_aggregate.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/mod.rs	18	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/vec/aggregation/state_machine.rs	110	src/timely/ops_state_machine.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/branch.rs	128	src/timely/ops_branch.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/broadcast.rs	36	src/timely/ops_broadcast.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/count.rs	70	src/timely/ops_count.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/delay.rs	150	src/timely/ops_delay.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/filter.rs	38	src/timely/ops_filter.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	todo	public API at the pin; removed upstream later (#818)
-timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	todo	vec and core variants collapse into one (D2)
-timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	todo	worker.rs and scope.rs import each other
-timely-dataflow	timely/src/dataflow/stream.rs	134	src/timely/stream.c	P4	todo	
-timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	todo	
-timely-dataflow	timely/src/lib.rs	177	include/dtfl/timely.h	P3	todo	
-timely-dataflow	timely/src/logging.rs	269	src/timely/timely_log.c	P3	todo	subgraph.rs needs the logger types
-timely-dataflow	timely/src/order.rs	263	src/progress/time.c	P1	todo	coordinate-vector times (D3)
-timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P3	todo	
-timely-dataflow	timely/src/progress/change_batch.rs	321	src/progress/change_batch.c	P1	todo	
-timely-dataflow	timely/src/progress/frontier.rs	869	src/progress/antichain.c	P1	todo	
-timely-dataflow	timely/src/progress/mod.rs	106	src/progress/progress_int.h	P3	todo	Location, Source, Target
-timely-dataflow	timely/src/progress/operate.rs	206	src/progress/operate.c	P3	todo	
-timely-dataflow	timely/src/progress/reachability.rs	1116	src/progress/reachability.c	P3	todo	
-timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	todo	
-timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	todo	coordinate-vector times (D3)
-timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	todo	
-timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/timely_int.h	P3	todo	
-timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	todo	
-timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	todo	
-timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	todo	
-timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	todo	
-timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	todo	
-timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	todo	
-timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	todo	
+timely-dataflow	timely/src/dataflow/operators/generic/handles.rs	194	src/timely/handles.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/generic/mod.rs	15	include/dtfl/timely.h	P4	done	re-export umbrella: Operator/source (dtfl_op_builder_*, dtfl_stream_unary_notify), Notificator/FrontierNotificator (dtfl_notificator_*), OperatorInfo, and the handle types (InputHandleCore/OutputBuilder/Session -> dtfl_op_input_*/dtfl_op_session) all reachable
+timely-dataflow	timely/src/dataflow/operators/generic/notificator.rs	442	src/timely/notificator.c	P4	done	public API at the pin; removed upstream later (#819)
+timely-dataflow	timely/src/dataflow/operators/generic/operator.rs	588	src/timely/operator.c	P4	done	
+timely-dataflow	timely/src/dataflow/operators/generic/operator_info.rs	23	include/dtfl/timely.h	P4	done	
+timely-dataflow	timely/src/dataflow/operators/mod.rs	43	include/dtfl/timely.h	P4	done	re-export umbrella: Inspect/InspectCore/Exchange/Operator/Notificator/FrontierNotificator/Reclock/Enter/Leave/Feedback/Concat/Concatenate/Probe/Capture/OkErr/ToStream/Input and the Capability family all reach exported dtfl_* API
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/aggregate.rs	105	src/timely/ops_aggregate.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/mod.rs	18	include/dtfl/timely.h	P4	done	re-export umbrella: Aggregate (dtfl_stream_aggregate) and StateMachine (dtfl_stream_state_machine) exported
+timely-dataflow	timely/src/dataflow/operators/vec/aggregation/state_machine.rs	110	src/timely/ops_state_machine.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/branch.rs	128	src/timely/ops_branch.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/broadcast.rs	36	src/timely/ops_broadcast.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/count.rs	70	src/timely/ops_count.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/delay.rs	150	src/timely/ops_delay.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/filter.rs	38	src/timely/ops_filter.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/flow_controlled.rs	124	src/timely/ops_flow_controlled.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/input.rs	102	src/timely/ops_input.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/map.rs	72	src/timely/ops_map.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/mod.rs	34	include/dtfl/timely.h	P4	done	re-export umbrella: Input/UnorderedInput/Partition/Map/Filter/Delay/Broadcast/Branch/BranchWhen/ResultStream/ToStream all reach exported dtfl_* functions
+timely-dataflow	timely/src/dataflow/operators/vec/partition.rs	32	src/timely/ops_partition.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/result.rs	187	src/timely/ops_result.c	P4	done	public API at the pin; removed upstream later (#818)
+timely-dataflow	timely/src/dataflow/operators/vec/to_stream.rs	32	src/timely/ops_to_stream.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/operators/vec/unordered_input.rs	75	src/timely/ops_unordered_input.c	P4	done	vec and core variants collapse into one (D2)
+timely-dataflow	timely/src/dataflow/scope.rs	281	src/timely/scope.c	P3	done	worker.rs and scope.rs import each other; Scope and OperatorSlot ported (scope.c + __dtfl_slot); scoped_raw/region_named collapse into dtfl_scope_scoped
+timely-dataflow	timely/src/dataflow/stream.rs	134	src/timely/stream.c	P4	done	
+timely-dataflow	timely/src/execute.rs	336	src/timely/execute.c	P3	done	execute/execute_directly/execute_from ported; example is one-line sugar over execute_directly + dataflow; execute_from_args is getopts (config.c from_args), excluded in library code (AGENTS 5.2)
+timely-dataflow	timely/src/lib.rs	177	include/dtfl/timely.h	P3	done	crate-root re-exports: execute/execute_directly/example in timely.h; PartialOrder (time.h), Config/CommunicationConfig/WorkerConfig (config.h), Accountable/Container/ContainerBuilder (batch.h), ExchangeData/Bincode (record.h, D1) are published through the matching base/comm public headers
+timely-dataflow	timely/src/logging.rs	269	src/timely/timely_log.c	P3	done	TimelyEvent encoder (byte-identical to Rust bincode, tests/interop/test_log_stream.c) plus the fixint-LE readers behind the public subscriber decoder (src/timely/log.c).
+timely-dataflow	timely/src/logging.rs	269	include/dtfl/log.h	P11	done	public structured-logging subscriber API: dtfl_worker_log_subscribe / dtfl_config_log_subscribe and the dtfl_log_batch accessors (the C form of worker.log_register().insert_logger with decoded batches); covers TimelyEvent, DifferentialEvent and CommunicationEvent variants.
+timely-dataflow	timely/src/logging.rs	269	src/timely/log.c	P11	done	the subscriber glue and the fixint-LE decoder (inverse of timely_log.c / dd_log.c / comm_log.c); routes the worker's loggers to registered subscribers and decodes each record into dtfl_log_batch; prerequisite for P11 diagnostics.
+timely-dataflow	timely/src/order.rs	263	src/progress/time.c	P1	done	coordinate-vector times (D3)
+timely-dataflow	timely/src/progress/broadcast.rs	153	src/progress/progcaster.c	P3	done	Progcaster new/send/recv with the libdtfl wire encoding (D9) in place of bincode; the data plane is complete and runs every test.  The optional per-message TimelyProgressEvent logging is deferred -- a separate T-parameterized logger with no consumer (diagnostics subscribes only to the timely and differential/arrange streams); see ADR-0012 (2026-10-15)
+timely-dataflow	timely/src/progress/change_batch.rs	321	src/progress/change_batch.c	P1	done	perf (P16.5): short runs sort by insertion, one- and three-word keys compact on fixed-width paths (COMPACT_FIXED); results identical, pbt change_batch_model kw 1/2/3
+timely-dataflow	timely/src/progress/frontier.rs	869	src/progress/antichain.c	P1	done	perf (P16.5): one-word TOTAL order inlined (__dtfl_time_le/_lt); pbt total_u64_model, total_i64_model
+timely-dataflow	timely/src/progress/mod.rs	106	src/progress/operate_int.h	P3	done	Location, Source, Target collapse into __dtfl_location (node, port, source flag) in operate_int.h; Port encoded as the source flag; Operate/Subgraph/Timestamp/PathSummary/ChangeBatch/Antichain re-exports all ported in progress/
+timely-dataflow	timely/src/progress/operate.rs	206	src/progress/operate.c	P3	done	
+timely-dataflow	timely/src/progress/reachability.rs	1116	src/progress/reachability.c	P3	done	perf (P16.5): worklist heap moves a hole as BinaryHeap does; test worklist_pops_in_time_location_order
+timely-dataflow	timely/src/progress/subgraph.rs	825	src/progress/subgraph.c	P3	done	SubgraphBuilder, Subgraph (schedule/activate_child/accept_frontier/harvest_inputs/propagate_pointstamps/send_progress), Operate impl and PerOperatorState (new/schedule/shut_down/extract_progress/validate_progress) all ported
+timely-dataflow	timely/src/progress/timestamp.rs	177	src/progress/time.c	P1	done	coordinate-vector times (D3)
+timely-dataflow	timely/src/scheduling/activate.rs	331	src/timely/activate.c	P3	done	Activations/Activator/SyncActivations/SyncActivator ported.  map_active has zero callers in upstream; activate_batch is subsumed by __dtfl_sync_activations_push (its only caller is SyncActivations::activate); ActivateOnDrop is realized where used (ops_unordered_input.c)
+timely-dataflow	timely/src/scheduling/mod.rs	18	src/timely/activate.c	P3	done	re-exports Activations/Activator/ActivateOnDrop/SyncActivator (activate.c) and the Schedule trait (__dtfl_schedule in operate_int.h)
+timely-dataflow	timely/src/synchronization/barrier.rs	52	src/timely/sync.c	P4	done	
+timely-dataflow	timely/src/synchronization/mod.rs	6	include/dtfl/timely.h	P4	done	re-export umbrella: Barrier (dtfl_barrier_*) and Sequencer (dtfl_sequencer_*) exported
+timely-dataflow	timely/src/synchronization/sequence.rs	230	src/timely/sync.c	P4	done	
+timely-dataflow	timely/src/worker.rs	768	src/timely/worker.c	P3	done	Worker and Wrapper ported (worker.c engine + execute.c public dtfl_worker facade).  Config.set/get is a typed key-value registry with no in-tree consumer at the pin and is a dtfl_config/base concern, not ported in worker.c
+timely-dataflow	timely/tests/barrier.rs	39	tests/upstream/timely/barrier.c	P4	done	barrier_sync at 1, 2 and 3 workers
+timely-dataflow	timely/tests/gh_523.rs	43	tests/upstream/timely/gh_523.c	P4	done	
+timely-dataflow	timely/tests/shape_scaling.rs	74	tests/upstream/timely/shape_scaling.c	P4	done	all twelve upstream scales run in make check at upstream's shape (outputs unconnected, input i to output i, through dtfl_op_builder_{input,output}_sparse); operator_scaling 1000/10000/100000 take 0.01/0.12/1.3 s debug vs 0.01/0.04/0.49 s for the pinned timely release build
 timely-dataflow	timely/tests/skeptic.rs	1	-	-	excluded	empty doctest runner; the doc snippet gate replaces it
 differential-dataflow	advent_of_code_2017/src/bin/day_01.rs	47	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/bin/day_02.rs	81	-	-	excluded	not a workspace member upstream
@@ -189,47 +191,47 @@ differential-dataflow	advent_of_code_2017/src/bin/day_15.rs	46	-	-	excluded	not 
 differential-dataflow	advent_of_code_2017/src/bin/day_17.rs	42	-	-	excluded	not a workspace member upstream
 differential-dataflow	advent_of_code_2017/src/lib.rs	0	-	-	excluded	not a workspace member upstream
 differential-dataflow	diagnostics/console/index.html	13	-	-	excluded	React frontend; works unmodified against the protocol-compatible server
-differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	todo	uses algorithms::graphs::scc (P9)
-differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	todo	
-differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	todo	shipped verbatim; the C server speaks the same protocol
-differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	todo	
-differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	todo	
-differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	todo	divergence: binds 127.0.0.1 by default where upstream binds 0.0.0.0, ADR D12
-differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	todo	VecChunk arm only; the ColChunk arm is subsumed (D2)
+differential-dataflow	diagnostics/examples/scc-bench.rs	126	examples/diag/scc-bench.c	P11	done	runs dtfl_algo_scc under the diagnostics server over a bounded hashed edge stream (load plus 5 rounds of changes); binds 127.0.0.1 (D12); in the diag smoke harness, clean under ASan.  Upstream's 100000-node run-forever benchmark is reduced to a small deterministic graph so the harness can check it
+differential-dataflow	diagnostics/examples/smoke.rs	96	examples/diag/smoke.c	P11	done	ported: registers the diag session, starts the WebSocket server on worker 0 (127.0.0.1, D12), runs a bounded map/probe dataflow; runs under the smoke harness (tests/dist/test_examples_diag.sh).
+differential-dataflow	diagnostics/index.html	1150	data/diagnostics.html	P11	done	shipped verbatim (ASCII, 3 em-dashes in comments converted); the C server speaks the same Frame protocol, consumed by applyBatch/rebuildState unmodified.
+differential-dataflow	diagnostics/src/lib.rs	62	include/dtfl/diag.h	P11	done	dtfl_diag_session_new/_free, dtfl_diag_server_start/_port/_stop, dtfl_diag_replay_fd/_fds; the session subscribes to the log streams and serves them, as lib.rs ties logging::register to server::Server::start.
+differential-dataflow	diagnostics/src/logging.rs	660	src/diag/diag_log.c	P11	done	the demux (construct_timely/construct_differential + update_to_json): decoded log batches reshaped into the live operator/channel/stat state and emitted as JsonUpdate diffs; the DD cross-join on client +1 is realized as a full-state snapshot replay on connect (src/diag/diag.c, ws_server.c).
+differential-dataflow	diagnostics/src/server.rs	309	src/diag/ws_server.c	P11	done	the WebSocket serve loop: binds 127.0.0.1 by default where upstream binds 0.0.0.0 (ADR D12); RFC 6455 handshake and unmasked text framing with built-in SHA-1/base64 (src/diag/ws_frame.c); one Frame per closed timestamp.  The server thread uses __dtfl_thread_spawn.
+differential-dataflow	differential-dataflow/benches/chunk_bench.rs	204	bench/chunk_bench.c	P12	done	VecChunk arm only; the ColChunk arm is subsumed (D2)
 differential-dataflow	differential-dataflow/benches/sort-bench.rs	135	-	-	excluded	entirely commented out upstream
-differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	todo	
-differential-dataflow	differential-dataflow/examples/arrange.rs	177	examples/dd/arrange.c	P8	todo	
-differential-dataflow	differential-dataflow/examples/bfs.rs	110	examples/dd/bfs.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/accumulate.rs	56	examples/dd/accumulate.c	P7	done	fixed multiset once in place of the forever random-insert loop; same enter_at/consolidate/leave; inspects the accumulation
+differential-dataflow	differential-dataflow/examples/arrange.rs	177	examples/dd/arrange.c	P8	done	the RandomGraph generic::source is a zero-input dtfl_op_builder operator that keeps its initial capability, emits ((src,dst),time,diff) update records for batch times once the shared probe catches up, downgrades the capability past them and reschedules itself through dtfl_op_activator; dtfl_stream_as_collection then arrange_by_key, and two query dataflows import the trace.  Divergences: rounds are capped (default 4) and the source then drops its capability so the run ends; a seeded xorshift replaces StdRng; elapsed times are not printed
+differential-dataflow	differential-dataflow/examples/bfs.rs	110	examples/dd/bfs.c	P9	done	fixed graph in place of StdRng (deterministic output); same algo (dtfl_algo_bfs), args, computation
 differential-dataflow	differential-dataflow/examples/columnar/main.rs	195	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in
-differential-dataflow	differential-dataflow/examples/columnar_spill.rs	349	examples/dd/trace_spill.c	P12	todo	same flags and modes, over chunk.c spill; columnar types subsumed (D2)
-differential-dataflow	differential-dataflow/examples/compact.rs	73	examples/dd/compact.c	P8	todo	
-differential-dataflow	differential-dataflow/examples/cursors.rs	126	examples/dd/cursors.c	P8	todo	
-differential-dataflow	differential-dataflow/examples/degrees.rs	179	examples/dd/degrees.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/dynamic.rs	132	examples/dd/dynamic.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/graspan.rs	272	examples/dd/graspan.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/hello.rs	89	examples/dd/hello.c	P8	todo	
-differential-dataflow	differential-dataflow/examples/interpreted.rs	101	examples/dd/interpreted.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/itembased_cf.rs	182	examples/dd/itembased_cf.c	P9	todo	
+differential-dataflow	differential-dataflow/examples/columnar_spill.rs	349	bench/trace_spill.c	P12	subsumed	subsumed by bench/trace_spill.c (provenance header names this file): upstream installs a spiller through the public columnar::trace::spill::install and arranges with the columnar Batcher/Builder/Spine; libdtfl public arrange uses the ord-neu spine (D2) and the chunk/spill layer has no public surface, so the spill is reached only from bench/ over the internal API, which fills a ChunkBatch past a record budget, pages chunks to a temp file, reads every update back and prints the spill counters.  A public example needs a public chunk-backed arrange plus a spiller knob, a D2 reversal
+differential-dataflow	differential-dataflow/examples/compact.rs	73	examples/dd/compact.c	P8	done	faithful computation (distinct over a changing set); inspects live distinct count (upstream prints only timings); fixed sizes, exact output
+differential-dataflow	differential-dataflow/examples/cursors.rs	126	examples/dd/cursors.c	P8	done	arranges (x,y) edges by x (map (x,y) -> (x,(x,y)), arrange_by_key), runs rounds of insert/remove, then dumps the whole trace with dtfl_trace_to_vec (CursorDebug::to_vec) and validates the net (edge -> diff) multiset against the hand-computed final graph {(2,1),(3,2),(3,4),(4,3)}; single worker (the dump is worker-count independent); in the smoke harness; ASan-clean
+differential-dataflow	differential-dataflow/examples/degrees.rs	179	examples/dd/degrees.c	P9	done	fixed graph in place of StdRng (deterministic output); same map/count_total computation
+differential-dataflow	differential-dataflow/examples/dynamic.rs	132	examples/dd/dynamic.c	P9	done	fixed graph in place of StdRng (deterministic output); dynamic iterative scope with a PointStamp inner (dtfl_time_pointstamp), the label Variable built at coordinate 1 with dtfl_variable_new_at (feedback_summary(1, 1)), join_map/concat/reduce(min) per round, leave_dynamic(1); inspects the distance histogram, identical to examples/dd/bfs
+differential-dataflow	differential-dataflow/examples/graspan.rs	272	examples/dd/graspan.c	P9	done	each relation is an EdgeVariable: dtfl_variable_new (upstream step Product((),1) is the default +1) whose collection is arranged forward and reverse by key before dtfl_variable_set, so productions join_core against the relations they recursively define; no new API was needed.  Divergences: a built-in four-edge query runs when no files are given; fixed caps on query size; elapsed times are not printed
+differential-dataflow	differential-dataflow/examples/hello.rs	89	examples/dd/hello.c	P8	done	fixed graph in place of StdRng (deterministic output); same degree-distribution-of-degrees via count_total twice
+differential-dataflow	differential-dataflow/examples/interpreted.rs	101	examples/dd/interpreted.c	P9	done	fixed directed graph in place of GraphMMap; relations [(0,2),(1,2)] via arrange_by_self + public arrange_by_key + join_core; the Vec<Node> tuple is a fixed 3-field record (the widest the query reaches); prints the directed triangles
+differential-dataflow	differential-dataflow/examples/itembased_cf.rs	182	examples/dd/itembased_cf.c	P9	done	fixed interaction set in place of seeded rand; semijoin/count_total/arrange_by_key/join_core pipeline; the f64 Jaccard ratio is carried as a fixed-point value scaled by 1000 (0.05 threshold becomes 50) since floats are not a built-in record type
 differential-dataflow	differential-dataflow/examples/iterate_container.rs	83	-	-	subsumed	D2: records are byte strings in refcounted batches; Enter/Leave/Negate on batches are built in
-differential-dataflow	differential-dataflow/examples/monoid-bfs.rs	157	examples/dd/monoid-bfs.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/multitemporal.rs	387	examples/dd/multitemporal.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/pagerank.rs	136	examples/dd/pagerank.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/progress.rs	229	examples/dd/progress.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/projekt.rs	172	examples/dd/projekt.c	P8	todo	
-differential-dataflow	differential-dataflow/examples/scc.rs	96	examples/dd/scc.c	P9	todo	
-differential-dataflow	differential-dataflow/examples/spines.rs	179	bench/spines.c	P12	todo	needs chunk spines; col mode subsumed (D2)
-differential-dataflow	differential-dataflow/examples/stackoverflow.rs	124	examples/dd/stackoverflow.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/bfs.rs	44	src/algo/bfs.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/bijkstra.rs	124	src/algo/bijkstra.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/mod.rs	6	include/dtfl/algo.h	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/propagate.rs	110	src/algo/propagate.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/scc.rs	85	src/algo/scc.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/graphs/sequential.rs	88	src/algo/sequential.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/identifiers.rs	141	src/algo/identifiers.c	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/mod.rs	4	include/dtfl/algo.h	P9	todo	
-differential-dataflow	differential-dataflow/src/algorithms/prefix_sum.rs	154	src/algo/prefix_sum.c	P9	todo	
-differential-dataflow	differential-dataflow/src/capture.rs	725	src/dd/capture.c	P10	todo	
-differential-dataflow	differential-dataflow/src/collection.rs	1413	src/dd/collection.c	P8	todo	linear methods land in P5, arrangement-backed ones in P7 and P8; the row is done in P8
+differential-dataflow	differential-dataflow/examples/monoid-bfs.rs	157	examples/dd/monoid-bfs.c	P9	done	the MinSum min-plus diff built with the public dtfl_diff_new (plus_equals=min, is_zero=false, cmp by value, multiply=saturating add, no negate -> a Semigroup, not Abelian); bfs iterates a Variable, join_map relaxes edges (the user multiply adds node distance + edge weight), reduce_core keeps the per-node minimum and as_collection reads the node back.  Fixed small graph in place of StdRng, with hand-verified distances (0:0 1:2 2:3 3:4 4:7); inspects the bfs() result directly rather than upstream's count().map().consolidate(), which discards the distances.  Smoke-tested against monoid-bfs.expected
+differential-dataflow	differential-dataflow/examples/multitemporal.rs	387	examples/dd/multitemporal.c	P9	done	ports multitemporal.rs: a multi-temporal histogram over a product partial-order Pair<u64,u64> time.  input is an unordered input over the differential update record (data i64, two u64 time words, i64 diff; a fixed 32-byte dtfl_type_tuple), which dtfl_stream_as_collection views as a collection (AsCollection); it carries the same value 111 at the incomparable Pair coords (1,1) and (2,0).  pipeline is upstream's count().map(count).arrange_by_self(); the trace is kept and queried at distinct Pair frontiers with dtfl_trace_to_vec_through plus a per-time product-order filter (cursor.map_times(time.less_equal(q))).  uses dtfl_time_product (product partial order) for Pair, not dtfl_time_lex (lexicographic-total); u64 coords stand in for upstream isize on the non-negative times used.  feeds a fixed update set and validates the hand-computed histogram at five query times; ASan leak- and UAF-clean; smoke test multitemporal.expected (cat).
+differential-dataflow	differential-dataflow/examples/pagerank.rs	136	examples/dd/pagerank.c	P9	done	fixed graph in place of GraphMMap (deterministic output); same explode/semijoin/threshold(5*rank/6*degr) surfer loop in an iterative scope; the inner-timestamp cap filter (t.inner < iters) is upstream's iters > 0 path only, so this runs the loop to its natural integer fixed point (iters == 0), inspecting the final (node, weight) multiset
+differential-dataflow	differential-dataflow/examples/progress.rs	229	examples/dd/progress.c	P9	done	no API is missing: examples/dd/progress.c carries the u64 summary as a record field and applies it with dtfl_summary_results_in/followed_by/less_equal.  Divergence: the elapsed-time column is omitted so the output is deterministic.  Smoke-tested against examples/dd/progress.expected (the pinned Rust binary's output, compared under LC_ALL=C sort) and progress-w2.expected (-w 2); matches it with -w 1, 2 and 4.  It was deferred on a wrong frontier answer that was a trace-layer bug: UpdsBuilder::seal (src/dd/trace/layout.c) compacted its stash through a sort permutation and could read a slot it had overwritten, corrupting the reduce output trace under Product<u64,u64>; regression tests ord_neu__upds_seal_unsorted_stash and iterate__frontier_retraction_product_time (2026-10-18)
+differential-dataflow	differential-dataflow/examples/projekt.rs	172	examples/dd/projekt.c	P8	done	faithful; three upstream dataflows merged into one (C input session registers into one scope); exact output
+differential-dataflow	differential-dataflow/examples/scc.rs	96	examples/dd/scc.c	P9	done	fixed graph in place of the seeded DefaultHasher (deterministic output); same dtfl_algo_scc over the edge set, consolidate and inspect each surviving intra-component (src, dst) edge
+differential-dataflow	differential-dataflow/examples/spines.rs	179	bench/spines.c	P12	done	needs chunk spines; col mode subsumed (D2)
+differential-dataflow	differential-dataflow/examples/stackoverflow.rs	124	examples/dd/stackoverflow.c	P9	done	fixed temporal edge list in place of the SNAP file; same bfs over time, exact distance histogram
+differential-dataflow	differential-dataflow/src/algorithms/graphs/bfs.rs	44	src/algo/bfs.c	P9	done	
+differential-dataflow	differential-dataflow/src/algorithms/graphs/bijkstra.rs	124	src/algo/bijkstra.c	P9	done	bidirectional Dijkstra over arranged forward/reverse edges in an iterative scope; end-to-end test tests/upstream/dd/bijkstra.c vs a breadth-first oracle (fixed graph and diamond, reachable and unreachable goals)
+differential-dataflow	differential-dataflow/src/algorithms/graphs/mod.rs	6	include/dtfl/algo.h	P9	done	
+differential-dataflow	differential-dataflow/src/algorithms/graphs/propagate.rs	110	src/algo/propagate.c	P9	done	ported; propagate and propagate_at (log-bucketed enter_at); converges standalone and nested in an outer iterate after the ord_neu compaction fix (test_nested_iterate, scc)
+differential-dataflow	differential-dataflow/src/algorithms/graphs/scc.rs	85	src/algo/scc.c	P9	done	ported; strongly_connected and strongly_connected_at; scc tests pass against the Kosaraju oracle after the ord_neu compaction fix
+differential-dataflow	differential-dataflow/src/algorithms/graphs/sequential.rs	88	src/algo/sequential.c	P9	done	ported; sequence operator, no upstream #[test]
+differential-dataflow	differential-dataflow/src/algorithms/identifiers.rs	141	src/algo/identifiers.c	P9	done	
+differential-dataflow	differential-dataflow/src/algorithms/mod.rs	4	include/dtfl/algo.h	P9	done	
+differential-dataflow	differential-dataflow/src/algorithms/prefix_sum.rs	154	src/algo/prefix_sum.c	P9	done	data-parallel exclusive prefix scan (aggregate + broadcast); end-to-end test tests/upstream/dd/prefix_sum.c vs a sequential scan (single key, two keys, sparse index)
+differential-dataflow	differential-dataflow/src/capture.rs	725	src/dd/capture.c	P10	done	CDC V2 capture and replay: the Message protocol (Updates and Progress), the sink (sink::build) as dtfl_collection_capture over inspect_core (records each update and announces per-time counts as the frontier passes them), and the deduplicating, reordering iterator::Iter as dtfl_cdc_iter over __dtfl_antichain and __dtfl_mutable_antichain.  Round-trip-under-duplication-and-reordering tested by tests/unit/test_dd_capture.c (in order, reversed, duplicated, reversed+duplicated; all reconstruct the captured multiset).  The data-parallel source::build dataflow (four exchange-connected operators running the same dedup/reorder logic across workers) is not ported; dtfl_cdc_iter is the single-worker reference it implements
+differential-dataflow	differential-dataflow/src/collection.rs	1413	src/dd/collection.c	P8	done	linear methods in src/dd/collection.c (map, flat_map, filter, concat, concatenate, negate, consolidate, inspect, explode, delay, enter, leave, probe, results_in via the Variable), arrangement-backed ones in P7/P8 (arrange=arrange_by_self and arrange_by_key in arrangement.c, join/join_map/semijoin/antijoin/join_core in join.c, reduce/reduce_named/reduce_abelian/reduce_core/distinct/threshold/count in reduce.c).  Rust ergonomic/generic variants are subsumed: map_in_place and join_function by map/flat_map, distinct_core/count_core by the concrete isize distinct/count, consolidate_named/consolidate_stream by consolidate, inspect_container/inspect_batch by dtfl_stream_inspect_batch, and assert_empty/assert_eq are debug helpers with no public analog.  Tested by tests/unit/test_collection.c and the pbt/upstream dataflow tests
 differential-dataflow	differential-dataflow/src/columnar/collection/builder.rs	83	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/collection/container.rs	232	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/collection/exchange.rs	114	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
@@ -240,74 +242,74 @@ differential-dataflow	differential-dataflow/src/columnar/mod.rs	41	-	-	subsumed	
 differential-dataflow	differential-dataflow/src/columnar/trace/chunk.rs	907	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/trace/chunker.rs	137	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/trace/mod.rs	28	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
-differential-dataflow	differential-dataflow/src/columnar/trace/spill.rs	134	src/dd/trace/spill.c	P12	todo	ports the BytesStore/BytesSource policy onto chunk.c; its ColChunk/Updates plumbing is subsumed (D2)
+differential-dataflow	differential-dataflow/src/columnar/trace/spill.rs	134	src/dd/trace/spill.c	P12	done	ports the BytesStore/BytesSource policy onto chunk.c; its ColChunk/Updates plumbing is subsumed (D2); seal does the full serialize/store/load/decode round trip, lazy fetch-back on first touch (the footprint win) deferred
 differential-dataflow	differential-dataflow/src/columnar/trie_merger.rs	534	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
 differential-dataflow	differential-dataflow/src/columnar/updates.rs	868	-	-	subsumed	D2: records are byte strings in refcounted batches; flat byte-arena batches are what the columnar path buys Rust
-differential-dataflow	differential-dataflow/src/consolidation.rs	409	src/dd/consolidate.c	P5	todo	
-differential-dataflow	differential-dataflow/src/difference.rs	319	src/dd/diff.c	P5	todo	diff classes (D4)
-differential-dataflow	differential-dataflow/src/dynamic/mod.rs	77	src/dd/dynamic.c	P8	todo	PointStamp: trailing minimum coordinates trimmed (D3)
-differential-dataflow	differential-dataflow/src/dynamic/pointstamp.rs	323	src/dd/dynamic.c	P8	todo	PointStamp: trailing minimum coordinates trimmed (D3)
-differential-dataflow	differential-dataflow/src/hashable.rs	38	src/base/hash.c	P1	todo	FNV-1a over record bytes; not interoperable with Rust routing (D9)
-differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	todo	
-differential-dataflow	differential-dataflow/src/lattice.rs	371	src/dd/lattice.c	P1	todo	the time-class lattice operations need it (D3)
-differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	todo	
-differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	todo	the spine and batcher emit these events
-differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/dd_int.h	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	todo	
-differential-dataflow	differential-dataflow/src/operators/common.rs	376	src/dd/common.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/count.rs	141	src/dd/count.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/int_proxy/history.rs	5	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
-differential-dataflow	differential-dataflow/src/operators/int_proxy/join.rs	218	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
-differential-dataflow	differential-dataflow/src/operators/int_proxy/mod.rs	67	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
-differential-dataflow	differential-dataflow/src/operators/int_proxy/reduce.rs	376	-	-	deferred	experimental upstream; no non-disabled consumer at the pin
-differential-dataflow	differential-dataflow/src/operators/iterate.rs	271	src/dd/iterate.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/history.c	P6	todo	EditList, ValueHistory; Cursor::populate_key uses EditList
-differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	todo	
-differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	todo	
-differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	todo	graded chunks are the pageable unit for trace spill
-differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	todo	
-differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/cursor/mod.rs	185	src/dd/trace/cursor.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/description.rs	108	src/dd/trace/description.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/chunker.rs	87	src/dd/trace/chunker.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/merge_batcher.rs	419	src/dd/trace/merge_batcher.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594	src/dd/trace/layout.c	P6	todo	BatchContainer, OffsetList
-differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	todo	
-differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/dd_int.h	P7	todo	
-differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	todo	
-differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	todo	calls reduce_abelian (import.rs:63,142)
-differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	todo	
-differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	todo	
-differential-dataflow	differential-dataflow/tests/reduce_reference.rs	409	tests/upstream/dd/reduce_reference.c	P8	todo	
-differential-dataflow	differential-dataflow/tests/scc.rs	273	tests/upstream/dd/scc.c	P9	todo	
-differential-dataflow	differential-dataflow/tests/trace.rs	59	tests/upstream/dd/trace.c	P6	todo	
-differential-dataflow	dogsdogsdogs/examples/delta_query.rs	152	examples/dogs/delta_query.c	P9	todo	
-differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/delta_query2.c	P9	todo	
-differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	todo	
-differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dogsdogsdogs.c	P9	todo	
-differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	todo	AltNeu<t> encodes as 2t+neu in one coordinate (D3)
-differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join2.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	todo	
-differential-dataflow	dogsdogsdogs/src/operators/validate.rs	39	src/dogs/validate.c	P9	todo	
-differential-dataflow	dogsdogsdogs/tests/lookup_map_regression.rs	108	tests/upstream/dogs/lookup_map_regression.c	P9	todo	
+differential-dataflow	differential-dataflow/src/consolidation.rs	409	src/dd/consolidate.c	P5	done	
+differential-dataflow	differential-dataflow/src/difference.rs	319	src/dd/diff.c	P5	done	the diff algebra (D4): built-in classes, tuples, user classes via the public dtfl_diff_new, and Multiply (integer, present, tuple, and user-class a*a).  The Vec<R> variable-width algebra from difference.rs is ported as slice functions (__dtfl_diff_vec_*) and tested (difference_vector__test_semigroup_vec); a variable-width Vec diff cannot sit in the fixed-width batch diff column (that needs an arena layout, D4), deferred until a dataflow needs a Vec diff; see ADR-0012 (2026-10-15)
+differential-dataflow	differential-dataflow/src/dynamic/mod.rs	77	src/dd/dynamic.c	P8	done	enter_dynamic, leave_dynamic, feedback_summary; PointStamp trailing minimum trimmed (D3)
+differential-dataflow	differential-dataflow/src/dynamic/pointstamp.rs	323	src/dd/dynamic.c	P8	done	order, lattice, summaries and codec are in src/progress/time.c (POINTSTAMP); this row is enter_dynamic/leave_dynamic
+differential-dataflow	differential-dataflow/src/hashable.rs	38	src/base/hash.c	P1	done	FNV-1a over record bytes; not interoperable with Rust routing (D9)
+differential-dataflow	differential-dataflow/src/input.rs	277	src/dd/input.c	P5	done	
+differential-dataflow	differential-dataflow/src/lattice.rs	371	src/progress/time.c	P1	done	the time-class lattice operations need it (D3)
+differential-dataflow	differential-dataflow/src/lib.rs	147	include/dtfl/collection.h	P5	done	the Collection type and its linear methods (map/filter/flat_map/concat/negate/consolidate/inspect/enter/leave/probe/explode/delay); arrange/join/reduce land in P7-P8
+differential-dataflow	differential-dataflow/src/logging.rs	120	src/dd/dd_log.c	P6	done	the DifferentialEvent encoder (Batch/Merge/Drop/MergeShortfall/TraceShare/Batcher) for the "differential/arrange" stream, byte-faithful and round-trip tested.  Emitted at the upstream points: Spine::insert (Batch), insert_at/complete_at (Merge begin/complete), drop_batches (Drop), TraceAgent new/clone/drop (TraceShare), MergeBatcher chain_push/chain_pop (Batcher records; allocation figures 0 as the pin's vector merger).  MergeShortfall is defined but never logged at the pin, so it is not emitted.  The logger is acquired once at operator construction (arrange, arrange_by_key, reduce, upsert); NULL when unsubscribed.  Test: log_subscribe subscribe__arrange_emits
+differential-dataflow	differential-dataflow/src/operators/arrange/agent.rs	587	src/dd/agent.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/arrangement.rs	520	src/dd/arrangement.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/mod.rs	72	src/dd/arrange_int.h	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/upsert.rs	327	src/dd/upsert.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/arrange/writer.rs	96	src/dd/writer.c	P7	done	
+differential-dataflow	differential-dataflow/src/operators/common.rs	376	src/dd/common.c	P8	done	ValueHistory/EditList replay and the JoinThinker + bilinear_wave in src/dd/common.c, which also ports the common.rs interesting-times helpers as functions (TimeHistory, KeyView, DiscoverScratch, tile_descriptions, discover_times) for the int_proxy tactics.  The cursor reduce still uses its inline history replayer in src/dd/reduce.c.  Tested through reduce.c and join.c (tests/upstream/dd/join.c, tests/pbt/pbt_reduce.c, pbt_join.c) and tests/upstream/dd/int_proxy.c
+differential-dataflow	differential-dataflow/src/operators/count.rs	141	src/dd/count.c	P8	done	
+differential-dataflow	differential-dataflow/src/operators/int_proxy/history.rs	5	src/dd/int_proxy.c	P8	done	IdHistory = __dtfl_value_history (ValueHistory<u64, T, R>) loaded with __dtfl_value_history_load_iter in src/dd/common.c.  Upstream API experimental (CHANGELOG 0.25), no upstream tests; the C tests in tests/upstream/dd/int_proxy.c are original cross-checks
+differential-dataflow	differential-dataflow/src/operators/int_proxy/join.rs	218	src/dd/int_proxy_join.c	P8	done	join_prep and join_key ported literally; ProxyJoinTactic runs on a JoinTactic seam added to src/dd/join.c (join_tactic_ops; the default cursor tactic is the existing deferred_step), reached through __dtfl_arranged_join_with_proxy.  The ProxyJoinBackend trait is a vtable, plus a u64 backend (not upstream).  Internal only.  Upstream API experimental (CHANGELOG 0.25), no upstream tests; the C tests in tests/upstream/dd/int_proxy.c are original cross-checks (default vs proxy equi-join over Pair<u64,u64> fed in diagonal waves, cross-product and bilinear-wave paths)
+differential-dataflow	differential-dataflow/src/operators/int_proxy/mod.rs	67	src/dd/int_proxy.c	P8	done	ProxyBridge (__dtfl_bridge_upd rows) and debug_assert_sorted_bridge; internal only (src/dd/int_proxy_int.h), nothing exported.  Upstream API experimental (CHANGELOG 0.25), no upstream tests; the C tests in tests/upstream/dd/int_proxy.c are original cross-checks
+differential-dataflow	differential-dataflow/src/operators/int_proxy/reduce.rs	376	src/dd/int_proxy_reduce.c	P8	done	ProxyReduceTactic::retire and KeyState ported literally, on the reduce.c tactic seam (proxy_tactic_ops, __dtfl_arranged_reduce_with_proxy); the ProxyReduceBackend trait is a vtable, plus a u64 backend (not upstream) presenting 8-byte keys/values as (hash, id).  Internal only.  Upstream API experimental (CHANGELOG 0.25), no upstream tests; the C tests in tests/upstream/dd/int_proxy.c are original cross-checks (default vs proxy over Pair<u64,u64> count/sum/min, one retire and diagonal waves, and an iterative bfs)
+differential-dataflow	differential-dataflow/src/operators/iterate.rs	271	src/dd/iterate.c	P8	done	iterate plus the Variable feedback (new, new_from, set, set_concat)
+differential-dataflow	differential-dataflow/src/operators/join.rs	663	src/dd/join.c	P8	done	
+differential-dataflow	differential-dataflow/src/operators/mod.rs	288	src/dd/common.c	P6	done	EditList and ValueHistory (operators/mod.rs) are consumer-side replay machinery: ported into src/dd/common.c (__dtfl_value_history, __dtfl_value_history_load_cursor = EditList::load/ValueHistory::build) and src/dd/reduce.c (vh_replay_key = Cursor::populate_key default, the per-key edit load from the cursor list).  ValueHistory::load_iter and step_through are __dtfl_value_history_load_iter / _step_through, used by the int_proxy tactics.  No separate src/dd/history.c; common.c carries the operators/mod.rs provenance.  Tested through reduce.c and join.c
+differential-dataflow	differential-dataflow/src/operators/reduce.rs	1322	src/dd/reduce.c	P8	done	
+differential-dataflow	differential-dataflow/src/operators/threshold.rs	205	src/dd/threshold.c	P8	done	
+differential-dataflow	differential-dataflow/src/trace/chunk/mod.rs	755	src/dd/trace/chunk.c	P12	done	graded chunks are the pageable unit for trace spill
+differential-dataflow	differential-dataflow/src/trace/chunk/vec.rs	800	src/dd/trace/chunk_vec.c	P12	done	the one Chunk layout; the generic Chunk trait collapses to concrete functions (D2)
+differential-dataflow	differential-dataflow/src/trace/cursor/cursor_list.rs	207	src/dd/trace/cursor_list.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/cursor/mod.rs	185	src/dd/trace/cursor.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/description.rs	108	src/dd/trace/description.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/chunker.rs	87	src/dd/trace/chunker.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/merge_batcher.rs	419	src/dd/trace/merge_batcher.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594	src/dd/trace/layout.c	P6	done	BatchContainer, OffsetList
+differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/wrap_int.h	P7	done	
+differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	done	
+differential-dataflow	differential-dataflow/tests/import.rs	263	tests/upstream/dd/import.c	P8	done	test_import_vanilla, test_import_completed_dataflow and test_import_stalled_dataflow ported (import__* rows done); import_skewed is #[ignore] upstream and is excluded.  The stalled test exposed a real library bug: TraceAgent new_listener (src/dd/agent.c) seeded an importer's start frontier from the last non-empty batch's upper, but empty seal batches (writer.rs seal) advance the trace upper without data and batches_through drops empties, so an importer built after a data-free frontier advance started behind the real frontier.  Fixed by seeding from __dtfl_trace_upper (src/dd/trace.c)
+differential-dataflow	differential-dataflow/tests/reduce.rs	40	tests/upstream/dd/reduce.c	P8	done	
+differential-dataflow	differential-dataflow/tests/join.rs	99	tests/upstream/dd/join.c	P8	done	join_scale wired on count; keyed on a constant u8 since a unit (0-byte) join key does not match in the current join path
+differential-dataflow	differential-dataflow/tests/reduce_reference.rs	409	tests/upstream/dd/reduce_reference.c	P8	done	all four families ported over Pair<u64,u64> product time (dtfl_time_product of two u64) through an unordered input, cross-checking the cursor reduce against the reference tactic (__dtfl_arranged_reduce_trace_reference, the doc-hidden reduce_trace_reference).  splitmix64 replaces StdRng, so the random graphs differ from upstream.  scc_tiny_b and scc_sweep failed until the UpdsBuilder seal fix (layout.c): every tactic, and dtfl_algo_scc, was wrong alone, not only in a shared dataflow.  scc_oracle_single_tactic (C-only) checks each scc alone against a Kosaraju oracle
+differential-dataflow	differential-dataflow/tests/scc.rs	273	tests/upstream/dd/scc.c	P9	done	scc and scc_at tests pass against the sequential/Kosaraju oracle
+differential-dataflow	differential-dataflow/tests/trace.rs	59	tests/upstream/dd/trace.c	P6	done	
+differential-dataflow	dogsdogsdogs/examples/delta_query.rs	152	examples/dogs/delta_query.c	P9	done	fixed graph in place of GraphMMap; triangle delta query Q(a,b,c) via the join_core "new ideas" path (the propose/validate path is covered by delta_query_wcoj); the edge collection is entered into the AltNeu scope, delayed alt -> neu for the neu relations and arranged INSIDE the scope in place of enter_at on an outer arrangement (observationally identical, differs only in trace sharing); d_edges = differentiate(edges) drives changes1/changes2/changes3 (neu,neu / alt,neu / alt,alt per upstream), concatenated and integrated back; assert_eq dropped (triangles hand-verified to equal delta_query_wcoj on the same graph); exact triangle set (0,1,2) (0,1,3)
+differential-dataflow	dogsdogsdogs/examples/delta_query2.rs	81	examples/dogs/delta_query2.c	P9	done	half_join delta join over a Product<usize,usize> partial order via dtfl_dogs_half_join2 with the (outer-1,inner-1) frontier closure and the strict/non-strict comparison pair; the time hoist is done at the unordered input (change record carries its own time); C half_join already delays to the joined time so upstream's trailing inner.map lower is dropped; fixed graph at comparable times in place of the two-edge demo, exact hand-verified join set
+differential-dataflow	dogsdogsdogs/examples/delta_query_wcoj.rs	111	examples/dogs/delta_query_wcoj.c	P9	done	fixed graph in place of GraphMMap; triangle WCOJ delta query via CollectionIndex/extend in an AltNeu scope; exact triangle set
+differential-dataflow	dogsdogsdogs/examples/dogsdogsdogs.rs	89	examples/dogs/dogsdogsdogs.c	P9	done	fixed graph in place of GraphMMap; triangle count via the generic extend() join (count/propose/validate internally); exact extensions
+differential-dataflow	dogsdogsdogs/examples/ngo.rs	92	examples/dogs/ngo.c	P9	done	fixed graph in place of GraphMMap; triangle query via the full count-min dataflow join (arrange_by_self/by_key, join_core, reduce picks the fewest-extension index); exact triangle set
+differential-dataflow	dogsdogsdogs/src/altneu.rs	100	src/dogs/altneu.c	P9	done	AltNeu order, lattice and Refines are in src/progress/time.c (ALTNEU); this row is the dogsdogsdogs-side helpers only
+differential-dataflow	dogsdogsdogs/src/calculus.rs	67	src/dogs/calculus.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/lib.rs	208	src/dogs/extend.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/count.rs	41	src/dogs/count.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/half_join.rs	371	src/dogs/half_join.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/half_join2.rs	366	src/dogs/half_join.c	P9	done	the general half_join (comparison + frontier_func closures) ported as dtfl_dogs_half_join2 in src/dogs/half_join.c (the two share the operator; dtfl_dogs_half_join is a thin wrapper).  Exercised end to end by examples/dogs/delta_query2.c, which drives the (outer-1, inner-1) frontier_func and both the strict and non-strict comparison closures and matches the hand-computed join set; the existing half_join path stays unregressed
+differential-dataflow	dogsdogsdogs/src/operators/lookup_map.rs	143	src/dogs/lookup_map.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/mod.rs	14	include/dtfl/dogs.h	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/propose.rs	75	src/dogs/propose.c	P9	done	
+differential-dataflow	dogsdogsdogs/src/operators/validate.rs	39	src/dogs/validate.c	P9	done	
+differential-dataflow	dogsdogsdogs/tests/lookup_map_regression.rs	108	tests/upstream/dogs/lookup_map_regression.c	P9	done	
 differential-dataflow	doop/src/main.rs	1242	-	-	excluded	not a workspace member upstream
-differential-dataflow	experiments/src/bin/arrange.rs	227	bench/experiments/arrange.c	P15	todo	performance parity table (PLAN section 9)
+differential-dataflow	experiments/src/bin/arrange.rs	227	bench/experiments/arrange.c	P15	done	the arrange latency-throughput experiment with upstream's argument order (keys recs rate work comp, timely args through dtfl_config_from_args and dtfl_execute): each worker pins itself to the index-th allowed CPU, loads its share of recs (LOADING), then runs the closed loop (waves at times ((wave*rate)+round)*peers+index for 25 s, THROUGHPUT) or, given open-loop, the open loop (a fixed schedule of rate/2 pairs per second until 10*keys acknowledgements, ack counters striding by peers); both fill the counts[64][16] histogram (after 5 s, or for the second half of the acknowledgements) that worker 0 prints as ARRANGE LATENCY lines in upstream's columns.  comp selects exchange (dtfl_collection_inner, exchange by key), arrange, count, distinct or nothing.  Differs only in the generators (xorshift64*, seeded alike per worker, in place of StdRng) and a --seconds=N test knob for the closed-loop window; tests/dist/test_bench_arrange.sh smoke-tests both modes and the output format; performance runs only on dedicated hosts
 differential-dataflow	experiments/src/bin/attend.rs	60	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/deals-interactive.rs	291	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/deals.rs	138	-	-	deferred	not needed for the performance table
@@ -316,108 +318,108 @@ differential-dataflow	experiments/src/bin/graphs-interactive-neu-zwei.rs	330	-	-
 differential-dataflow	experiments/src/bin/graphs-interactive-neu.rs	395	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-interactive.rs	299	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graphs-single.rs	145	-	-	deferred	not needed for the performance table
-differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	todo	performance parity table (PLAN section 9)
-differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	todo	performance parity table (PLAN section 9)
+differential-dataflow	experiments/src/bin/graphs-static.rs	202	bench/experiments/graphs-static.c	P15	done	five-phase static-graph workload sharing one arrange_by_key().trace across dataflows: FORWARD builds the forward index and keeps the trace; REACH, BFS, REVERSE and CC each trace.import() it into a new dataflow (REVERSE re-keys (k,v)->(v,k) and keeps a second trace, CC imports forward+reverse and labels each node with its component minimum).  reach/bfs/cc use the explicit Variable form (dtfl_scope_iterative + dtfl_variable_new + set + leave); the in-scope loop arrangement is join_core operand a1 and the imported trace a2.  Fixed deterministic xorshift graph with nodes<=32 (edges 0->1,0->2,1->3,2->3,2->4,3->5,4->5,6->0): reach from 0 = {0..5}, bfs 0:0 1:1 2:1 3:2 4:2 5:3, cc all 0..6 labelled 0.  u64 top time (not upstream unit), so reach uses distinct and bfs reduce; cc drops the leading-zeros delay (plain enter) as propagate.c does
+differential-dataflow	experiments/src/bin/graphs.rs	157	bench/experiments/graphs.c	P15	done	three-phase workload sharing one arrange_by_key().trace across dataflows: LOAD builds the (src,dst) collection and keeps the trace; REACH and BFS each trace.import() it into a new dataflow and iterate from root 0 (reach: join the frontier arranged-by-self against the graph trace, concat root, distinct; bfs: join the frontier arranged-by-key at dist+1, concat root, reduce min).  The in-scope loop arrangement is join_core operand a1 and the imported trace a2.  Fixed deterministic xorshift graph with nodes<=32 (edges 0->1,0->2,1->3,2->3,2->4,3->5,4->5,6->0): reach from 0 = {0..5}, bfs 0:0 1:1 2:1 3:2 4:2 5:3.  u64 top time (not upstream unit), so reach uses distinct and bfs reduce; both compute the same fixed point
 differential-dataflow	experiments/src/bin/graspan-interactive.rs	155	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan1.rs	97	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/graspan2.rs	276	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/multitemporal.rs	338	-	-	deferred	not needed for the performance table
 differential-dataflow	experiments/src/bin/ysb.rs	139	-	-	deferred	not needed for the performance table
-differential-dataflow	experiments/src/lib.rs	7	-	-	deferred	benchmark support code
-differential-dataflow	interactive/examples/ddir_server.rs	290	tools/dtfl-ddir/ddir_server.c	P13	todo	
-differential-dataflow	interactive/examples/ddir_vec.rs	229	tools/dtfl-ddir/ddir_vec.c	P13	todo	
-differential-dataflow	interactive/examples/dump_explain.rs	39	tools/dtfl-ddir/dump_explain.c	P13	todo	
-differential-dataflow	interactive/examples/programs/adt.ddp	22	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/binders.ddp	14	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/kcore.ddir	28	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/reach.ddir	13	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/reach.ddp	13	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/scc.ddir	38	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/scc.ddp	37	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/stable.ddir	22	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/stable.ddp	15	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/programs/unnest.ddp	14	tools/dtfl-ddir/programs/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/arrange_idem.ddp	54	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/clock_watch.ddp	4	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/count_gen.ddp	6	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/echo.ddp	3	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/producer.ddp	5	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/rand_reach.ddp	15	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/reach_gen.ddp	15	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/programs/reach_import.ddp	13	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/arrange_idem.txt	39	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/clock.txt	10	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/derived.txt	10	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/drop.txt	24	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/generated.txt	25	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/peek.txt	18	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/shared_trace.txt	25	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
-differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/dtfl-ddir/server/	P13	todo	copied verbatim; DDIR source is language-neutral
+differential-dataflow	experiments/src/lib.rs	7	-	-	excluded	cargo new template: the file holds only the it_works test, assert_eq!(2 + 2, 4)
+differential-dataflow	interactive/examples/ddir_server.rs	290	tools/dtfl-ddir/server_cmd.c	P13	done	the server subcommand of dtfl-ddir: install/feed/tick/drop/peek/list/exit over the public server API; folded with ddir_vec and dump_explain into one dtfl-ddir binary
+differential-dataflow	interactive/examples/ddir_vec.rs	229	tools/dtfl-ddir/run.c	P13	done	the run subcommand of dtfl-ddir: parse/evaluate/print; rows from a file or stdin, "@N" selects the input (a clearer form of the round-robin EDGES_FILE assignment)
+differential-dataflow	interactive/examples/dump_explain.rs	39	tools/dtfl-ddir/explain_cmd.c	P13	done	the explain subcommand of dtfl-ddir: reports the program and its explanation rewrite by shape (the full scope-tree dump is not on the public API)
+differential-dataflow	interactive/examples/programs/adt.ddp	22	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/binders.ddp	14	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/kcore.ddir	28	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/reach.ddir	13	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/reach.ddp	13	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/scc.ddir	38	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/scc.ddp	37	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/programs/stable.ddir	22	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/stable.ddp	15	tools/dtfl-ddir/programs/	P13	done	copied verbatim (byte-identical logic); runs via dtfl-ddir but does not converge on the current backend (self-referential ARRANGE feedback var parks); see test note
+differential-dataflow	interactive/examples/programs/unnest.ddp	14	tools/dtfl-ddir/programs/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/arrange_idem.ddp	54	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/clock_watch.ddp	4	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/count_gen.ddp	6	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/echo.ddp	3	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/producer.ddp	5	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/rand_reach.ddp	15	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/reach_gen.ddp	15	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/programs/reach_import.ddp	13	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/arrange_idem.txt	39	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/clock.txt	10	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/derived.txt	10	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/drop.txt	24	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/generated.txt	25	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/peek.txt	18	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/shared_trace.txt	25	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
+differential-dataflow	interactive/examples/server/sessions/values.txt	19	tools/dtfl-ddir/server/	P13	done	copied verbatim (program logic byte-identical); comment punctuation transliterated to ASCII
 differential-dataflow	interactive/src/backend/col.rs	259	-	-	excluded	disabled upstream
-differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	todo	
-differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	todo	
-differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	todo	
-differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	todo	
-differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	todo	
-differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	todo	
-differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	todo	
-differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	todo	
-differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	todo	
-differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	todo	
-differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	todo	
-differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	todo	
-differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	todo	
+differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	done	render_tree walk; nested { } renders as a region at depth + 1, leave_dynamic pops its PointStamp coordinate
+differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	done	whole program in one iterative dynamic scope; time is literally Product<u64,PointStamp<u64>>; render_linear is one faithful operator with enter_at and lift_iter
+differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	done	the reverse rules over the dd_df backend; one Val row model (the trait's second test-only model is not ported)
+differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	done	clone_into/clone_identity, resolve/site_shapes, Val row model, the reverse walk, explain
+differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	
+differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	done	parse/build/evaluate entry ported; time class is Product<u64,PointStamp<u64>>; survey_sources subsumed by the lowered import count; gen_row/load_program land with the explain tests
+differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	
+differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	done	
+differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done	
+differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	
+differential-dataflow	interactive/src/scope_ir.rs	450	src/ddir/scope_ir.c	P13	done	
+differential-dataflow	interactive/src/server.rs	601	src/ddir/server.c	P13	done	the DDIR plugin server: registry and lifecycle (install/feed/tick/drop/peek/list), one in-process worker with commands on the calling thread, shared traces across installs, generated/iota/clock sources.  The multi-worker Sequencer and trace compaction are deferred (the public trace handle lacks the compaction setter); see ADR-0012 (2026-10-15)
+differential-dataflow	interactive/tests/explain.rs	466	tests/upstream/ddir/explain.c	P13	done	every #[test] but report_demand_excess (a printed metric, no assertion) is ported and passes; the four upstream #[ignore] tests (scc_100, scc_join_partner_time_regression, fuzz, report) run only with DTFL_EXPLAIN_HEAVY set, and the three ported ones pass then (13/13, about 60 s debug)
 differential-dataflow	mdbook/build.rs	46	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	todo	manual skeleton and menu
-differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	todo	manual chapter rewritten for C
-differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	todo	
+differential-dataflow	mdbook/src/SUMMARY.md	43	doc/libdtfl.texi	P0	done	manual skeleton and menu
+differential-dataflow	mdbook/src/chapter_0/chapter_0.md	10	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_0.md	34	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_1.md	83	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_2.md	106	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/chapter_0_3.md	136	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/negatives.md	4	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_0/positives.md	16	doc/differential/chapter_0.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1.md	4	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_0.md	29	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_1.md	72	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_2.md	96	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_1/chapter_1_3.md	106	doc/differential/chapter_1.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_1.md	38	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_2.md	20	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_3.md	31	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_4.md	57	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_5.md	23	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_6.md	58	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_7.md	105	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_2/chapter_2_8.md	4	doc/differential/chapter_2.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3.md	22	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_1.md	45	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_2.md	31	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_3.md	12	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_4.md	18	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_3/chapter_3_5.md	15	doc/differential/chapter_3.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4.md	5	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_1.md	38	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_2.md	22	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_4/chapter_4_3.md	25	doc/differential/chapter_4.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5.md	9	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_1.md	77	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_2.md	134	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_3.md	95	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_5/chapter_5_4.md	64	doc/differential/chapter_5.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_6/chapter_6.md	1	doc/differential/chapter_6.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a.md	4	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_1.md	32	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_2.md	57	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/chapter_a/chapter_a_3.md	85	doc/differential/chapter_a.texi	P8	done	manual chapter rewritten for C
+differential-dataflow	mdbook/src/introduction.md	10	doc/differential/introduction.texi	P5	done	
 differential-dataflow	mdbook/src/lib.rs	2	-	-	excluded	mdbook doctest harness; the doc snippet gate replaces it
-differential-dataflow	server/dataflows/degr_dist/src/lib.rs	25	examples/server/degr_dist.c	P14	todo	built as dlopen(3) plugins
-differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/server/neighborhood.c	P14	todo	built as dlopen(3) plugins
-differential-dataflow	server/dataflows/random_graph/src/lib.rs	195	examples/server/random_graph.c	P14	todo	built as dlopen(3) plugins
-differential-dataflow	server/dataflows/reachability/src/lib.rs	32	examples/server/reachability.c	P14	todo	built as dlopen(3) plugins
-differential-dataflow	server/src/bin/dd_server.rs	140	tools/dtfl-server/main.c	P14	todo	
-differential-dataflow	server/src/lib.rs	94	include/dtfl/server.h	P14	todo	
+differential-dataflow	server/dataflows/degr_dist/src/lib.rs	25	examples/server/degr_dist.c	P14	done	static plugin (not dlopen); publishes <graph>-degrees for peek
+differential-dataflow	server/dataflows/neighborhood/src/lib.rs	34	examples/server/neighborhood.c	P14	done	static plugin (not dlopen); three-hop, inspect to stdout
+differential-dataflow	server/dataflows/random_graph/src/lib.rs	195	examples/server/random_graph.c	P14	done	static plugin; deterministic finite initial graph only (open-loop timed source dropped; rate ignored)
+differential-dataflow	server/dataflows/reachability/src/lib.rs	32	examples/server/reachability.c	P14	done	static plugin (not dlopen); publishes <graph>-reach for peek
+differential-dataflow	server/src/bin/dd_server.rs	140	tools/dtfl-server/main.c	P14	done	static plugin table (not dlopen); session replay matches
+differential-dataflow	server/src/lib.rs	94	include/dtfl/dd_server.h	P14	done	TraceHandler + Environment + static plugin registry; server.h is the DDIR server (P13), so this is dd_server.h
 differential-dataflow	tpchlike/src/bin/arrange.rs	246	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/bin/batch.rs	166	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/bin/just-arrange.rs	223	-	-	excluded	not a workspace member upstream
@@ -449,14 +451,14 @@ differential-dataflow	tpchlike/src/queries/query20.rs	140	-	-	excluded	not a wor
 differential-dataflow	tpchlike/src/queries/query21.rs	138	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/queries/query22.rs	158	-	-	excluded	not a workspace member upstream
 differential-dataflow	tpchlike/src/types.rs	310	-	-	excluded	not a workspace member upstream
-dataflow-diag	connect/src/lib.rs	16	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/connect.rs	104	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/mod.rs	5	tools/dtfl-diag/connect.c	P11	todo	
-dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	todo	
-dataflow-diag	tdiag/src/commands/arrangements.rs	133	tools/dtfl-diag/arrangements.c	P11	todo	
-dataflow-diag	tdiag/src/commands/graph.rs	256	tools/dtfl-diag/graph.c	P11	todo	
-dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	todo	shipped verbatim; generated script must escape operator names
-dataflow-diag	tdiag/src/commands/mod.rs	9	tools/dtfl-diag/main.c	P11	todo	
-dataflow-diag	tdiag/src/commands/profile.rs	170	tools/dtfl-diag/profile.c	P11	todo	
-dataflow-diag	tdiag/src/lib.rs	25	tools/dtfl-diag/main.c	P11	todo	reads the current bincode stream, not the 0.11 abomonation stream (D9)
-dataflow-diag	tdiag/src/main.rs	178	tools/dtfl-diag/main.c	P11	todo	reads the current bincode stream, not the 0.11 abomonation stream (D9)
+dataflow-diag	connect/src/lib.rs	16	tools/dtfl-diag/connect.c	P11	done	ConnectError folded into the tool stderr; open_sockets/bind/await_sockets as diag_connect (files via -f, or TCP accept per source worker).
+dataflow-diag	connect/src/receive/connect.rs	104	tools/dtfl-diag/connect.c	P11	done	open_sockets/bind/await_sockets/make_readers as diag_connect; files or TCP, one descriptor per source worker, handed to dtfl_diag_replay_fds.
+dataflow-diag	connect/src/receive/mod.rs	5	tools/dtfl-diag/connect.c	P11	done	the receive module re-exports; subsumed into connect.c.
+dataflow-diag	connect/src/receive/replaywithshutdown.rs	112	src/diag/replay_shutdown.c	P11	done	dtfl_diag_replay_fd/_fds: reads the EventWriter log-stream framing (D9), decodes each inner record with the shared log decoder, delivers dtfl_log_batches; replay-with-shutdown is the read-to-EOF loop.
+dataflow-diag	tdiag/src/commands/arrangements.rs	133	tools/dtfl-diag/arrangements.c	P11	done	tracks arrangement size per operator from Batch/Merge/Drop events, joined with operator names from the timely stream; prints current size (end-of-stream snapshot of the windowed live tool).
+dataflow-diag	tdiag/src/commands/graph.rs	256	tools/dtfl-diag/graph.c	P11	done	reconstructs the dataflow graph and re-wires channels crossing scope boundaries (ingress/egress joins + pass-through) exactly as graph.rs; writes the HTML with escaped operator names; tested against tests/interop/fixtures/diag_graph_stream.bin (tests/dist/test_diag_graph.sh).
+dataflow-diag	tdiag/src/commands/graph/dataflow-graph.html	98	data/dataflow-graph.html	P11	done	shipped verbatim (ASCII); the generated script escapes operator names (write_json_escaped).
+dataflow-diag	tdiag/src/commands/mod.rs	9	tools/dtfl-diag/main.c	P11	done	subcommand dispatch (graph/profile/arrangements) in main.c.
+dataflow-diag	tdiag/src/commands/profile.rs	170	tools/dtfl-diag/profile.c	P11	done	pairs Schedule Start/Stop per operator to accumulate elapsed ns, joins with operator names/scope flags, prints sorted descending; tested against diag_profile_stream.bin.
+dataflow-diag	tdiag/src/lib.rs	25	tools/dtfl-diag/main.c	P11	done	DiagError folded into tool stderr; reads the current bincode stream, not the 0.11 abomonation stream (D9).
+dataflow-diag	tdiag/src/main.rs	178	tools/dtfl-diag/main.c	P11	done	the CLI (getopt flags -i/-p/-P/-s/-f/-o/--output-interval, a tool may use getopt); reads the current bincode stream, not the 0.11 abomonation stream (D9).

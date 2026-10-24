@@ -1,0 +1,100 @@
+@c SPDX-License-Identifier: MIT
+@c doc/threads.texi: the Threads chapter.
+@c The thread-safety contract from dev/PLAN.md section 5 and dtfl(7).
+
+@node Threads
+@chapter Threads
+
+libdtfl keeps almost no global state, and the state it does keep lives
+in a worker that belongs to one thread.  The full contract is in
+@code{dtfl(7)}; it has six rules.
+
+@enumerate
+@item
+@strong{Handles belong to one worker.}  A @code{dtfl_worker} and
+everything reached from it (scopes, streams, collections, operators,
+capabilities, input handles, probes and traces) belong to the thread
+that runs that worker.  Using one from another thread is undefined
+behavior.  Debug builds (@option{--enable-debug}) detect the violation
+and call the panic hook.  This matches Rust, where those types are
+@code{!Send}.
+
+@item
+@strong{The thread-safe exceptions.}  A few objects may be used from any
+thread: @code{dtfl_sync_activator} (to wake a worker from outside), a
+read-only shared probe snapshot, the synchronized event link, the
+@code{dtfl_guards} join handle, and the four global hook setters.  The
+setters must be called before the first @code{dtfl_execute}.
+
+@item
+@strong{Inter-worker data moves only through the allocator's queues.}
+Record batches are reference counted with atomic counts, because they
+cross threads in the multi-worker communication modes.
+
+@item
+@strong{Trace sharing is worker-local.}  A trace (the shared index
+behind an arrangement) imports only into dataflows on the same worker.
+Rust forbids cross-worker sharing (@code{TraceAgent} is an @code{Rc}),
+and so does libdtfl.
+
+@item
+@strong{No hidden global state.}  The only process-wide writable state is
+the five host hooks (allocation, panic, logging, thread spawning,
+synchronization); the
+only per-thread state is the buffer behind
+@code{dtfl_last_error_detail}.  The library installs no signal handlers,
+reads no environment variables, and touches no @code{getopt} globals.
+Two independent @code{dtfl_execute} calls can therefore run at the same
+time in one process.
+
+@item
+@strong{Reentrancy.}  An operator callback may call any API on its own
+worker @emph{except} @code{dtfl_worker_step}; a nested step is detected
+and calls the panic hook.
+@end enumerate
+
+The contract is verified by a ThreadSanitizer build over the
+multi-worker suites, by Helgrind on the typed-process allocator, and by
+a symbol-table check that fails on any writable or thread-local symbol
+in the shared library outside the allowlisted hook and error-buffer
+globals.
+
+@section Placing workers on cores and sockets
+
+libdtfl does not pin its worker threads.  A host that wants placement
+gives it through the thread hooks: its @code{spawn} callback starts the
+thread and sets its affinity before calling @code{start}, or the program
+runs under @command{taskset} or @command{numactl}.  Worker @var{i}'s
+thread is the @var{i}-th spawned; network threads follow the workers.
+
+Measured on a two-socket c6i.metal (2 x 32 cores, clock pinned at
+2.9 GHz, the pinned @code{arrange} benchmark, 16 workers):
+
+@multitable @columnfractions .30 .25 .25 .20
+@headitem Placement @tab C records/s @tab Rust records/s @tab C slower by
+@item packed (one socket) @tab 69.4M @tab 93.2M @tab 1.34x
+@item spread (alternating) @tab 56.3M @tab 78.3M @tab 1.39x
+@end multitable
+
+Spreading costs both builds about the same, a fifth of their
+throughput, because exchanged data and progress messages cross the
+socket interconnect.  Pack workers onto one socket while they fit, and
+spread only when one socket's cores or memory bandwidth are not
+enough.  @command{dev/bench-ec2 --placement packed|spread} reruns the
+comparison.
+
+@section Latency under load
+
+With one worker in the @code{arrange} benchmark's open-loop mode, the
+C build's p99 latency is 1.4 times Rust's at a quarter of its capacity
+and 1.8 to 2.9 times at half capacity or more (the table is in the
+README).  The extra latency is a higher cost per round and per update,
+not extra work.  Both builds take the same steps per round, seal the
+same batches, make about the same allocation calls, and apply the same
+merge fuel to the trace.  A round with one update pair costs 6.5
+microseconds against 4.9, and each further pair 0.21 against 0.13, so
+the gap widens as rounds fill.  On a @code{count} pipeline, a merge
+step in the trace takes longer in C, and a request that arrives during
+one waits for it.  To keep tail latency low, keep the per-worker rate
+well below capacity: at a quarter of capacity both builds answer
+within tens of microseconds.

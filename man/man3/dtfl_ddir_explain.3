@@ -1,0 +1,88 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL_DDIR_EXPLAIN 3
+.Os
+.Sh NAME
+.Nm dtfl_ddir_explain ,
+.Nm dtfl_ddir_clone_identity
+.Nd rewrite a DDIR program into one that explains its output
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/ddir.h
+.Ft int
+.Fn dtfl_ddir_explain "const dtfl_ddir_program *program" "const dtfl_ddir_shape *shapes" "size_t n_shapes" "dtfl_ddir_program **out"
+.Ft int
+.Fn dtfl_ddir_clone_identity "const dtfl_ddir_program *program" "dtfl_ddir_program **out"
+.Sh DESCRIPTION
+.Fn dtfl_ddir_explain
+rewrites
+.Fa program
+into a new program whose execution produces, for a query against
+.Fa program Ns 's
+first export, the per-source
+.Em demand sets :
+the input rows that regenerate the queried output row.
+.Pp
+.Fa shapes
+gives the
+.Vt dtfl_ddir_shape
+.Pq a Fa k No key and Fa v No value field count
+of each of the program's positional inputs, in order;
+.Fa n_shapes
+must equal
+.Fn dtfl_ddir_program_input_count .
+The shapes let the rewrite place the loop-iteration chain in the flat
+demand envelope that carries each query.
+.Pp
+The rewritten program takes one extra positional input after the
+originals.
+A row of that input is a query: its key is the queried output row's key,
+and its value is the queried value's fields followed by a trailing query
+id.
+The rewritten program exports one collection named
+.Dq Li demand:input Ns Ar N
+per source
+.Ar N ,
+holding that source's demand set.
+Restricting the original inputs to the demand sets and re-running
+.Fa program
+regenerates every queried output row.
+.Pp
+.Fn dtfl_ddir_clone_identity
+clones
+.Fa program
+into an equivalent program that computes the same named exports.
+It is the identity transform the explanation rewrite is built on: every
+nested scope additionally exports a host-visible lifted form of its
+internal collections, folding that scope's iteration coordinates into the
+value so a later pass can address any value-producing site at the top
+level.
+.Pp
+Both write the new program through
+.Fa out
+and return 0 on success.
+The caller owns the result and frees it with
+.Fn dtfl_ddir_program_free .
+.Sh RETURN VALUES
+Each returns 0 on success.
+On a NULL argument, a shape count that does not match the program's input
+count, or a program with no export, each returns a
+.Dv DTFL_E Ns Sy *
+code, reports a message through
+.Xr dtfl_last_error_detail 3 ,
+and leaves
+.Fa *out
+NULL.
+.Sh SEE ALSO
+.Xr dtfl_ddir_parse 3
+.Sh STANDARDS
+The explanation rewrite is a port of the
+.Pa interactive/src/explain
+module of differential dataflow.
+.Sh CAVEATS
+The reverse-tracing rules target flat relational programs: tuples of
+scalar fields, keyed and reshaped by the DDIR projection language.
+A demand set is an over-approximation; it is sufficient to regenerate the
+queried row but need not be minimal.

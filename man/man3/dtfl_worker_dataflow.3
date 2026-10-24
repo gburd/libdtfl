@@ -1,0 +1,137 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_WORKER_DATAFLOW 3
+.Os
+.Sh NAME
+.Nm dtfl_worker_dataflow ,
+.Nm dtfl_worker_new_standalone ,
+.Nm dtfl_worker_free ,
+.Nm dtfl_worker_index ,
+.Nm dtfl_worker_peers ,
+.Nm dtfl_worker_step ,
+.Nm dtfl_worker_step_or_park ,
+.Nm dtfl_worker_step_while ,
+.Nm dtfl_worker_has_dataflows ,
+.Nm dtfl_worker_drop_dataflow ,
+.Nm dtfl_worker_next_dataflow_index
+.Nd build and drive dataflows on a worker
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft int
+.Fn dtfl_worker_dataflow "dtfl_worker *w" "const char *name" "const dtfl_time_class *tc" "dtfl_build_fn build" "void *ctx"
+.Ft dtfl_worker *
+.Fn dtfl_worker_new_standalone "void"
+.Ft void
+.Fn dtfl_worker_free "dtfl_worker *w"
+.Ft size_t
+.Fn dtfl_worker_index "const dtfl_worker *w"
+.Ft size_t
+.Fn dtfl_worker_peers "const dtfl_worker *w"
+.Ft bool
+.Fn dtfl_worker_step "dtfl_worker *w"
+.Ft bool
+.Fn dtfl_worker_step_or_park "dtfl_worker *w" "uint64_t timeout_ns"
+.Ft void
+.Fn dtfl_worker_step_while "dtfl_worker *w" "bool (*cond)(void *ctx)" "void *ctx"
+.Ft bool
+.Fn dtfl_worker_has_dataflows "const dtfl_worker *w"
+.Ft void
+.Fn dtfl_worker_drop_dataflow "dtfl_worker *w" "size_t index"
+.Ft size_t
+.Fn dtfl_worker_next_dataflow_index "const dtfl_worker *w"
+.Sh DESCRIPTION
+A worker owns a share of the computation.
+Inside the function passed to
+.Xr dtfl_execute 3 ,
+or on a worker from
+.Fn dtfl_worker_new_standalone ,
+.Fn dtfl_worker_dataflow
+builds one dataflow:
+it calls
+.Fa build
+with a root scope over the timestamp class
+.Fa tc
+and the given
+.Fa ctx ,
+installs the resulting operators, and returns.
+.Fa name
+labels the dataflow in logs.
+The index the dataflow will receive is
+.Fn dtfl_worker_next_dataflow_index .
+.Pp
+.Fn dtfl_worker_index
+is this worker's position in
+.Bq 0 , Fn dtfl_worker_peers ,
+the number of workers in the computation.
+.Pp
+.Fn dtfl_worker_step
+runs each active dataflow once and returns whether any dataflow
+remains.
+.Fn dtfl_worker_step_or_park
+is the same but, when nothing is runnable, parks the thread for up to
+.Fa timeout_ns
+nanoseconds
+.Pq Dv UINT64_MAX waits without limit
+or until another thread wakes it.
+.Fn dtfl_worker_step_while
+steps while
+.Fa cond
+returns true.
+.Fn dtfl_worker_has_dataflows
+reports whether any dataflow is still running.
+.Pp
+.Fn dtfl_worker_drop_dataflow
+removes the dataflow with the given
+.Fa index .
+.Pp
+.Fn dtfl_worker_new_standalone
+creates a single-worker handle that the caller steps by hand, outside
+.Xr dtfl_execute 3 ;
+.Fn dtfl_worker_free
+releases it.
+Only a standalone worker may be freed this way; a worker passed to an
+.Xr dtfl_execute 3
+callback is owned by the runtime.
+.Sh RETURN VALUES
+.Fn dtfl_worker_dataflow
+returns 0 on success or one of the errors below.
+.Fn dtfl_worker_new_standalone
+returns a worker, or aborts through the panic hook on allocation
+failure.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_worker *w = dtfl_worker_new_standalone();
+dtfl_worker_dataflow(w, "example", tc, build, NULL);
+while (dtfl_worker_has_dataflows(w))
+	dtfl_worker_step(w);
+dtfl_worker_free(w);
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ESTATE
+.It Bq Er DTFL_ESTATE
+.Fn dtfl_worker_dataflow
+was called from inside an operator.
+.It Bq Er DTFL_EINVAL
+.Fa tc
+does not refine the unit class.
+.El
+.Sh SEE ALSO
+.Xr dtfl_config 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl_scope_scoped 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These correspond to timely's
+.Vt Worker
+methods
+.Fn dataflow ,
+.Fn step ,
+.Fn step_or_park
+and the threadless-example standalone worker.
+.Sh THREAD SAFETY
+A worker belongs to one thread.
+All of these functions must be called from that thread.
+To wake a parked worker from another thread, use its sync activator.

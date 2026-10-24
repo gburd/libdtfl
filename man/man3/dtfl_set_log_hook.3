@@ -1,0 +1,94 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_SET_LOG_HOOK 3
+.Os
+.Sh NAME
+.Nm dtfl_set_log_hook
+.Nd install the libdtfl diagnostic log hook
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/base.h
+.Ft void
+.Fn dtfl_set_log_hook "dtfl_log_fn fn" "void *ctx"
+.Sh DESCRIPTION
+libdtfl emits human-readable diagnostics, such as a failure to start a
+worker thread, through a log hook.
+.Fn dtfl_set_log_hook
+installs
+.Fa fn ,
+which is called with a level, a message, and the
+.Fa ctx
+passed here:
+.Bd -literal -offset indent
+typedef enum dtfl_log_level {
+	DTFL_LOG_DEBUG, DTFL_LOG_INFO, DTFL_LOG_WARN, DTFL_LOG_ERROR
+} dtfl_log_level;
+typedef void (*dtfl_log_fn)(dtfl_log_level level, const char *msg,
+    void *ctx);
+.Ed
+.Pp
+With no hook installed, libdtfl writes
+.Dv DTFL_LOG_WARN
+and
+.Dv DTFL_LOG_ERROR
+messages to standard error and drops
+.Dv DTFL_LOG_DEBUG
+and
+.Dv DTFL_LOG_INFO ,
+so the library is quiet by default.
+Passing
+.Dv NULL
+for
+.Fa fn
+restores that default.
+.Pp
+This diagnostic log is separate from the structured timely and
+differential event logging reached through
+.In dtfl/log.h ,
+which carries machine-readable events and is not affected by this
+hook.
+.Pp
+The hook is process-wide and must be installed before the first
+.Fn dtfl_execute ,
+like the allocation, panic and thread hooks; see
+.Xr dtfl_embedding 7 .
+.Sh EXAMPLES
+A PostgreSQL extension maps the levels to
+.Fn elog ,
+but not
+.Dv DTFL_LOG_ERROR
+to
+.Dv ERROR :
+the hook runs inside libdtfl, and an error that longjmps out leaves the
+worker unusable
+.Pq Xr dtfl_embedding 7 :
+.Bd -literal -offset indent
+static void
+pg_log(dtfl_log_level level, const char *msg, void *ctx)
+{
+	int elevel[] = { DEBUG1, LOG, WARNING, LOG };
+	elog(elevel[level], "dtfl: %s", msg);
+}
+
+dtfl_set_log_hook(pg_log, NULL);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_set_alloc_hooks 3 ,
+.Xr dtfl_set_thread_hooks 3 ,
+.Xr dtfl 7 ,
+.Xr dtfl_embedding 7
+.Sh HISTORY
+Rust libraries log through the
+.Ql log
+or
+.Ql tracing
+facade; this hook is the C equivalent, letting an embedding host route
+diagnostics into its own logging.
+.Sh THREAD SAFETY
+.Fn dtfl_set_log_hook
+must be called before the first
+.Fn dtfl_execute .
+Once installed, the hook may be called from any worker thread, so it
+must be reentrant and thread-safe.

@@ -1,0 +1,240 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_ALGO_BFS 3
+.Os
+.Sh NAME
+.Nm dtfl_algo_bfs ,
+.Nm dtfl_algo_scc ,
+.Nm dtfl_algo_scc_at ,
+.Nm dtfl_algo_propagate ,
+.Nm dtfl_algo_propagate_at ,
+.Nm dtfl_algo_sequence ,
+.Nm dtfl_algo_bidijkstra ,
+.Nm dtfl_algo_identifiers ,
+.Nm dtfl_algo_prefix_sum
+.Nd graph and sequence algorithms on differential dataflow
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/algo.h
+.Ft dtfl_collection *
+.Fn dtfl_algo_bfs "dtfl_collection *edges" "dtfl_collection *roots"
+.Ft dtfl_collection *
+.Fn dtfl_algo_scc "dtfl_collection *graph"
+.Ft dtfl_collection *
+.Fn dtfl_algo_scc_at "dtfl_collection *graph" "dtfl_algo_label_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_algo_propagate "dtfl_collection *edges" "dtfl_collection *nodes"
+.Ft dtfl_collection *
+.Fn dtfl_algo_propagate_at "dtfl_collection *edges" "dtfl_collection *nodes" "dtfl_algo_label_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_algo_sequence "dtfl_collection *state" "dtfl_collection *edges" "dtfl_algo_sequence_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_algo_bidijkstra "dtfl_collection *edges" "dtfl_collection *goals"
+.Ft dtfl_collection *
+.Fn dtfl_algo_identifiers "dtfl_collection *c" "const dtfl_type *rec_type"
+.Ft dtfl_collection *
+.Fn dtfl_algo_prefix_sum "dtfl_collection *c" "uint64_t zero" "dtfl_algo_combine_fn combine" "dtfl_ctx ctx"
+.Sh DESCRIPTION
+These functions assemble common graph and sequence algorithms from the
+differential dataflow collection operators
+.Pq Xr dtfl_collection_join 3 , Xr dtfl_collection_reduce 3 , Xr dtfl_collection_iterate 3 .
+Each takes and returns
+.Vt dtfl_collection
+handles over fixed record layouts of 64-bit node identifiers: a node is a
+.Vt u64
+record, an edge is a pair of two
+.Vt u64 ,
+and a labelled node is a pair of two
+.Vt u64 .
+Every input difference class is the signed default
+.Pq Xr dtfl_diff_i64 3 ;
+the output carries the same class.
+None of these functions takes ownership of its inputs: the caller still
+frees them, as with the other collection methods.
+.Pp
+.Fn dtfl_algo_bfs
+labels each node reachable from a root with its minimum distance.
+.Fa edges
+is a collection of
+.Pq Vt u64 src , Vt u64 dst
+edge records and
+.Fa roots
+is a collection of bare
+.Vt u64
+node records; the result is a collection of
+.Pq Vt u64 node , Vt u32 dist
+records, a pair of a
+.Vt u64
+and a
+.Vt u32
+.Pq twelve bytes .
+It seeds each root at distance zero, then iterates to a fixed point: join
+each labelled node against its outgoing edges to reach each destination at
+distance plus one, concatenate the roots back in, and reduce to keep the
+minimum distance per node.
+The distance counter is a
+.Vt u32 ,
+kept as upstream keeps it.
+.Pp
+.Fn dtfl_algo_scc
+returns the subset of
+.Fa graph
+edges whose endpoints share a strongly connected component, with the same
+.Pq Vt u64 src , Vt u64 dst
+record layout.
+It iterates a variable seeded from the whole edge set, trimming it twice
+each round, once by forward label propagation and once on the transposed
+graph; an edge survives a trim when both endpoints carry the same minimum
+label.
+.Pp
+.Fn dtfl_algo_scc_at
+is the prioritized variant
+.Pq strongly_connected_at :
+.Fa logic
+maps a node to a priority bucket in
+.Bq 0 , 64 ,
+and node labels are introduced in log-bucketed rounds through
+.Xr dtfl_collection_enter_at 3 ,
+so smaller labels can finish propagating before larger ones are
+introduced.
+The result equals
+.Fn dtfl_algo_scc Ns 's ;
+the prioritization only reorders the work.
+A
+.Fa logic
+that returns zero for every node reproduces
+.Fn dtfl_algo_scc
+.Pq a zero delay is a plain enter .
+.Pp
+.Fn dtfl_algo_propagate
+assigns each node the minimum label reachable along directed edges.
+.Fa edges
+is a collection of
+.Pq Vt u64 src , Vt u64 dst
+edge records and
+.Fa nodes
+is a collection of
+.Pq Vt u64 node , Vt u64 label
+records; the result has the same labelled-node layout.
+It builds a monotonic iteration variable seeded empty, concatenates the
+nodes, keeps the minimum label per node with a reduce, and flows labels
+forward along the edges until a fixed point.
+.Pp
+.Fn dtfl_algo_propagate_at
+is the prioritized variant
+.Pq propagate_at :
+.Fa logic
+maps a label to a priority bucket in
+.Bq 0 , 64 ,
+and labels enter the iteration in log-bucketed rounds through
+.Xr dtfl_collection_enter_at 3 .
+The result equals
+.Fn dtfl_algo_propagate Ns 's .
+.Pp
+.Fn dtfl_algo_sequence
+applies
+.Fa logic
+to nodes in order of node identifier.
+.Fa state
+gives each node's initial
+.Pq Vt u64 node , Vt u64 value ;
+.Fa edges
+are the directed edges.
+A node fires once all of its lower-identifier neighbours have fired, and
+.Fa logic
+computes its new value from the accumulated neighbour values, sorted by
+value, writing a
+.Vt u64
+through
+.Fa out .
+The result is a collection of
+.Pq Vt u64 node , option Vt u64
+records: None until the node fires, then Some of its value.
+The user context in
+.Fa ctx
+must outlive the dataflow; the function does not take ownership of it.
+.Pp
+.Fn dtfl_algo_bidijkstra
+performs a bidirectional search from both ends of each goal.
+.Fa edges
+are the directed edges and
+.Fa goals
+is a collection of
+.Pq Vt u64 source , Vt u64 target
+pairs; the result is a collection of
+.Pq Pq Vt u64 source , Vt u64 target , Vt u32 dist
+records giving the shortest distance of each goal whose source reaches its
+target.
+.Pp
+.Fn dtfl_algo_identifiers
+assigns each element of
+.Fa c
+a unique
+.Vt u64
+identifier derived from a hash, resolving collisions by round so every
+element receives a distinct identifier.
+.Fa rec_type
+describes the records of
+.Fa c ;
+the result is a collection of
+.Pq record , Vt u64 id
+records.
+.Pp
+.Fn dtfl_algo_prefix_sum
+computes a data-parallel prefix sum.
+.Fa c
+is a collection of
+.Pq Pq Vt u64 index , Vt u64 key , Vt u64 data
+records; each element's data becomes the combination of all data at the
+same key with index at most its own.
+.Fa zero
+is the identity value and
+.Fa combine
+is the associative combiner, applied per key.
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_collection
+handle in the input's scope, which the caller frees with
+.Fn dtfl_collection_free .
+Allocation failure is reported through the panic hook, as elsewhere in the
+library.
+.Sh EXAMPLES
+Compute distances from a root over an edge collection and read them with an
+inspect:
+.Bd -literal -offset indent
+dtfl_collection *dist = dtfl_algo_bfs(edges, roots);
+dtfl_collection *ins = dtfl_collection_inspect(dist, sink, ctx);
+dtfl_collection *probed = dtfl_collection_probe_with(ins, probe);
+/* step the worker, then read (node, u32 dist) records in sink */
+.Ed
+.Sh ERRORS
+A join whose two difference classes have no declared multiply reports
+.Dv DTFL_EALGEBRA
+and the underlying operator returns NULL
+.Pq Xr dtfl_collection_join 3 .
+The default
+.Vt i64
+class these algorithms use multiplies with itself, so this does not arise
+for their built-in record layouts.
+.Sh SEE ALSO
+.Xr dtfl_collection_iterate 3 ,
+.Xr dtfl_collection_join 3 ,
+.Xr dtfl_collection_new 3 ,
+.Xr dtfl_collection_reduce 3
+.Sh HISTORY
+These functions port the differential dataflow
+.Pa src/algorithms
+module
+.Pq bfs.rs , scc.rs , propagate.rs , sequential.rs , bijkstra.rs , identifiers.rs , prefix_sum.rs
+from the pinned upstream
+.Pq differential-dataflow-v0.25.1 .
+.Sh THREAD SAFETY
+Each function builds operators in the scope of its input collections and
+belongs to the worker thread that owns that scope.
+The collections it returns are worker-local handles that never leave their
+worker thread, like every other collection handle.
+Different workers build the same dataflow independently; records exchange
+across workers through the arrangements the join and reduce operators
+build, not through shared handles.

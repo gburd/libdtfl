@@ -1,0 +1,24 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/introduction.texi: ports differential-dataflow
+@c mdbook/src/introduction.md.
+
+@node Differential Motivation
+@section Motivation
+
+Differential dataflow programs look like many standard big-data
+computations, borrowing idioms from frameworks like MapReduce and SQL.
+The difference is what happens after you run one: you can @emph{change}
+the data inputs, and differential dataflow promptly reports the
+corresponding changes in its output.  This simple setup, write a program
+and then change its input, opens up a surprising breadth of scalable
+computation, because the system maintains the result incrementally
+rather than recomputing it from scratch.
+
+A differential program is built from @dfn{collections}, multisets whose
+contents change over logical time, and operators over them
+(@pxref{Collections}).  The operators (@code{map}, @code{filter},
+@code{join}, @code{reduce}, @code{iterate} and the rest) build new
+collections from old ones.  Underneath, each collection is a timely
+stream of @code{(record, time, diff)} updates, so a change to an input
+flows through as diffs, and only the records whose multiplicity actually
+changed are recomputed.

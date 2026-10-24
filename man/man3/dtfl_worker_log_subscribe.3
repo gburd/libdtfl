@@ -1,0 +1,276 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL_WORKER_LOG_SUBSCRIBE 3
+.Os
+.Sh NAME
+.Nm dtfl_worker_log_subscribe ,
+.Nm dtfl_config_log_subscribe ,
+.Nm dtfl_log_batch_len ,
+.Nm dtfl_log_batch_time ,
+.Nm dtfl_log_batch_worker ,
+.Nm dtfl_log_batch_stream ,
+.Nm dtfl_log_event_time ,
+.Nm dtfl_log_event_kind_at ,
+.Nm dtfl_log_operates_id ,
+.Nm dtfl_log_operates_addr ,
+.Nm dtfl_log_operates_name ,
+.Nm dtfl_log_channels_id ,
+.Nm dtfl_log_channels_scope ,
+.Nm dtfl_log_channels_source ,
+.Nm dtfl_log_channels_target ,
+.Nm dtfl_log_channels_typ ,
+.Nm dtfl_log_schedule_id ,
+.Nm dtfl_log_schedule_start ,
+.Nm dtfl_log_shutdown_id ,
+.Nm dtfl_log_push_progress_op_id ,
+.Nm dtfl_log_messages_is_send ,
+.Nm dtfl_log_messages_channel ,
+.Nm dtfl_log_messages_source ,
+.Nm dtfl_log_messages_target ,
+.Nm dtfl_log_messages_seq_no ,
+.Nm dtfl_log_messages_record_count ,
+.Nm dtfl_log_comm_channels_id ,
+.Nm dtfl_log_comm_channels_progress ,
+.Nm dtfl_log_park_is_park ,
+.Nm dtfl_log_park_timeout ,
+.Nm dtfl_log_text ,
+.Nm dtfl_log_dd_operator ,
+.Nm dtfl_log_dd_length ,
+.Nm dtfl_log_dd_merge_scale ,
+.Nm dtfl_log_dd_merge_length1 ,
+.Nm dtfl_log_dd_merge_length2 ,
+.Nm dtfl_log_dd_merge_complete ,
+.Nm dtfl_log_dd_shortfall_scale ,
+.Nm dtfl_log_dd_shortfall ,
+.Nm dtfl_log_dd_trace_share_diff ,
+.Nm dtfl_log_dd_batcher ,
+.Nm dtfl_log_comm_message_is_send ,
+.Nm dtfl_log_comm_message_header ,
+.Nm dtfl_log_comm_state_send ,
+.Nm dtfl_log_comm_state_process ,
+.Nm dtfl_log_comm_state_remote ,
+.Nm dtfl_log_comm_state_start ,
+.Nm dtfl_log_comm_setup_sender ,
+.Nm dtfl_log_comm_setup_process ,
+.Nm dtfl_log_comm_setup_remote
+.Nd subscribe to structured timely and differential event logs
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/log.h
+.Ft int
+.Fn dtfl_worker_log_subscribe "dtfl_worker *w" "const char *stream" "dtfl_log_subscriber_fn fn" "void *ctx" "void (*ctx_free)(void *)"
+.Ft int
+.Fn dtfl_config_log_subscribe "dtfl_config *cfg" "const char *stream" "dtfl_log_subscriber_fn fn" "void *ctx" "void (*ctx_free)(void *)"
+.Ft size_t
+.Fn dtfl_log_batch_len "const dtfl_log_batch *b"
+.Ft uint64_t
+.Fn dtfl_log_batch_time "const dtfl_log_batch *b"
+.Ft size_t
+.Fn dtfl_log_batch_worker "const dtfl_log_batch *b"
+.Ft "const char *"
+.Fn dtfl_log_batch_stream "const dtfl_log_batch *b"
+.Ft uint64_t
+.Fn dtfl_log_event_time "const dtfl_log_batch *b" "size_t i"
+.Ft dtfl_log_event_kind
+.Fn dtfl_log_event_kind_at "const dtfl_log_batch *b" "size_t i"
+.Ft size_t
+.Fn dtfl_log_operates_id "const dtfl_log_batch *b" "size_t i"
+.Ft "const size_t *"
+.Fn dtfl_log_operates_addr "const dtfl_log_batch *b" "size_t i" "size_t *n"
+.Ft "const char *"
+.Fn dtfl_log_operates_name "const dtfl_log_batch *b" "size_t i"
+.Ft size_t
+.Fn dtfl_log_channels_id "const dtfl_log_batch *b" "size_t i"
+.Ft void
+.Fn dtfl_log_channels_source "const dtfl_log_batch *b" "size_t i" "size_t *node" "size_t *port"
+.Ft void
+.Fn dtfl_log_channels_target "const dtfl_log_batch *b" "size_t i" "size_t *node" "size_t *port"
+.Ft "const char *"
+.Fn dtfl_log_channels_typ "const dtfl_log_batch *b" "size_t i"
+.Ft size_t
+.Fn dtfl_log_schedule_id "const dtfl_log_batch *b" "size_t i"
+.Ft bool
+.Fn dtfl_log_schedule_start "const dtfl_log_batch *b" "size_t i"
+.Sh DESCRIPTION
+These functions deliver the structured event log that a worker produces
+as it builds and runs a dataflow.
+This is the machine-readable log that the diagnostics tools consume to
+reconstruct the operator graph and the timing profile; it is distinct
+from the human-readable diagnostic sink installed by
+.Xr dtfl_set_log_hook 3 .
+.Pp
+A worker emits events on named streams:
+.Bl -tag -width "differential/arrange" -offset indent
+.It Dq timely
+operator and channel creation, scheduling, messages, and parking
+.It Dq differential/arrange
+arrangement batch, merge, drop and trace-sharing events
+.It Dq communication
+message send and receive, and communication-thread state.
+These come from the network send and receive threads of a cluster
+.Pq Dv DTFL_COMM_CLUSTER
+and are delivered only to a subscription made with
+.Fn dtfl_config_log_subscribe ;
+the batch's worker index is the process index.
+.El
+On the wire each stream is the bincode-1 fixint little-endian encoding
+of the corresponding Rust 0.31 event enum;
+a subscriber receives the events already decoded, so a C caller never
+touches the wire bytes.
+.Pp
+.Fn dtfl_worker_log_subscribe
+registers
+.Fa fn
+for
+.Fa stream
+on a worker the caller owns, such as one from
+.Xr dtfl_worker_new_standalone 3 .
+.Fn dtfl_config_log_subscribe
+records a subscription on a configuration; every worker that
+.Xr dtfl_execute 3
+starts installs it as it comes up.
+A second subscribe of the same stream replaces the first.
+.Fa ctx_free ,
+if not NULL, releases
+.Fa ctx :
+for the worker form, when the subscriber is replaced or the worker is
+dropped; for the configuration form, once, when the configuration is
+freed.
+.Pp
+A subscriber is called on the worker thread with a batch of events as
+they are flushed, once per worker step and once more, with an empty
+batch, when the worker shuts down.
+A batch with
+.Fn dtfl_log_batch_len
+of zero is such a flush notification.
+The batch and every pointer an accessor returns are valid only for the
+duration of the subscriber call; a subscriber that keeps data copies it.
+.Pp
+.Fn dtfl_log_batch_time
+is the batch capability time and
+.Fn dtfl_log_event_time
+each event's time, both in nanoseconds since the worker started.
+.Fn dtfl_log_batch_worker
+is the worker index and
+.Fn dtfl_log_batch_stream
+the stream name.
+.Pp
+.Fn dtfl_log_event_kind_at
+returns the kind of event
+.Fa i ,
+one of the
+.Vt dtfl_log_event_kind
+values in
+.In dtfl/log.h ,
+which union the Rust TimelyEvent, DifferentialEvent and
+CommunicationEvent variants.
+The field accessors read the fields of the event whose kind they name;
+reading an accessor that does not match the event's kind returns a zero
+value, so a subscriber dispatches on
+.Fn dtfl_log_event_kind_at
+first.
+The accessors shown above are the ones a graph or profile tool needs:
+.Fn dtfl_log_operates_id ,
+.Fn dtfl_log_operates_addr
+and
+.Fn dtfl_log_operates_name
+give an operator's identifier, its nested-scope address, and its name;
+.Fn dtfl_log_channels_id ,
+.Fn dtfl_log_channels_source ,
+.Fn dtfl_log_channels_target
+and
+.Fn dtfl_log_channels_typ
+give a channel's identifier, its endpoints as (operator, port) pairs,
+and its data type; and
+.Fn dtfl_log_schedule_id
+with
+.Fn dtfl_log_schedule_start
+give the operator scheduled and whether the event is its start or its
+stop.
+.In dtfl/log.h
+declares the remaining accessors for messages, parking, the
+differential events and the communication events.
+.Sh RETURN VALUES
+.Fn dtfl_worker_log_subscribe
+and
+.Fn dtfl_config_log_subscribe
+return
+.Dv DTFL_OK ,
+.Dv DTFL_EINVAL
+for a NULL argument, or
+.Dv DTFL_ESTATE
+if the worker has no log registry.
+The accessors do not fail; an out-of-range index or a kind mismatch
+returns a zero value.
+.Sh EXAMPLES
+Build a dataflow graph from the
+.Dq timely
+stream:
+.Bd -literal -offset indent
+static void
+on_batch(const dtfl_log_batch *b, void *ctx)
+{
+	size_t i, n = dtfl_log_batch_len(b);
+
+	for (i = 0; i < n; i++) {
+		if (dtfl_log_event_kind_at(b, i) == DTFL_LOG_OPERATES) {
+			size_t na;
+			const size_t *addr =
+			    dtfl_log_operates_addr(b, i, &na);
+
+			add_operator(ctx, dtfl_log_operates_id(b, i), addr, na,
+			    dtfl_log_operates_name(b, i));
+		}
+	}
+}
+
+dtfl_config_log_subscribe(cfg, "timely", on_batch, graph, NULL);
+dtfl_execute(cfg, worker_main, app, NULL);
+.Ed
+.Sh THREAD SAFETY
+A subscriber runs on the worker thread that logs to it, except that a
+.Dq communication
+subscriber runs on the cluster's network threads, one call at a time
+per thread but concurrently across them.
+With more than one worker or network thread the same
+.Fa ctx
+is shared across worker and network threads, as the
+.Fa ctx
+of
+.Xr dtfl_execute 3
+is; a subscriber that writes shared state must synchronize it itself.
+A slow
+.Dq communication
+subscriber delays the network thread that calls it, and so the sends
+or receives that thread serves.
+.Pp
+The configuration and every subscriber
+.Fa ctx
+must stay valid until
+.Xr dtfl_guards_join 3
+returns: when
+.Xr dtfl_execute 3
+returns early with guards, the worker and network threads keep using
+them.
+.Pp
+Each network thread's logger measures event times from when that thread
+started, so
+.Dq communication
+times are comparable within one thread's events but not across threads
+or with the worker streams.
+.Sh SEE ALSO
+.Xr dtfl_execute 3 ,
+.Xr dtfl_set_log_hook 3 ,
+.Xr dtfl_worker_dataflow 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of enabling a timely or differential log stream with
+upstream's
+.Ql worker.log_register().insert_logger ,
+whose action receives decoded batches instead of a serialized
+.Vt EventWriter
+stream.
+It replaces the per-record worker identifier that timely dropped in 0.16
+with the worker index on the batch.

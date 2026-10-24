@@ -1,0 +1,115 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_2.texi: ports differential-dataflow
+@c mdbook/src/chapter_2/* (Map, Filter, Concat, Consolidate, Join,
+@c Reduce, Iterate, Arrange).
+
+@node Differential Operators
+@section The differential operators
+
+A differential program is operators applied to collections, yielding
+collections to which more operators apply.  This section surveys the
+common ones.  Each takes a @code{dtfl_collection} and returns a new one;
+the caller frees the handles with @code{dtfl_collection_free}.
+
+@subsection Map, filter, flat_map
+
+@code{dtfl_collection_map} transforms the record of each update, keeping
+its time and diff; @code{dtfl_collection_flat_map} emits zero or more
+records per input; @code{dtfl_collection_filter} keeps the updates whose
+record satisfies a predicate.  Because a record is a byte string, map
+and flat_map take the output record type explicitly and write each
+output through an emit handle (as @code{swap_pair} did in
+@ref{Scaling Up}).
+
+@subsection Concat and consolidate
+
+@code{dtfl_collection_concat} (and @code{dtfl_collection_concatenate}
+for an array) accumulates the updates of several collections into one.
+Concatenation does not combine updates, so a record can appear with
+several diffs at one time.  @code{dtfl_collection_consolidate} groups
+updates by @code{(record, time)}, sums their diffs, and drops those that
+sum to zero, exchanging records so each @code{(record, time)} is
+accumulated on one worker.  It is how a program renders a collection in
+its simplest form: at most one update per record per time.
+@code{dtfl_collection_negate} flips every diff's sign (its diff class
+must be Abelian), which is how a program retracts a whole collection.
+
+@subsection Join
+
+@code{dtfl_collection_join} matches @code{(key, val1)} against
+@code{(key, val2)} by key and emits @code{key || val1 || val2}.
+@code{dtfl_collection_join_map} applies a closure to each matched
+@code{(key, val1, val2)} and emits whatever record the closure writes
+(the key is @emph{not} prepended automatically, so the skip-level
+closure wrote it itself, @pxref{Scaling Up}).  The diff of each output is
+the product of the two input diffs, so the two diff classes must
+multiply, or join reports @code{DTFL_EALGEBRA}.
+@code{dtfl_collection_semijoin} keeps the records of one collection whose
+key appears in another; @code{dtfl_collection_antijoin} keeps those
+whose key does not (its diff class must be Abelian).
+
+@subsection Reduce
+
+@code{dtfl_collection_reduce} groups a collection of @code{key || val}
+records by key and applies a reduction to the accumulated multiset of
+values at each key.  It is incremental: when a key is re-evaluated at a
+new time, the previous output is retracted and the new one asserted, so
+the output is always the function of the input at every time.  The logic
+receives the key and the values @emph{sorted by the value type's order}
+(@pxref{Records}), which is why a minimum reducer simply emits the first
+value:
+
+@example
+static void
+min_managee(void *ctx, const void *key, size_t klen, size_t n,
+    const void *const *vals, const size_t *vlens, const void *diffs,
+    dtfl_reduce_emit *out)
+@{
+        int64_t one = 1;
+        unsigned char vbuf[8];
+        dtfl_put_u64(vbuf, dtfl_get_u64(vals[0]));   /* the smallest */
+        dtfl_reduce_emit_pair(out, vbuf, sizeof vbuf, &one);
+@}
+@end example
+
+The complete program is in @file{doc/snippets/dd_reduce.c}: for each
+manager, the managee with the lowest identifier.  It prints
+@code{manager 0 -> managee 0}, @code{manager 1 -> managee 2}, and so on.
+@code{count}, @code{distinct} and @code{threshold} are the common
+special cases of reduce, with total-order fast paths
+(@code{count_total}, @code{distinct_total}, @code{threshold_total}) for
+a totally ordered time.
+
+@subsection Iterate
+
+@code{dtfl_collection_iterate} applies a closure to a collection
+repeatedly until the result stops changing (a fixed point).  It builds
+an iterative subscope whose time adds a @code{u64} iteration counter
+(@pxref{Concepts}).  The transitive closure of the management relation,
+for example, extends the relation one hop at a time:
+
+@example
+/* inside the iterate logic, over the collection "transitive": */
+swap   = dtfl_collection_map(transitive, pair, swap_pair, DTFL_NOCTX);
+hop    = dtfl_collection_join_map(swap, transitive, u64, u64, u64,
+             pair, drop_middle, DTFL_NOCTX);
+grown  = dtfl_collection_concat(hop, transitive);
+return dtfl_collection_distinct(grown, i64);
+@end example
+
+Three details make it converge.  The @code{map} drops the middle manager
+so the result has the same shape as the input; the @code{concat} keeps
+the shorter relations so no hop is lost; and the @code{distinct} at the
+end bounds the multiplicities, so the loop winds down once no new pairs
+appear.  A collection iterate is called on must have an Abelian diff
+class (it negates the source); @code{dtfl_variable_new} and friends let
+you write mutual recursion with several collections evolving together.
+
+@subsection Arrange
+
+Several operators do the same thing with their input: they build an
+index of the updates.  @code{dtfl_collection_arrange} and
+@code{dtfl_collection_arrange_by_key} build that index once and share it,
+so join and reduce can read a shared @dfn{arrangement} rather than each
+re-indexing.  Arrangements are the subject of their own section
+(@pxref{Arrangements}).

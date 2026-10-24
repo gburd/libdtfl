@@ -1,0 +1,839 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Greg Burd
+ * Ported from differential-dataflow differential-dataflow-v0.25.1
+ *   differential-dataflow/src/trace/implementations/merge_batcher.rs
+ * Copyright (c) 2015 Frank McSherry and contributors.
+ *
+ * src/dd/trace/merge_batcher.c: the MergeBatcher and its vector merger.
+ * Callers feed sorted, consolidated chunks (each a __dtfl_batch of
+ * (record, time, diff) rows ordered by (record, time)); the batcher keeps
+ * geometrically sized chains, merging two chains whenever the smaller is at
+ * least half the larger (weighed by summed update count), and on seal merges
+ * everything, consolidates across chains, and extracts the updates not in
+ * advance of `upper`.  The sealed frontier is taken over the kept survivors
+ * AFTER consolidation, so a kept time whose updates cancel holds no
+ * capability (the two ported frontier tests).  Records order by their
+ * dtfl_type and times by Ord (word order).
+ */
+#include "dd/trace/trace_int.h"
+
+static size_t
+next_power_of_two(size_t n)
+{
+	size_t p = 1;
+
+	while (p < n)
+		p <<= 1;
+	return p;
+}
+
+typedef struct chain_slot {
+	size_t weight;
+	__dtfl_chain chain;
+} chain_slot;
+
+void
+__dtfl_merge_batcher_init(__dtfl_merge_batcher *mb, const dtfl_type *rt,
+    const dtfl_time_class *tc, const __dtfl_diff_class *dc)
+{
+	size_t size;
+	uint64_t min[DTFL_TIME_MAX];
+
+	__dtfl_vec_init(&mb->chains, sizeof(chain_slot));
+	__dtfl_vec_init(&mb->stash, sizeof(__dtfl_batch *));
+	mb->rt = rt;
+	mb->dc = dc;
+	mb->tc = tc;
+	mb->tw = dtfl_time_depth(tc);
+	mb->dw = (unsigned)dc->width;
+
+	/* lower = [minimum]; frontier starts empty. */
+	dtfl_time_minimum(tc, min);
+	__dtfl_antichain_init_elem(&mb->lower, tc, min);
+	__dtfl_antichain_init(&mb->frontier, tc);
+
+	/*
+	 * VecMerger::target_capacity: default_capacity rounded up to a power
+	 * of two.  default_capacity is the rows that fit in BUFFER_SIZE_BYTES
+	 * (a constant-width record counts as its width, which is size_of
+	 * without Rust's padding; a variable one as 24 bytes, as a Rust
+	 * String or Vec).
+	 */
+	size = __dtfl_type_const_width(rt);
+	size = (size != SIZE_MAX ? size : 24) +
+	    (size_t)mb->tw * sizeof(uint64_t) + mb->dw;
+	if (size == 0)
+		mb->cap = DTFL_BUFFER_SIZE_BYTES;
+	else if (size <= DTFL_BUFFER_SIZE_BYTES)
+		mb->cap = DTFL_BUFFER_SIZE_BYTES / size;
+	else
+		mb->cap = 1;
+	mb->cap = next_power_of_two(mb->cap);
+	mb->logger = NULL;
+	mb->operator_id = 0;
+}
+
+void
+__dtfl_merge_batcher_set_logger(__dtfl_merge_batcher *mb,
+    __dtfl_logger *logger, size_t operator_id)
+{
+	DTFL_ASSERT(mb->logger == NULL);
+	mb->logger = logger != NULL ? __dtfl_logger_retain(logger) : NULL;
+	mb->operator_id = operator_id;
+}
+
+/* self.stash.clear(): release every stashed chunk. */
+static void
+stash_clear(__dtfl_merge_batcher *mb)
+{
+	size_t i;
+
+	for (i = 0; i < mb->stash.len; i++)
+		__dtfl_batch_release(*DTFL_VEC_AT(&mb->stash, __dtfl_batch *, i));
+	__dtfl_vec_clear(&mb->stash);
+}
+
+/*
+ * A chunk is recyclable when it is uniquely held (no reader shares it),
+ * carries no element hooks, and has room for `cap` rows, the analogue of
+ * upstream's `capacity() == target_capacity()` test.
+ */
+static bool
+chunk_recyclable(const __dtfl_merge_batcher *mb, __dtfl_batch *b)
+{
+	return __dtfl_arc_count(&b->ref) == 1 && b->elem_drop == NULL &&
+	    b->elem_retain == NULL && b->tw == mb->tw && b->dw == mb->dw &&
+	    b->offs.cap >= mb->cap + 1 &&
+	    b->times.cap >= mb->cap * mb->tw && b->diffs.cap >= mb->cap * mb->dw;
+}
+
+/* stash.push(chunk), after clearing it; otherwise release it. */
+static void
+stash_recycle(__dtfl_merge_batcher *mb, __dtfl_batch *b)
+{
+	if (chunk_recyclable(mb, b)) {
+		__dtfl_batch_clear(b);
+		__dtfl_vec_push(&mb->stash, &b);
+	} else {
+		__dtfl_batch_release(b);
+	}
+}
+
+/*
+ * VecMerger::empty: a stashed chunk if there is one, else a new chunk
+ * with room for `cap` rows and `abytes` arena bytes.
+ */
+static __dtfl_batch *
+stash_empty(__dtfl_merge_batcher *mb, size_t abytes)
+{
+	__dtfl_batch *b;
+
+	if (mb->stash.len != 0) {
+		b = *DTFL_VEC_AT(&mb->stash, __dtfl_batch *, mb->stash.len - 1);
+		__dtfl_vec_truncate(&mb->stash, mb->stash.len - 1);
+		__dtfl_batch_reserve(b, 0, abytes);
+		return b;
+	}
+	b = __dtfl_batch_new_reserved(mb->tw, mb->dw, mb->cap, abytes);
+	return b;
+}
+
+static void
+chain_free(__dtfl_chain *ch)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++)
+		__dtfl_batch_release(ch->chunks[i]);
+	__dtfl_free(ch->chunks);
+	ch->chunks = NULL;
+	ch->n = 0;
+}
+
+static __dtfl_chain chain_pop(__dtfl_merge_batcher *mb);
+
+void
+__dtfl_merge_batcher_free(__dtfl_merge_batcher *mb)
+{
+	/* Cleanup chain to retract accounting information. */
+	while (mb->chains.len > 0) {
+		__dtfl_chain ch = chain_pop(mb);
+
+		chain_free(&ch);
+	}
+	__dtfl_vec_free(&mb->chains);
+	stash_clear(mb);
+	__dtfl_vec_free(&mb->stash);
+	__dtfl_logger_release(mb->logger);
+	mb->logger = NULL;
+	__dtfl_antichain_free(&mb->lower);
+	__dtfl_antichain_free(&mb->frontier);
+}
+
+const __dtfl_antichain *
+__dtfl_merge_batcher_frontier(const __dtfl_merge_batcher *mb)
+{
+	return &mb->frontier;
+}
+
+/* The summed update count of a chain (its merge weight). */
+static size_t
+chain_weight(const __dtfl_chain *ch)
+{
+	size_t w = 0, i;
+
+	for (i = 0; i < ch->n; i++)
+		w += __dtfl_batch_len(ch->chunks[i]);
+	return w;
+}
+
+/*
+ * account: size changes, only if a logger exists.  `records` is the
+ * chain's summed update count times diff; size, capacity and
+ * allocations come from Merger::allocation, which the pin leaves at its
+ * (0, 0, 0) default for the vector merger, so they are zero here too.
+ */
+static void
+account(const __dtfl_merge_batcher *mb, size_t records, int64_t diff)
+{
+	if (mb->logger != NULL)
+		__dtfl_dd_log_batcher(mb->logger, mb->operator_id,
+		    (int64_t)records * diff, 0, 0, 0);
+}
+
+/* Push a chain and account size changes. */
+static void
+chain_push(__dtfl_merge_batcher *mb, __dtfl_chain chain)
+{
+	chain_slot slot;
+
+	slot.weight = chain_weight(&chain);
+	slot.chain = chain;
+	account(mb, slot.weight, 1);
+	__dtfl_vec_push(&mb->chains, &slot);
+}
+
+/* Pop a chain and account size changes. */
+static __dtfl_chain
+chain_pop(__dtfl_merge_batcher *mb)
+{
+	chain_slot *s = DTFL_VEC_AT(&mb->chains, chain_slot, mb->chains.len - 1);
+	__dtfl_chain ch = s->chain;
+
+	account(mb, s->weight, -1);
+	__dtfl_vec_truncate(&mb->chains, mb->chains.len - 1);
+	return ch;
+}
+
+/* Compare two chunk rows by (record, time), as VecMerger merges by (d, t). */
+static int
+row_cmp(const __dtfl_merge_batcher *mb, const __dtfl_batch *b1, size_t i1,
+    const __dtfl_batch *b2, size_t i2)
+{
+	size_t l1, l2;
+	const void *r1 = __dtfl_batch_rec(b1, i1, &l1);
+	const void *r2 = __dtfl_batch_rec(b2, i2, &l2);
+	int r = __dtfl_type_cmp(mb->rt, r1, l1, r2, l2);
+
+	if (r != 0)
+		return r;
+	return __dtfl_words_cmp(__dtfl_batch_time(b1, i1),
+	    __dtfl_batch_time(b2, i2), mb->tw);
+}
+
+/*
+ * A flat cursor over a chain's chunks, visiting rows in order.  A chain's
+ * chunks are each internally sorted and the chunks are in sorted order, so
+ * the cursor yields the chain's rows ascending.
+ */
+typedef struct chain_cursor {
+	__dtfl_chain *chain;
+	size_t chunk;
+	size_t row;
+	const __dtfl_batch *b;	/* chain->chunks[chunk], NULL at the end */
+	size_t len;		/* rows in b */
+	/*
+	 * Recycling of drained chunks (VecMerger::refill and extract): NULL
+	 * for none; otherwise each chunk the cursor leaves goes to mb's
+	 * stash (bounded to two when `bounded`, as refill is) and its slot
+	 * in the chain is cleared, so chain_free skips it.
+	 */
+	__dtfl_merge_batcher *mb;
+	bool bounded;
+} chain_cursor;
+
+static void stash_recycle(__dtfl_merge_batcher *mb, __dtfl_batch *b);
+
+/* The cursor has left chunk `i`: recycle it if this cursor recycles. */
+static void
+cc_retire(chain_cursor *c, size_t i)
+{
+	__dtfl_batch *b = c->chain->chunks[i];
+
+	if (c->mb == NULL || b == NULL)
+		return;
+	c->chain->chunks[i] = NULL;
+	if (!c->bounded || c->mb->stash.len < 2)
+		stash_recycle(c->mb, b);
+	else
+		__dtfl_batch_release(b);
+}
+
+/* Moves to the first non-empty chunk at or after c->chunk. */
+static void
+cc_settle(chain_cursor *c)
+{
+	c->row = 0;
+	while (c->chunk < c->chain->n &&
+	    __dtfl_batch_len(c->chain->chunks[c->chunk]) == 0) {
+		cc_retire(c, c->chunk);
+		c->chunk++;
+	}
+	if (c->chunk < c->chain->n) {
+		c->b = c->chain->chunks[c->chunk];
+		c->len = __dtfl_batch_len(c->b);
+	} else {
+		c->b = NULL;
+		c->len = 0;
+	}
+}
+
+static void
+cc_init(chain_cursor *c, __dtfl_chain *chain)
+{
+	c->chain = chain;
+	c->chunk = 0;
+	c->mb = NULL;
+	c->bounded = false;
+	cc_settle(c);
+}
+
+/* As cc_init, recycling drained chunks into mb's stash. */
+static void
+cc_init_recycling(chain_cursor *c, __dtfl_chain *chain,
+    __dtfl_merge_batcher *mb, bool bounded)
+{
+	cc_init(c, chain);
+	c->mb = mb;
+	c->bounded = bounded;
+}
+
+
+static inline bool
+cc_valid(const chain_cursor *c)
+{
+	return c->b != NULL;
+}
+
+static inline const __dtfl_batch *
+cc_batch(const chain_cursor *c)
+{
+	return c->b;
+}
+
+/* Advances n rows, at most to the end of the current chunk. */
+static inline void
+cc_skip(chain_cursor *c, size_t n)
+{
+	c->row += n;
+	if (c->row >= c->len) {
+		cc_retire(c, c->chunk);
+		c->chunk++;
+		cc_settle(c);
+	}
+}
+
+static inline void
+cc_step(chain_cursor *c)
+{
+	cc_skip(c, 1);
+}
+
+/* Appends one chunk's worth to output, flushing full chunks of `cap` rows. */
+typedef struct chunk_sink {
+	__dtfl_vec chunks;	/* __dtfl_batch *, owned */
+	__dtfl_batch *cur;	/* fewer than cap rows between pushes */
+	unsigned tw;
+	unsigned dw;
+	size_t cap;
+	size_t abytes;		/* arena bytes to reserve per chunk (hint) */
+	__dtfl_merge_batcher *mb;	/* chunks come from its stash */
+} chunk_sink;
+
+static void
+sink_init(chunk_sink *s, __dtfl_merge_batcher *mb, size_t abytes)
+{
+	__dtfl_vec_init(&s->chunks, sizeof(__dtfl_batch *));
+	s->mb = mb;
+	s->tw = mb->tw;
+	s->dw = mb->dw;
+	s->cap = mb->cap;
+	s->abytes = abytes;
+	s->cur = stash_empty(mb, abytes);
+}
+
+/* Moves the full current chunk to the output and starts a new one. */
+static void
+sink_flush(chunk_sink *s)
+{
+	__dtfl_vec_push(&s->chunks, &s->cur);
+	s->cur = stash_empty(s->mb, s->abytes);
+}
+
+static inline void
+sink_push(chunk_sink *s, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	__dtfl_batch_push(s->cur, rec, len, time, diff);
+	if (__dtfl_batch_len(s->cur) >= s->cap)
+		sink_flush(s);
+}
+
+/* Appends row i of src. */
+static inline void
+sink_push_row(chunk_sink *s, const __dtfl_batch *src, size_t i)
+{
+	size_t len;
+	const void *rec = __dtfl_batch_rec(src, i, &len);
+
+	sink_push(s, rec, len, __dtfl_batch_time(src, i),
+	    __dtfl_batch_diff(src, i));
+}
+
+/*
+ * Appends rows [i, i + n) of src, split at the same chunk boundaries as n
+ * sink_push_row calls, so the output chunks are identical.
+ */
+static void
+sink_push_run(chunk_sink *s, const __dtfl_batch *src, size_t i, size_t n)
+{
+	while (n != 0) {
+		size_t room = s->cap - __dtfl_batch_len(s->cur);
+		size_t k = n < room ? n : room;
+
+		__dtfl_batch_push_run(s->cur, src, i, k);
+		i += k;
+		n -= k;
+		if (__dtfl_batch_len(s->cur) >= s->cap)
+			sink_flush(s);
+	}
+}
+
+/* Appends the rest of the chain under c and exhausts c. */
+static void
+sink_push_rest(chunk_sink *s, chain_cursor *c)
+{
+	while (cc_valid(c)) {
+		size_t k = c->len - c->row;
+
+		sink_push_run(s, c->b, c->row, k);
+		cc_skip(c, k);
+	}
+}
+
+/* Finish: emit the partial chunk if non-empty; return the chunk array. */
+static void
+sink_finish(chunk_sink *s, __dtfl_batch ***out, size_t *nout)
+{
+	if (__dtfl_batch_len(s->cur) != 0) {
+		__dtfl_vec_push(&s->chunks, &s->cur);
+		s->cur = NULL;
+	} else {
+		stash_recycle(s->mb, s->cur);
+		s->cur = NULL;
+	}
+	*nout = s->chunks.len;
+	if (s->chunks.len == 0) {
+		*out = NULL;
+		__dtfl_vec_free(&s->chunks);
+		return;
+	}
+	*out = __dtfl_alloc(s->chunks.len * sizeof(__dtfl_batch *));
+	memcpy(*out, s->chunks.data, s->chunks.len * sizeof(__dtfl_batch *));
+	__dtfl_vec_free(&s->chunks);
+}
+
+/* Chain totals, to size output chunks without dereferencing the type. */
+static void
+chain_totals(const __dtfl_chain *ch, size_t *rows, size_t *bytes)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++) {
+		*rows += __dtfl_batch_len(ch->chunks[i]);
+		*bytes += __dtfl_batch_bytes(ch->chunks[i]);
+	}
+}
+
+/*
+ * Per-chunk arena bytes to reserve: cap rows times the mean record size
+ * of the merged inputs.  Derived from the actual input bytes, so it never
+ * depends on the (borrowed, possibly stale) record type descriptor.
+ */
+static size_t
+abytes_for(const __dtfl_merge_batcher *mb, size_t rows, size_t bytes)
+{
+	size_t avg;
+
+	if (rows == 0)
+		return 0;
+	avg = bytes / rows + 1;
+	return mb->cap * avg;
+}
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+/* True if the chain's chunks hold 8 arena bytes per row. */
+static bool
+chain_8_per_row(const __dtfl_chain *ch)
+{
+	size_t i;
+
+	for (i = 0; i < ch->n; i++)
+		if (ch->chunks[i]->arena.len != 8 * __dtfl_batch_len(ch->chunks[i]))
+			return false;
+	return true;
+}
+
+/*
+ * True when the records are of a memcmp-ordered type whose every value
+ * encodes in 8 bytes, with one time word and a 64-bit built-in integer
+ * diff: the shape merge_two_t1_8 handles.  An 8-byte record compares by
+ * cmp_raw as its big-endian word does.  The width comes from the type:
+ * a memcmp-ordered type may vary in length (an Option encodes None in 1
+ * byte and Some in 9), and byte totals cannot tell its rows apart.  The
+ * byte totals are checked as well, because record lengths are not
+ * validated against the type on input: with them, every 8-byte read
+ * stays inside the arena even for a caller's mis-sized record.
+ */
+static bool
+merge_shape_t1_8(const __dtfl_merge_batcher *mb, const __dtfl_chain *a,
+    const __dtfl_chain *b)
+{
+	return mb->tw == 1 && mb->dw == 8 && mb->rt->cmp == NULL &&
+	    __dtfl_type_const_width(mb->rt) == 8 &&
+	    __dtfl_diff_is_int64(mb->dc) && chain_8_per_row(a) &&
+	    chain_8_per_row(b);
+}
+
+/* A chain cursor's current row, read as merge_two_t1_8 compares it. */
+static inline uint64_t
+cc_key8(const chain_cursor *c)
+{
+	uint64_t k;
+
+	memcpy(&k, c->b->arena.data + 8 * c->row, 8);
+	return __builtin_bswap64(k);
+}
+
+static inline uint64_t
+cc_time1(const chain_cursor *c)
+{
+	return __dtfl_batch_time(c->b, c->row)[0];
+}
+
+/*
+ * sink_push for an 8-byte record, one time word and an 8-byte diff,
+ * written straight into the current chunk's columns.
+ */
+static inline void
+sink_push8(chunk_sink *s, const void *rec, uint64_t t, const void *diff)
+{
+	__dtfl_batch *c = s->cur;
+	size_t n = c->offs.len - 1, end = c->arena.len + 8;
+
+	if (DTFL_UNLIKELY(c->offs.cap < n + 2 || c->arena.cap < end ||
+	    c->times.cap < n + 1 || c->diffs.cap < 8 * (n + 1)))
+		__dtfl_batch_reserve(c, 1, 8);
+	memcpy(c->arena.data + c->arena.len, rec, 8);
+	((size_t *)(void *)c->offs.data)[n + 1] = end;
+	((uint64_t *)(void *)c->times.data)[n] = t;
+	memcpy(c->diffs.data + 8 * n, diff, 8);
+	c->arena.len = end;
+	c->offs.len++;
+	c->times.len++;
+	c->diffs.len += 8;
+	if (n + 1 >= s->cap)
+		sink_flush(s);
+}
+
+/*
+ * merge_two for the merge_shape_t1_8 shape: the same merge, ties summed
+ * as uint64_t and zeros dropped, the same output chunk boundaries, with
+ * the rows compared and copied inline.
+ */
+static __dtfl_chain
+merge_two_t1_8(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
+{
+	chain_cursor ca, cb;
+	chunk_sink sink;
+	__dtfl_chain out;
+	size_t rows = 0, bytes = 0;
+
+	chain_totals(&a, &rows, &bytes);
+	chain_totals(&b, &rows, &bytes);
+	cc_init_recycling(&ca, &a, mb, true);
+	cc_init_recycling(&cb, &b, mb, true);
+	sink_init(&sink, mb, abytes_for(mb, rows, bytes));
+
+	while (cc_valid(&ca) && cc_valid(&cb)) {
+		uint64_t k1 = cc_key8(&ca), k2 = cc_key8(&cb);
+		uint64_t t1 = cc_time1(&ca), t2 = cc_time1(&cb);
+
+		if (k1 < k2 || (k1 == k2 && t1 < t2)) {
+			sink_push8(&sink, ca.b->arena.data + 8 * ca.row, t1,
+			    __dtfl_batch_diff(ca.b, ca.row));
+			cc_step(&ca);
+		} else if (k1 > k2 || t1 > t2) {
+			sink_push8(&sink, cb.b->arena.data + 8 * cb.row, t2,
+			    __dtfl_batch_diff(cb.b, cb.row));
+			cc_step(&cb);
+		} else {
+			uint64_t r1, r2;
+
+			memcpy(&r1, __dtfl_batch_diff(ca.b, ca.row), 8);
+			memcpy(&r2, __dtfl_batch_diff(cb.b, cb.row), 8);
+			r1 += r2;
+			if (r1 != 0)
+				sink_push8(&sink, ca.b->arena.data + 8 * ca.row,
+				    t1, &r1);
+			cc_step(&ca);
+			cc_step(&cb);
+		}
+	}
+	sink_push_rest(&sink, &ca);
+	sink_push_rest(&sink, &cb);
+	sink_finish(&sink, &out.chunks, &out.n);
+	chain_free(&a);
+	chain_free(&b);
+	return out;
+}
+#endif
+
+/*
+ * VecMerger::merge: merge two chains into one, consolidating equal
+ * (record, time) rows and dropping zero diffs.  The output is a single
+ * chain (array of chunks of up to `cap` rows).
+ */
+static __dtfl_chain
+merge_two(__dtfl_merge_batcher *mb, __dtfl_chain a, __dtfl_chain b)
+{
+	chain_cursor ca, cb;
+	chunk_sink sink;
+	__dtfl_chain out;
+	unsigned char *accum;
+	size_t rows = 0, bytes = 0;
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+	if (merge_shape_t1_8(mb, &a, &b))
+		return merge_two_t1_8(mb, a, b);
+#endif
+	accum = __dtfl_alloc(DTFL_MAX(mb->dw, 1u));
+	chain_totals(&a, &rows, &bytes);
+	chain_totals(&b, &rows, &bytes);
+	cc_init_recycling(&ca, &a, mb, true);
+	cc_init_recycling(&cb, &b, mb, true);
+	sink_init(&sink, mb, abytes_for(mb, rows, bytes));
+
+	while (cc_valid(&ca) && cc_valid(&cb)) {
+		int r = row_cmp(mb, cc_batch(&ca), ca.row, cc_batch(&cb),
+		    cb.row);
+
+		if (r < 0) {
+			sink_push_row(&sink, cc_batch(&ca), ca.row);
+			cc_step(&ca);
+		} else if (r > 0) {
+			sink_push_row(&sink, cc_batch(&cb), cb.row);
+			cc_step(&cb);
+		} else {
+			const __dtfl_batch *b1 = cc_batch(&ca);
+			const __dtfl_batch *b2 = cc_batch(&cb);
+			size_t len;
+			const void *rec = __dtfl_batch_rec(b1, ca.row, &len);
+
+			if (mb->dw != 0)
+				memcpy(accum, __dtfl_batch_diff(b1, ca.row),
+				    mb->dw);
+			mb->dc->plus_equals(mb->dc, accum,
+			    __dtfl_batch_diff(b2, cb.row));
+			if (!mb->dc->is_zero(mb->dc, accum))
+				sink_push(&sink, rec, len,
+				    __dtfl_batch_time(b1, ca.row), accum);
+			cc_step(&ca);
+			cc_step(&cb);
+		}
+	}
+	sink_push_rest(&sink, &ca);
+	sink_push_rest(&sink, &cb);
+	sink_finish(&sink, &out.chunks, &out.n);
+	__dtfl_free(accum);
+	chain_free(&a);
+	chain_free(&b);
+	return out;
+}
+
+/* insert_chain: push a chain, fusing geometrically by weight. */
+static void
+insert_chain(__dtfl_merge_batcher *mb, __dtfl_chain chain)
+{
+	if (chain.n == 0 || chain_weight(&chain) == 0) {
+		chain_free(&chain);
+		return;
+	}
+	chain_push(mb, chain);
+	while (mb->chains.len > 1) {
+		chain_slot *top = DTFL_VEC_AT(&mb->chains, chain_slot,
+		    mb->chains.len - 1);
+		chain_slot *prev = DTFL_VEC_AT(&mb->chains, chain_slot,
+		    mb->chains.len - 2);
+
+		if (top->weight >= prev->weight / 2) {
+			__dtfl_chain c1 = chain_pop(mb);
+			__dtfl_chain c2 = chain_pop(mb);
+
+			chain_push(mb, merge_two(mb, c1, c2));
+		} else {
+			break;
+		}
+	}
+}
+
+void
+__dtfl_merge_batcher_chain_push(__dtfl_merge_batcher *mb, __dtfl_batch **chunks,
+    size_t n)
+{
+	__dtfl_chain chain;
+	size_t i;
+
+	chain.chunks = __dtfl_alloc(DTFL_MAX(n, 1u) * sizeof(__dtfl_batch *));
+	chain.n = n;
+	for (i = 0; i < n; i++)
+		chain.chunks[i] = chunks[i];	/* ownership moves in */
+	/* chain_push without the geometric fusing (used by the tests). */
+	chain_push(mb, chain);
+}
+
+void
+__dtfl_merge_batcher_push(__dtfl_merge_batcher *mb, __dtfl_batch *chunk)
+{
+	__dtfl_chain chain;
+
+	chain.chunks = __dtfl_alloc(sizeof(__dtfl_batch *));
+	chain.chunks[0] = chunk;	/* ownership moves in */
+	chain.n = 1;
+	insert_chain(mb, chain);
+}
+
+/*
+ * extract (VecMerger::extract): split the merged chain's rows into those
+ * ready (not in advance of upper) and those kept (in advance of upper),
+ * inserting each kept time into the frontier.  Because the merged chain is
+ * already consolidated, a time is kept only if it has a surviving update, so
+ * the frontier reflects post-consolidation survivors.
+ */
+/*
+ * upper.less_equal(t): some element of upper is <= t.  For a total
+ * one-word time a single-element upper is one compare.
+ */
+static inline bool
+upper_le(const __dtfl_merge_batcher *mb, const __dtfl_antichain *upper,
+    const uint64_t *t)
+{
+	if (mb->tc->shape == DTFL_SHAPE_TOTAL &&
+	    __dtfl_antichain_len(upper) == 1)
+		return __dtfl_ac_base(upper)[0] <= t[0];
+	return __dtfl_frontier_less_equal(mb->tc, __dtfl_ac_base(upper),
+	    __dtfl_antichain_len(upper), t);
+}
+
+static void
+extract(__dtfl_merge_batcher *mb, __dtfl_chain merged,
+    const __dtfl_antichain *upper, __dtfl_batch ***out, size_t *nout)
+{
+	chunk_sink ready;
+	__dtfl_chain kept;
+	chain_cursor cc;
+	size_t rows = 0, bytes = 0, ab;
+
+	chain_totals(&merged, &rows, &bytes);
+	ab = abytes_for(mb, rows, bytes);
+	sink_init(&ready, mb, ab);
+	{
+		chunk_sink keep;
+
+		sink_init(&keep, mb, ab);
+		cc_init_recycling(&cc, &merged, mb, false);
+		while (cc_valid(&cc)) {
+			/*
+			 * The maximal run of rows in this chunk bound for the
+			 * same side; kept times enter the frontier in row order.
+			 */
+			const __dtfl_batch *bb = cc_batch(&cc);
+			size_t end = cc.row;
+			const uint64_t *t = __dtfl_batch_time(bb, end);
+			bool keeps = upper_le(mb, upper, t);
+
+			do {
+				if (keeps)
+					__dtfl_antichain_insert(&mb->frontier,
+					    __dtfl_batch_time(bb, end));
+				end++;
+			} while (end < cc.len &&
+			    upper_le(mb, upper, __dtfl_batch_time(bb, end)) ==
+			    keeps);
+			sink_push_run(keeps ? &keep : &ready, bb, cc.row,
+			    end - cc.row);
+			cc_skip(&cc, end - cc.row);
+		}
+		sink_finish(&keep, &kept.chunks, &kept.n);
+	}
+	sink_finish(&ready, out, nout);
+
+	if (kept.n != 0)
+		chain_push(mb, kept);
+	else
+		chain_free(&kept);
+	chain_free(&merged);
+}
+
+void
+__dtfl_merge_batcher_seal(__dtfl_merge_batcher *mb,
+    const __dtfl_antichain *upper, __dtfl_batch ***out, size_t *nout,
+    __dtfl_description *desc)
+{
+	__dtfl_chain merged;
+	__dtfl_antichain lower, up, since;
+	uint64_t min[DTFL_TIME_MAX];
+
+	/* Merge all remaining chains into one. */
+	while (mb->chains.len > 1) {
+		__dtfl_chain c1 = chain_pop(mb);
+		__dtfl_chain c2 = chain_pop(mb);
+
+		insert_chain(mb, merge_two(mb, c1, c2));
+	}
+	if (mb->chains.len == 1)
+		merged = chain_pop(mb);
+	else {
+		merged.chunks = NULL;
+		merged.n = 0;
+	}
+
+	__dtfl_antichain_clear(&mb->frontier);
+	extract(mb, merged, upper, out, nout);
+	stash_clear(mb);
+
+	/* description = (lower, upper, [minimum]); lower = prior upper. */
+	__dtfl_antichain_init(&lower, mb->tc);
+	__dtfl_antichain_copy(&lower, &mb->lower);
+	__dtfl_antichain_init(&up, mb->tc);
+	__dtfl_antichain_copy(&up, upper);
+	dtfl_time_minimum(mb->tc, min);
+	__dtfl_antichain_init_elem(&since, mb->tc, min);
+	__dtfl_description_init(desc, &lower, &up, &since);
+
+	/* self.lower = upper (copy reuses lower's buffer). */
+	__dtfl_antichain_copy(&mb->lower, upper);
+}

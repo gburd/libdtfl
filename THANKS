@@ -1,0 +1,18 @@
+libdtfl -- thanks
+
+	libdtfl exists because of the design and the working code of the
+	timely and differential dataflow projects.  The port follows their
+	structure closely, and the correctness core keeps their names,
+	comments, and algorithm constants.  Thanks to Frank McSherry and to
+	everyone who has contributed to:
+
+		timely dataflow
+		differential dataflow
+		the timely diagnostics tools
+
+	The queue between worker threads is a port of the Rust standard
+	library's mpsc list channel, which comes from crossbeam-channel;
+	thanks to the Crossbeam and Rust developers.
+
+	And thanks to the authors of the hegel property-testing engine,
+	used for the library's property tests.

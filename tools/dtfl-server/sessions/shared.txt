@@ -1,0 +1,12 @@
+# One arrangement, two queries: degr_dist and reachability both import the
+# single edge trace that random_graph published.  This is the point of the
+# crate: the index is built once and shared across both queries.
+load graph random_graph graph 6 10 1000
+load dd degr_dist graph
+load rr reachability graph 0
+tick
+peek graph
+peek graph-degrees
+peek graph-reach
+list
+exit

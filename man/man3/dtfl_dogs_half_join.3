@@ -1,0 +1,117 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_DOGS_HALF_JOIN 3
+.Os
+.Sh NAME
+.Nm dtfl_dogs_half_join ,
+.Nm dtfl_dogs_half_join2 ,
+.Nm dtfl_half_join_frontier_insert
+.Nd a half-join over partially ordered times for delta queries
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dogs.h
+.Ft dtfl_collection *
+.Fn dtfl_dogs_half_join "dtfl_collection *stream" "dtfl_arranged *arr" "const dtfl_type *kt" "const dtfl_type *v1t" "const dtfl_type *out_type" "bool strict" "dtfl_half_join_output_fn output_func" "dtfl_ctx ctx"
+.Ft dtfl_collection *
+.Fn dtfl_dogs_half_join2 "dtfl_collection *stream" "dtfl_arranged *arr" "const dtfl_type *kt" "const dtfl_type *v1t" "const dtfl_type *out_type" "dtfl_half_join_cmp_fn comparison" "dtfl_half_join_frontier_fn frontier_func" "dtfl_half_join_output_fn output_func" "dtfl_ctx ctx"
+.Ft void
+.Fn dtfl_half_join_frontier_insert "dtfl_half_join_frontier *f" "const uint64_t *time"
+.Sh DESCRIPTION
+.Fn dtfl_dogs_half_join
+is a binary equijoin that responds only to updates on its first input, the
+building block of delta joins over partially ordered times.
+Each streamed update is a record
+.Va kt Ns Li || Ns Va v1t Ns Li ||time1 ,
+carried at an initial time less or equal to the hoisted
+.Va time1 .
+For every
+.Pq key , val2
+in the arrangement
+.Va arr
+at a trace
+.Va time2
+that the comparison accepts against the initial time, the operator emits
+.Fn output_func key val1 val2
+at the joined time
+.Pq Va time1 No join Va time2 ,
+carried at the initial time, with the product of the two diffs.
+The joined time is appended to the output record, whose record part is
+.Va out_type ,
+so a later operator can delay the update to it; chaining half-joins this
+way builds a delta join.
+.Pp
+.Va strict
+selects the total-order comparison: true compares
+.Va time2
+strictly less than the initial time, ignoring concurrent updates; false
+compares less or equal, seeing them.
+Under an AltNeu scope these are the two sides that make a pair of
+concurrent updates interact exactly once.
+.Va kt
+and
+.Va v1t
+split the streamed record into its key and value; the hoisted
+.Va time1
+is the scope's time words that follow them.
+.Pp
+.Fn dtfl_dogs_half_join2
+is the general form with the two closures upstream exposes, for delta
+joins whose time arithmetic is more than the AltNeu strict/non-strict
+choice.
+.Fa comparison
+decides whether a trace
+.Va time2
+joins against the initial time, replacing the
+.Va strict
+bool; passing
+.Dv NULL
+selects the strict less-than test.
+.Fa frontier_func
+builds, from a held initial time, the antichain of trace times the
+arrangement must still retain, writing each element with
+.Fn dtfl_half_join_frontier_insert
+through the
+.Vt dtfl_half_join_frontier
+handle;
+delta_query2
+uses time ->
+.Pq outer - 1 , inner - 1 .
+Passing
+.Dv NULL
+holds the initial time itself.
+Both closures share
+.Fa ctx .
+.Pp
+A
+.Vt dtfl_half_join_output_fn
+writes the output record bytes for a matched
+.Pq key , val1 , val2
+through
+.Va out_rec ,
+storing the length through
+.Va out_len .
+.Sh RETURN VALUES
+Returns a new
+.Vt dtfl_collection
+the caller frees with
+.Fn dtfl_collection_free ,
+or
+.Dv NULL
+with
+.Dv DTFL_EALGEBRA
+when the two diff classes do not multiply.
+The caller still owns
+.Va arr .
+.Sh SEE ALSO
+.Xr dtfl_collection_delay_neu 3 ,
+.Xr dtfl_collection_extend 3 ,
+.Xr dtfl_dogs_propose 3
+.Sh STANDARDS
+A C11 port of the dogsdogsdogs
+.Pa src/operators/half_join.rs .
+.Pp
+The multi-worker capability-downgrade bookkeeping of the upstream operator
+is reduced to a single-worker deferral; the total-order comparison that
+decides which trace times join is reproduced exactly.

@@ -1,0 +1,98 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_NOTIFICATOR_NOTIFY_AT 3
+.Os
+.Sh NAME
+.Nm dtfl_notificator_notify_at ,
+.Nm dtfl_notificator_next ,
+.Nm dtfl_notificator_frontier
+.Nd request and deliver frontier-gated notifications
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft void
+.Fn dtfl_notificator_notify_at "dtfl_notificator *n" "dtfl_cap *cap"
+.Ft bool
+.Fn dtfl_notificator_next "dtfl_notificator *n" "dtfl_cap **cap" "uint64_t *count"
+.Ft const uint64_t *
+.Fn dtfl_notificator_frontier "const dtfl_notificator *n" "size_t input" "size_t *k"
+.Sh DESCRIPTION
+A
+.Vt dtfl_notificator
+buffers requests for notification at a capability's time and delivers
+them once the operator's input frontiers pass that time.
+It is handed to the logic of
+.Xr dtfl_stream_unary_notify 3
+and
+.Xr dtfl_stream_binary_notify 3
+and is valid only during that call.
+.Pp
+.Fn dtfl_notificator_notify_at
+requests a notification at the time of
+.Fa cap ,
+taking ownership of
+.Fa cap .
+To request a notification at a future time, first obtain a delayed
+capability with
+.Xr dtfl_cap_delayed 3 .
+.Pp
+.Fn dtfl_notificator_next
+delivers the next capability whose time no input frontier is still at
+or before, in non-decreasing order within one delivery.
+It stores the capability in
+.Pf * Fa cap ,
+transferring ownership to the caller, and the number of folded requests
+in
+.Pf * Fa count ,
+and returns
+.Dv true ;
+it returns
+.Dv false
+when no notification is deliverable.
+The caller releases each delivered capability with
+.Xr dtfl_cap_drop 3 .
+.Pp
+.Fn dtfl_notificator_frontier
+returns input
+.Fa input Ns 's
+current frontier as
+.Pf * Fa k
+times of the scope's class.
+.Sh RETURN VALUES
+.Fn dtfl_notificator_next
+returns
+.Dv true
+and sets
+.Pf * Fa cap
+and
+.Pf * Fa count
+when a notification is deliverable, else
+.Dv false .
+.Fn dtfl_notificator_frontier
+returns a pointer to the frontier times.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_cap *cap; uint64_t count;
+while (dtfl_notificator_next(note, &cap, &count)) {
+	/* emit for cap's time */
+	dtfl_cap_drop(cap);
+}
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_cap_delayed 3 ,
+.Xr dtfl_stream_unary_notify 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Notificator
+and
+.Vt FrontierNotificator .
+They are public at the pinned release
+.Pq Li timely-v0.31.0
+and were removed upstream afterward (#819); the port keeps the pinned
+behavior.
+.Sh THREAD SAFETY
+The notificator and its capabilities belong to the thread that runs the
+worker and must not be used from another thread (PLAN section 5).

@@ -1,0 +1,81 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_PARTITION 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_partition
+.Nd route a stream's records into several streams
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft void
+.Fo dtfl_stream_partition
+.Fa "dtfl_stream *st"
+.Fa "size_t parts"
+.Fa "size_t (*route)(void *ctx, const void *rec, size_t len)"
+.Fa "dtfl_ctx ctx"
+.Fa "dtfl_stream **outs"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_stream_partition
+produces
+.Fa parts
+output streams from
+.Fa st .
+For each record,
+.Fa route
+returns a part index less than
+.Fa parts ,
+and the record is sent to that part's stream at its original time.
+A record whose index is not less than
+.Fa parts
+is dropped.
+Each output carries the input's record type.
+The streams are stored in
+.Fa outs ,
+which must have room for
+.Fa parts
+pointers.
+.Pp
+The context in
+.Fa ctx
+is passed to
+.Fa route .
+When
+.Fa ctx
+carries a destructor, the operator owns the context and releases it
+when the operator is dropped.
+.Sh RETURN VALUES
+.Fn dtfl_stream_partition
+returns no value; it stores
+.Fa parts
+output streams, owned by the scope, through
+.Fa outs .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static size_t by_mod3(void *ctx, const void *rec, size_t len) {
+	return (size_t)(dtfl_get_u64(rec) % 3);
+}
+
+dtfl_stream *outs[3];
+dtfl_stream_partition(in, 3, by_mod3, DTFL_NOCTX, outs);
+.Ed
+.Sh ERRORS
+.Fn dtfl_stream_partition
+does not return an error code.
+.Sh SEE ALSO
+.Xr dtfl_stream_concat 3 ,
+.Xr dtfl_stream_count 3 ,
+.Xr dtfl_stream_exchange 3 ,
+.Xr dtfl_stream_map 3 ,
+.Xr dtfl_stream_ok_err 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Fn partition
+operator.
+.Sh THREAD SAFETY
+The operator and its streams belong to the worker thread that built
+them and must not be shared.

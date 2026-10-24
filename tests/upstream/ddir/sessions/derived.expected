@@ -1,0 +1,27 @@
+installed "reach"
+tick -> epoch 1
+peek "iota:12" (12 rows):
+  (Tuple([Int(0)]), Tuple([]))  x1
+  (Tuple([Int(1)]), Tuple([]))  x1
+  (Tuple([Int(2)]), Tuple([]))  x1
+  (Tuple([Int(3)]), Tuple([]))  x1
+  (Tuple([Int(4)]), Tuple([]))  x1
+  (Tuple([Int(5)]), Tuple([]))  x1
+  (Tuple([Int(6)]), Tuple([]))  x1
+  (Tuple([Int(7)]), Tuple([]))  x1
+  (Tuple([Int(8)]), Tuple([]))  x1
+  (Tuple([Int(9)]), Tuple([]))  x1
+  (Tuple([Int(10)]), Tuple([]))  x1
+  (Tuple([Int(11)]), Tuple([]))  x1
+peek "result" (4 rows):
+  (Tuple([Int(0)]), Tuple([]))  x1
+  (Tuple([Int(4)]), Tuple([]))  x1
+  (Tuple([Int(6)]), Tuple([]))  x1
+  (Tuple([Int(7)]), Tuple([]))  x1
+epoch: 1
+traces (2):
+  iota:12 (importers: 1)
+  result (importers: 0)
+programs (2):
+  iota:12 [generated] (inputs: 1, imports: 0, exports: 1)
+  reach (inputs: 1, imports: 1, exports: 1)

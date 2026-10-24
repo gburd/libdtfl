@@ -1,0 +1,72 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_EVENT_LINK_EXTRACT 3
+.Os
+.Sh NAME
+.Nm dtfl_event_link_extract
+.Nd collect captured data for assertions
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft void
+.Fo dtfl_event_link_extract
+.Fa "dtfl_event_link *l"
+.Fa "void (*each)(void *ctx, const uint64_t *time, const void *rec, size_t len)"
+.Fa "void *ctx"
+.Fc
+.Sh DESCRIPTION
+.Fn dtfl_event_link_extract
+reads every
+.Em Messages
+event from
+.Fa l ,
+groups the records by time, sorts the records within each time by the
+link's record type, and calls
+.Fa each
+once per
+.Pq time , record
+pair in time-then-record order.
+Progress events are ignored.
+A time whose records are all empty is dropped, matching the Rust
+extractor.
+.Pp
+This is a test helper, run after a computation has finished, to compare
+the captured output against an expected multiset.
+A convenient pattern captures a replayed stream into a second link and
+extracts that.
+.Pp
+The record pointer passed to
+.Fa each
+is borrowed from the link and is valid only for the duration of the
+call; copy it to keep it.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+static void each(void *ctx, const uint64_t *time, const void *rec,
+    size_t len) {
+	size_t *count = ctx;
+	(*count)++;
+}
+
+size_t n = 0;
+dtfl_event_link_extract(link, each, &n);
+.Ed
+.Sh ERRORS
+This function does not return error codes.
+.Sh SEE ALSO
+.Xr dtfl_event_link_replay 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl_stream_capture 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Fn extract
+helper of
+.Pa capture/extract.rs .
+.Sh THREAD SAFETY
+Called after the computation has finished, from the thread that holds
+the link.
+A link made with
+.Fn dtfl_event_link_new_sync
+may be extracted on a thread other than the one that captured it.

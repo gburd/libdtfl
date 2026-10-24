@@ -1,0 +1,96 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_SCOPE 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_scope ,
+.Nm dtfl_stream_type ,
+.Nm dtfl_message_time ,
+.Nm dtfl_message_len ,
+.Nm dtfl_message_record
+.Nd timely dataflow streams and the messages on them
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft dtfl_scope *
+.Fn dtfl_stream_scope "const dtfl_stream *st"
+.Ft "const dtfl_type *"
+.Fn dtfl_stream_type "const dtfl_stream *st"
+.Ft "const uint64_t *"
+.Fn dtfl_message_time "const dtfl_message *m"
+.Ft size_t
+.Fn dtfl_message_len "const dtfl_message *m"
+.Ft "const void *"
+.Fn dtfl_message_record "const dtfl_message *m" "size_t i" "size_t *len"
+.Sh DESCRIPTION
+A stream is a handle to an operator output.
+It carries messages, each a timestamp and a batch of records, to the
+operators that take it as input.
+Streams are small handles owned by their scope; the user need not free
+them.
+.Pp
+.Fn dtfl_stream_scope
+returns the scope that contains
+.Fa st ,
+and
+.Fn dtfl_stream_type
+the record type its messages carry.
+.Pp
+A message is read inside operator logic through
+.Xr dtfl_op_input_next 3 .
+.Fn dtfl_message_time
+returns its timestamp, a vector of the scope's time class.
+.Fn dtfl_message_len
+returns the number of records, and
+.Fn dtfl_message_record
+returns record
+.Fa i
+and stores its length in
+.Fa *len .
+.Sh RETURN VALUES
+.Fn dtfl_stream_scope
+returns the containing scope and
+.Fn dtfl_stream_type
+the record type.
+.Fn dtfl_message_time
+returns the time words,
+.Fn dtfl_message_len
+the record count, and
+.Fn dtfl_message_record
+a pointer to record
+.Fa i .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_message *m = dtfl_op_input_next(op, 0);
+if (m != NULL) {
+	const uint64_t *t = dtfl_message_time(m);
+	size_t i, n = dtfl_message_len(m);
+	for (i = 0; i < n; i++) {
+		size_t len;
+		const void *rec = dtfl_message_record(m, i, &len);
+		/* ... use rec ... */
+	}
+}
+.Ed
+.Sh ERRORS
+These accessors do not return error codes.
+A record index at or beyond
+.Fn dtfl_message_len
+is out of range.
+.Sh SEE ALSO
+.Xr dtfl_op_builder_new 3 ,
+.Xr dtfl_op_input_next 3 ,
+.Xr dtfl_pact_pipeline 3 ,
+.Xr dtfl_scope_scoped 3
+.Sh HISTORY
+These are the C forms of timely's
+.Vt Stream
+.Pq stream.rs
+and its
+.Vt Message
+.Pq channels/mod.rs .
+.Sh THREAD SAFETY
+A stream and the messages read from it belong to the worker thread that
+builds and runs the dataflow and must not be shared.

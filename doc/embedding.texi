@@ -1,0 +1,264 @@
+@c SPDX-License-Identifier: MIT
+@c doc/embedding.texi: the Embedding chapter.
+@c Summarizes dtfl_embedding(7).
+
+@node Embedding
+@chapter Embedding
+
+libdtfl is built to run inside a host program, such as a database
+server, that supplies its own memory, error reporting, logging and
+threads.  The five host hooks of @ref{Error handling} route each of
+those boundaries through the host, and a byte transport lets the host
+connect workers that live in separate processes.  This chapter shows the whole
+embedding, using PostgreSQL as the example host.
+
+@section Wiring the boundaries
+
+A host installs the hooks once, before starting any computation.  Each
+hook is a function the host provides plus an opaque context pointer.
+
+@example
+/*
+ * The context libdtfl allocates in.  The hooks are installed once per
+ * process, so they hold the address of this variable, not a context:
+ * the host points it at the right context before each call into a
+ * worker (see below).
+ */
+static MemoryContext dtfl_cxt;
+
+static void *pg_malloc(size_t n, void *c)
+@{ return MemoryContextAllocHuge(*(MemoryContext *)c, n); @}
+static void *pg_realloc(void *p, size_t n, void *c)
+@{ return p ? repalloc_huge(p, n)
+           : MemoryContextAllocHuge(*(MemoryContext *)c, n); @}
+static void pg_free(void *p, void *c) @{ pfree(p); @}
+
+/* longjmp out of the computation; never returns */
+static void pg_panic(const char *msg, void *c)
+@{ ereport(ERROR, errmsg("dtfl: %s", msg)); @}
+
+/* never elog(ERROR) here: see "After a panic" */
+static void pg_log(dtfl_log_level lvl, const char *msg, void *c)
+@{ int e[] = @{ DEBUG1, LOG, WARNING, LOG @}; elog(e[lvl], "%s", msg); @}
+
+dtfl_cxt = AllocSetContextCreate(TopMemoryContext, "dtfl",
+    ALLOCSET_DEFAULT_SIZES);
+dtfl_alloc_hooks ah = @{ pg_malloc, pg_realloc, pg_free, &dtfl_cxt @};
+dtfl_set_alloc_hooks(&ah);
+dtfl_set_panic_hook(pg_panic, NULL);
+dtfl_set_log_hook(pg_log, NULL);
+/* no thread hooks: drive a standalone worker (below) */
+@end example
+
+Four details of the allocation hooks matter:
+
+@itemize
+@item
+Use the @emph{huge} allocation functions.  @code{palloc} and
+@code{repalloc} refuse requests over @code{MaxAllocSize} (1 GB less one
+byte), and the columns of a large arrangement grow past that.
+@code{MemoryContextAllocHuge} and @code{repalloc_huge} allow up to
+@code{MaxAllocHugeSize}.
+@item
+@code{repalloc} and @code{pfree} need a pointer @code{palloc} returned;
+@code{NULL} crashes the backend.  libdtfl never passes @code{NULL} to
+@code{realloc_fn} or @code{free_fn}: it grows an empty buffer with
+@code{malloc_fn} and skips freeing @code{NULL}.  The @code{p ?} test
+above costs nothing and keeps the hook correct with older releases.
+@item
+Allocate in a dedicated context, not @code{CurrentMemoryContext}, and
+reach it through a variable.  A query context is reset when the query
+ends, while a persistent dataflow outlives it; and resetting the
+worker's context is how the host discards a worker after an error.
+Since the hooks are process-wide and set once, the variable is what
+lets a host give each worker its own context: before any call that
+builds, feeds or steps a worker, set @code{dtfl_cxt} to that worker's
+context.  @code{repalloc} and @code{pfree} work on a chunk wherever it
+was allocated, so only allocation follows the variable.  Create every
+object a worker uses (time classes, diffs, record types, sessions,
+probes) while its context is selected, and share none across workers
+with different contexts.
+@item
+libdtfl's own objects need the alignment of @code{uint64_t},
+@code{double} and pointers, which @code{palloc}'s @code{MAXALIGN}
+provides.  Record and difference values are stored unaligned at
+arbitrary offsets in any case, so callbacks read them with
+@code{memcpy}; no allocator alignment changes that.
+@item
+The context belongs to libdtfl.  Allocate nothing of the host's own in
+it, and make no child contexts under it: a reset after an error frees
+them too.
+@end itemize
+
+The log levels map onto the host's own: @code{DTFL_LOG_DEBUG},
+@code{DTFL_LOG_INFO}, @code{DTFL_LOG_WARN} and @code{DTFL_LOG_ERROR}
+become @code{DEBUG1}, @code{LOG}, @code{WARNING} and @code{LOG}.  Not
+@code{ERROR}: the log hook runs inside libdtfl, and an error raised there
+unwinds through it (see below).  The panic hook is expected to
+@code{longjmp} (via @code{ereport(ERROR)}) out of the computation rather
+than return.
+
+@section After a panic, discard the worker
+
+A panic hook that @code{longjmp}s leaves the worker in an unknown state.
+The panic can come from deep inside an operator, with a structure half
+updated, a reference count not yet dropped, or a mutex held (queuing a
+cross-thread activation allocates while holding one).  Rust is the same:
+a panicking timely worker is not resumed.  So after the jump, nothing
+reached from that worker may be used again: not its handles, not
+@code{dtfl_worker_step}, not even @code{dtfl_worker_free}, which would
+walk the inconsistent structures.
+
+The host discards the worker by resetting its memory context with
+@code{MemoryContextReset}, which frees every chunk and leaves the context
+usable, and builds a new worker in it if it still needs the dataflow.
+Do not delete the context instead unless the hook variable is pointed
+at a live context before libdtfl allocates again: the hooks keep the
+variable's address, and a deleted context's memory can be handed to
+another context.  libdtfl's process-wide state (the hooks and their
+latches, the per-thread error buffer) is not touched by the jump.
+
+On Linux a standalone worker holds nothing but memory.  Elsewhere its
+mutexes and condition variables may own small libc allocations that a
+reset does not free, so each discarded worker leaks a little.  File
+descriptors the host passed in (to @code{dtfl_event_writer_new} or the
+replay functions) stay the host's to close.
+
+The same holds for an @code{ereport(ERROR)} raised inside a callback
+that libdtfl calls, such as an operator function, a sink or the log hook:
+it unwinds through libdtfl's frames.  So the log hook maps
+@code{DTFL_LOG_ERROR} to @code{LOG}, not @code{ERROR}, and a callback
+that can fail catches its own error, records it, and returns normally;
+the host checks the record after the step.
+
+For a long-lived dataflow this means one error rebuilds everything that
+worker held.  A host that keeps many views in one worker loses all of
+them to one error, so keep independent dataflows in separate workers
+(each with its own context), and make the rebuild path the same one used
+after a restart.  Panics are contract violations and allocation failure;
+validating input before it reaches libdtfl removes most of the first kind.
+
+@section Hosts that control their own threads
+
+A host that cannot hand libdtfl free-running threads has three ways to
+embed it.
+
+First, it can supply thread hooks whose @code{spawn} starts a thread
+the host manages.  @code{dtfl_execute} then starts and joins each worker
+through those hooks, and the rest of the program is unchanged.  The
+hook must start a thread in the same process: the workers of one
+@code{dtfl_execute} share memory.  A PostgreSQL background worker is a
+separate process, so it cannot back these hooks, and a PostgreSQL
+extension must not let libdtfl start threads at all, since
+@code{palloc} and @code{ereport} are not thread-safe and every libdtfl
+thread allocates through the hooks.  So an extension calls neither
+@code{dtfl_execute} nor @code{dtfl_diag_server_start} (the diagnostics
+server's thread), and uses the second or third way.
+
+Second, and simplest when the host already has an event loop, it can
+avoid @code{dtfl_execute} entirely and drive a single worker
+cooperatively.  No thread is created, so no thread hook is needed; the
+host calls @code{dtfl_worker_step} from its own thread whenever it
+chooses, interleaving dataflow progress with its other work:
+
+@example
+dtfl_worker *w = dtfl_worker_new_standalone();
+dtfl_worker_dataflow(w, "my", tc, build, ctx);
+while (dtfl_worker_has_dataflows(w))
+        dtfl_worker_step(w);
+dtfl_worker_free(w);
+@end example
+
+Third, when the host already runs several processes (or tasks) and wants
+them to share one computation, each joins it as one worker with
+@code{dtfl_execute_worker(cfg, i, n, transport, fn, ctx)}, which runs
+worker @var{i} of @var{n} on the calling thread and starts no thread.
+The @code{dtfl_transport} is the host's: @code{send} and @code{recv}
+move bytes to and from each peer without blocking, @code{wait} blocks
+until a peer may have bytes or room or @code{wake} is called, and
+@code{wake} may be called from any thread.  The worker's own steps move
+the bytes, and it parks in @code{wait}.  @code{dtfl_transport_socket}
+is a ready-made transport over connected sockets, such as a
+@code{socketpair} mesh made before @code{fork}, and
+@code{dtfl_config_set_workers(cfg, DTFL_WORKERS_PROCESSES)} makes
+@code{dtfl_execute} build that mesh and fork the workers itself.
+Forked workers carry the usual limits of @code{fork} without
+@code{exec}: in a multithreaded parent the allocator must be safe to
+use after the fork, children end with @code{_exit}, so unflushed
+@code{stdio} output is lost, and with @code{SIGCHLD} ignored the
+result comes from a status pipe and a failure cannot name the exit
+status; @code{dtfl_config(3)} lists them.
+@file{examples/embed/forked_workers.c} shows the whole pattern.
+
+@section PostgreSQL's concurrency models
+
+@table @asis
+@item Process per backend
+The whole computation runs in one backend as a standalone worker
+(the second way above), with the hooks of the previous sections.
+
+@item Background workers
+To spread one computation over several processes, the backend creates
+a DSM segment with one @code{shm_mq} for each ordered pair of
+participants, registers @var{n} - 1 dynamic background workers whose
+@code{bgw_main_arg} names the segment and the worker's index, and joins
+as worker 0 itself.  Every participant calls @code{dtfl_execute_worker}
+with a transport whose @code{send} and @code{recv} are
+@code{shm_mq_send} and @code{shm_mq_receive} with @code{nowait} set,
+whose @code{wait} is @code{WaitLatch} on @code{MyLatch} followed by
+@code{ResetLatch}, and whose @code{wake} is @code{SetLatch}.
+@code{shm_mq} sets the peer's latch when it writes or reads, which is
+exactly the condition @code{wait} must cover.  @code{dtfl_transport(3)}
+gives the code.
+
+@item AIO worker processes
+With @code{io_method=worker} the postmaster forks I/O workers that run
+a fixed loop over a shared submission ring, woken by @code{SetLatch}.
+They cannot host a libdtfl worker, and libdtfl submits no asynchronous
+I/O: its spill files are read and written synchronously by the worker
+that owns them.  The ring-plus-latch pattern is the same one a DSM-ring
+transport uses, and that transport serves backends and background
+workers, the processes that can call @code{dtfl_execute_worker}.
+
+@item A threaded backend
+A server whose backends are threads (or fibers on a runtime such as
+the libxtc-based multithreaded branch) can let libdtfl run several
+workers in one address space.  The thread hooks spawn them as the
+server's own threads or tasks, and @code{dtfl_set_sync_hooks} maps
+libdtfl's mutexes, condition variables, the word wait and wake it
+parks on, yield, sleep and the clock onto the server's primitives, so a
+parked worker yields its carrier instead of sleeping in the kernel.
+@code{palloc} must then be safe on those threads, which is the server's
+contract, not libdtfl's.
+@end table
+
+@section A fiber runtime
+
+A runtime whose tasks are fibers, such as libxtc, needs every wait to
+go through it.  @code{dtfl_set_sync_hooks} does that for locks, the
+parker, yield, sleep and the clock: an asynchronous mutex and condition
+variable are enough, since the parker builds on the condition when no
+@code{wait}/@code{wake} pair is given.  libxtc has no condition
+variable, so the host builds one from @code{xtc_notify_t} and
+@code{xtc_amutex_t}; @code{dtfl_set_sync_hooks(3)} gives the code.  A
+@code{wait}/@code{wake} pair, if the host supplies one, must check the
+word and sleep atomically with respect to @code{wake}, as
+@code{futex(2)} does.  @code{self} should name the fiber, not its
+carrier, so the debug owner check survives migration; @code{xtc_self}
+returns a 64-bit @code{xtc_pid_t}, which the hook packs into a
+@code{uintptr_t}.  The buffer behind @code{dtfl_last_error_detail} is
+per OS thread, so fibers that share a carrier share it: read the detail
+before the fiber can yield.  The thread hooks spawn tasks.  To keep sockets out of the picture too,
+each task runs @code{dtfl_execute_worker} over an in-memory transport
+built on the runtime's channels, whose @code{wait} parks the fiber and
+whose @code{wake} wakes it.
+
+@section What libdtfl never does
+
+libdtfl installs no signal handlers and calls no @code{getenv},
+@code{signal} or @code{getopt}.  When a host wants environment lookup, it
+passes a callback to @code{dtfl_config_from_env}; the library never
+reads the environment itself.  This keeps libdtfl safe to load into a
+host that owns those facilities.  The complete contract, including the
+per-thread ownership rules, is in @code{dtfl_embedding(7)} and
+@code{dtfl(7)}.

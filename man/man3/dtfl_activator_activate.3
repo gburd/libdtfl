@@ -1,0 +1,97 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_ACTIVATOR_ACTIVATE 3
+.Os
+.Sh NAME
+.Nm dtfl_activator_activate ,
+.Nm dtfl_activator_activate_after ,
+.Nm dtfl_activator_free ,
+.Nm dtfl_sync_activator_activate ,
+.Nm dtfl_sync_activator_free
+.Nd schedule a timely dataflow operator
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft void
+.Fn dtfl_activator_activate "dtfl_activator *a"
+.Ft void
+.Fn dtfl_activator_activate_after "dtfl_activator *a" "uint64_t delay_ns"
+.Ft void
+.Fn dtfl_activator_free "dtfl_activator *a"
+.Ft int
+.Fn dtfl_sync_activator_activate "dtfl_sync_activator *a"
+.Ft void
+.Fn dtfl_sync_activator_free "dtfl_sync_activator *a"
+.Sh DESCRIPTION
+An activator marks an operator to be scheduled again, so an operator
+that parks waiting on an external event can ask to run once the event
+arrives.
+Both kinds are obtained from the operator handle with
+.Xr dtfl_op_input_next 3 Ap s
+.Fn dtfl_op_activator
+and
+.Fn dtfl_op_sync_activator ,
+and the caller frees them.
+.Pp
+.Fn dtfl_activator_activate
+marks the operator active for the next step.
+.Fn dtfl_activator_activate_after
+does so after
+.Fa delay_ns
+nanoseconds when the worker has a timer, or at once otherwise.
+A
+.Vt dtfl_activator
+belongs to the worker thread.
+.Pp
+.Fn dtfl_sync_activator_activate
+marks the operator active from any thread and wakes the worker.
+It is the one activation path that may cross threads.
+.Pp
+.Fn dtfl_activator_free
+and
+.Fn dtfl_sync_activator_free
+release the handles.
+.Sh RETURN VALUES
+.Fn dtfl_sync_activator_activate
+returns 0 on success, or
+.Dv DTFL_ESTATE
+once the worker is gone.
+The other functions return no value.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Inside logic: ask to be scheduled again next step. */
+dtfl_activator *a = dtfl_op_activator(op);
+dtfl_activator_activate(a);
+dtfl_activator_free(a);
+
+/* From another thread feeding an external source: */
+if (dtfl_sync_activator_activate(sync) == DTFL_ESTATE)
+	/* the worker has shut down */ ;
+.Ed
+.Sh ERRORS
+.Bl -tag -width DTFL_ESTATE
+.It Bq Er DTFL_ESTATE
+.Fn dtfl_sync_activator_activate
+was called after the worker shut down.
+.El
+.Sh SEE ALSO
+.Xr dtfl_op_input_next 3 ,
+.Xr dtfl_worker_dataflow 3
+.Sh HISTORY
+These are the C forms of timely's
+.Vt Activator
+and
+.Vt SyncActivator
+.Pq activate.rs .
+.Sh THREAD SAFETY
+A
+.Vt dtfl_activator
+belongs to its worker thread and must not be shared.
+A
+.Vt dtfl_sync_activator
+is thread-safe: any thread may call
+.Fn dtfl_sync_activator_activate .
+.Fn dtfl_sync_activator_free
+is called from the thread that holds the handle.

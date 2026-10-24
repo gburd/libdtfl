@@ -1,0 +1,13 @@
+installed "watch"
+tick -> epoch 1
+tick -> epoch 2
+tick -> epoch 3
+peek "clock" (1 rows):
+  (Tuple([Int(2)]), Tuple([]))  x1
+epoch: 3
+traces (2):
+  clock (importers: 1)
+  now (importers: 0)
+programs (2):
+  clock [clock] (inputs: 1, imports: 0, exports: 1)
+  watch (inputs: 0, imports: 1, exports: 1)

@@ -1,0 +1,115 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 18, 2026
+.Dt DTFL_TRACE_SET_LOGICAL_COMPACTION 3
+.Os
+.Sh NAME
+.Nm dtfl_trace_set_logical_compaction ,
+.Nm dtfl_trace_set_physical_compaction ,
+.Nm dtfl_trace_logical_compaction ,
+.Nm dtfl_trace_physical_compaction
+.Nd advance or read a trace handle's compaction holds
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.Ft void
+.Fo dtfl_trace_set_logical_compaction
+.Fa "dtfl_trace *t" "const uint64_t *frontier" "size_t n"
+.Fc
+.Ft void
+.Fo dtfl_trace_set_physical_compaction
+.Fa "dtfl_trace *t" "const uint64_t *frontier" "size_t n"
+.Fc
+.Ft const uint64_t *
+.Fn dtfl_trace_logical_compaction "const dtfl_trace *t" "size_t *n"
+.Ft const uint64_t *
+.Fn dtfl_trace_physical_compaction "const dtfl_trace *t" "size_t *n"
+.Sh DESCRIPTION
+A trace handle from
+.Xr dtfl_arranged_trace 3
+is a reader of a shared trace, and each reader holds the trace back at
+two frontiers.
+The trace may not forget history that any reader's holds still need, so
+a handle that never advances its holds keeps every update at its
+original time for as long as the handle lives.
+.Pp
+.Fn dtfl_trace_set_logical_compaction
+advances the logical hold.
+Once every reader is past a time, the trace may rewrite the times of
+updates not beyond the frontier to representative times, which lets it
+merge equivalent updates and keep its memory bounded over an unbounded
+history.
+History before the frontier can then only be read in accumulation, not
+at its original times.
+.Pp
+.Fn dtfl_trace_set_physical_compaction
+advances the physical hold, which lets the trace merge batches.
+After it,
+.Xr dtfl_trace_to_vec_through 3
+can cut the trace only at frontiers beyond the new hold.
+.Pp
+In both setters
+.Fa frontier
+is an antichain of
+.Fa n
+times, each as wide as the trace's time class, stored contiguously.
+As in differential dataflow, the new hold is the join of the current
+hold and
+.Fa frontier ,
+so passing a frontier behind the current hold does not move it back.
+An empty frontier
+.Pq Fa n No is 0
+releases the hold completely.
+.Pp
+.Fn dtfl_trace_logical_compaction
+and
+.Fn dtfl_trace_physical_compaction
+return the current hold as a contiguous antichain and store its length
+in
+.Fa *n .
+The pointer is valid until the next call that sets that hold, or until
+the handle is freed.
+.Pp
+Freeing a handle with
+.Xr dtfl_trace_free 3
+releases both of its holds.
+.Sh RETURN VALUES
+The setters return no value.
+The getters return the hold, or
+.Dv NULL
+with
+.Fa *n
+set to 0 when the hold is empty.
+.Sh EXAMPLES
+A long-running maintained view keeps a reader for point-in-time reads.
+After commit
+.Va n
+is fully applied and no reader needs an older snapshot, advance both
+holds to
+.Va n
+so the trace can compact everything before it:
+.Bd -literal -offset indent
+uint64_t f = n;
+
+dtfl_trace_set_logical_compaction(t, &f, 1);
+dtfl_trace_set_physical_compaction(t, &f, 1);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_arranged_trace 3 ,
+.Xr dtfl_trace_free 3 ,
+.Xr dtfl_trace_to_vec_through 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of differential dataflow's
+.Fn TraceReader::set_logical_compaction ,
+.Fn set_physical_compaction ,
+.Fn get_logical_compaction
+and
+.Fn get_physical_compaction
+on a
+.Vt TraceAgent
+.Pq Pa trace/mod.rs , Pa operators/arrange/agent.rs .
+.Sh THREAD SAFETY
+The trace handle belongs to the worker thread that created it.
+A trace is worker-local; it is not shared across threads.

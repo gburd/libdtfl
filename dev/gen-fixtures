@@ -1,0 +1,58 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# dev/gen-fixtures: generate interop fixtures from the pinned Rust crates.
+#
+# A fixture is a byte file produced by real Rust (timely/differential at
+# their pins) that a C interop test under tests/interop/ reads back and
+# checks for equality.  This is the only tier that compares libdtfl
+# against actual upstream behavior rather than a re-derived C oracle, so
+# it is the strongest evidence of a faithful port (PLAN sections 6, 9).
+#
+# It needs cargo.  Fixtures are committed under tests/interop/fixtures/
+# so `make check` does not need cargo; regenerate them when a pin moves.
+#
+# Usage: dev/gen-fixtures [--check]
+#   (no args)  regenerate every fixture into tests/interop/fixtures/
+#   --check    regenerate into a temp dir and diff against the committed
+#              fixtures; nonzero exit if any differ (a CI drift guard).
+set -eu
+
+top=$(cd "$(dirname "$0")/.." && pwd)
+gendir="$top/dev/gen-fixtures.d"
+out="$top/tests/interop/fixtures"
+mode=${1:-generate}
+
+command -v cargo >/dev/null 2>&1 || {
+	echo "gen-fixtures: cargo not found; cannot regenerate (committed fixtures still usable)" >&2
+	exit 2
+}
+
+dest="$out"
+if [ "$mode" = "--check" ]; then
+	dest=$(mktemp -d "${TMPDIR:-/scratch/$USER}/dtfl-fx-XXXXXX" 2>/dev/null \
+		|| mktemp -d "/tmp/dtfl-fx-XXXXXX")
+fi
+mkdir -p "$dest"
+
+# Each generator is a Rust bin in dev/gen-fixtures.d producing one file on
+# stdout.  Add a line here per fixture.
+( cd "$gendir" && cargo run --quiet --bin ord_order ) > "$dest/ord_order.bin"
+( cd "$gendir" && cargo run --quiet --bin capture_wire ) > "$dest/capture_wire.bin"
+( cd "$gendir" && cargo run --quiet --bin log_stream ) > "$dest/log_stream.bin"
+( cd "$gendir" && cargo run --quiet --bin operator_oracle ) > "$dest/operator_oracle.bin"
+( cd "$gendir" && cargo run --quiet --bin fuzz_oracle ) > "$dest/fuzz_oracle.bin"
+
+if [ "$mode" = "--check" ]; then
+	rc=0
+	for f in "$out"/*.bin; do
+		b=$(basename "$f")
+		if ! cmp -s "$f" "$dest/$b"; then
+			echo "gen-fixtures: $b differs from committed fixture" >&2
+			rc=1
+		fi
+	done
+	rm -f "$dest"/*.bin
+	rmdir "$dest" 2>/dev/null || true
+	exit $rc
+fi
+echo "gen-fixtures: regenerated $(ls "$out"/*.bin | wc -l) fixture(s) in $out"

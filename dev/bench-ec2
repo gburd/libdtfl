@@ -1,0 +1,172 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# dev/bench-ec2: run the PLAN section 9 benchmark matrix on a dedicated
+# EC2 bare-metal instance, C against the Rust pin, and tear everything
+# down.  PLAN section 10.1, P16.3.
+#
+#   dev/bench-ec2 [options]
+#     --profile P      AWS profile (default $AWS_PROFILE)
+#     --region R       region (default $AWS_REGION, else us-east-2)
+#     --type T         instance type (default c7i.metal-24xl)
+#     --rev REV        libdtfl revision to build (default HEAD)
+#     --matrix M       quick | full (default full)
+#     --reps N         measured repetitions per point (default 5)
+#     --placement P    packed | spread (default packed): packed fills one
+#                      socket's physical cores first; spread alternates
+#                      sockets (PLAN P16.9; the same on one socket)
+#     --out DIR        results directory (default /scratch/$USER/bench-<stamp>)
+#     --keep           leave the instance running (prints how to stop it)
+#
+# Every resource it creates is tagged Owner/Purpose/Expires and is
+# deleted on exit, including on error or interrupt: the instance, its
+# security group (SSH from this host's public address only) and its key
+# pair.  No account, VPC, subnet or group identifier is written to the
+# repository; they are looked up at run time.  The instance powers off
+# (and so terminates) by itself after eight hours as a backstop.
+#
+# On the instance: the clock is pinned (performance governor, turbo off,
+# min = max = base frequency), THP and automatic NUMA balancing are off,
+# the NMI watchdog and periodic timers are stopped, C and Rust runs
+# alternate, and the first pair at each point is discarded.  Results are
+# CSV plus the raw program output, the perf counters, and host.txt with
+# the instance type, AMI, kernel, compilers and tuning.
+set -euo pipefail
+
+profile=${AWS_PROFILE:-}
+region=${AWS_REGION:-us-east-2}
+itype=c7i.metal-24xl
+rev=HEAD
+matrix=full
+reps=5
+placement=packed
+out=""
+keep=0
+while [ $# -gt 0 ]; do
+	case $1 in
+	--profile) profile=$2; shift 2 ;;
+	--region) region=$2; shift 2 ;;
+	--type) itype=$2; shift 2 ;;
+	--rev) rev=$2; shift 2 ;;
+	--matrix) matrix=$2; shift 2 ;;
+	--reps) reps=$2; shift 2 ;;
+	--placement) placement=$2; shift 2 ;;
+	--out) out=$2; shift 2 ;;
+	--keep) keep=1; shift ;;
+	-h|--help) sed -n '3,30p' "$0"; exit 0 ;;
+	*) echo "bench-ec2: unknown option $1" >&2; exit 2 ;;
+	esac
+done
+case $matrix in quick|full) ;; *) echo "bench-ec2: --matrix quick|full" >&2; exit 2 ;; esac
+case $reps in ''|*[!0-9]*) echo "bench-ec2: --reps takes a number" >&2; exit 2 ;; esac
+case $placement in packed|spread) ;; *) echo "bench-ec2: --placement packed|spread" >&2; exit 2 ;; esac
+[ -n "$profile" ] && export AWS_PROFILE=$profile
+export AWS_REGION=$region
+
+src=$(cd "$(dirname "$0")/.." && pwd)
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+out=${out:-/scratch/${USER}/bench-$stamp}
+mkdir -p "$out"
+work=$(mktemp -d "/scratch/${USER}/bench-ec2-XXXXXX")
+name=libdtfl-bench-$stamp
+expires=$(date -u -d '+1 day' +%Y-%m-%d 2>/dev/null || date -u -v+1d +%Y-%m-%d)
+tags="{Key=Owner,Value=${USER}},{Key=Purpose,Value=libdtfl-bench},{Key=Expires,Value=$expires}"
+key="$work/$name.pem"
+id="" sg=""
+
+log() { printf '[bench-ec2] %s\n' "$*" >&2; }
+
+cleanup() {
+	set +e
+	if [ "$keep" = 1 ] && [ -n "$id" ]; then
+		log "--keep: instance $id left running; stop it with:"
+		log "  aws ec2 terminate-instances --instance-ids $id; then delete key $name and group $sg"
+		return
+	fi
+	# An interrupt between run-instances and the id assignment leaves an
+	# instance we have no id for; find it by its unique Name tag.
+	[ -z "$id" ] && id=$(aws ec2 describe-instances \
+	    --filters "Name=tag:Name,Values=$name" \
+	    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+	    --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null)
+	[ "$id" = None ] && id=""
+	if [ -n "$id" ]; then
+		log "terminating $id"
+		aws ec2 terminate-instances --instance-ids "$id" >/dev/null
+		aws ec2 wait instance-terminated --instance-ids "$id"
+	fi
+	# The interface can detach minutes after the instance is gone (on a
+	# c6i.metal, longer than two): retry for ten minutes.
+	if [ -n "$sg" ]; then
+		for _ in $(seq 1 60); do
+			aws ec2 delete-security-group --group-id "$sg" >/dev/null 2>&1 &&
+			    { log "security group deleted"; sg=""; break; }
+			sleep 10
+		done
+		[ -n "$sg" ] && log "WARNING: security group $sg not deleted"
+	fi
+	aws ec2 delete-key-pair --key-name "$name" >/dev/null 2>&1 && log "key pair deleted"
+	left=$(aws ec2 describe-instances --filters "Name=tag:Purpose,Values=libdtfl-bench" \
+	    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+	    --query 'Reservations[].Instances[].InstanceId' --output text)
+	[ -n "$left" ] && log "WARNING: libdtfl-bench instances still present: $left"
+	find "$work" -mindepth 1 -delete; rmdir "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+# Inputs: the libdtfl tree at $rev and the Rust pin, as tarballs.
+# The pinned tag, from the PLAN section 2 table row for differential-dataflow.
+pin=$(awk -F'`' '/^\| differential-dataflow \|/ {print $2; exit}' "$src/dev/PLAN.md")
+[ -n "$pin" ] || { echo "bench-ec2: no differential-dataflow pin in dev/PLAN.md" >&2; exit 2; }
+dd=${DD_SRC:-$HOME/src/differential-dataflow}
+log "packing libdtfl $(git -C "$src" rev-parse --short "$rev") and $pin"
+git -C "$src" archive --format=tar.gz --prefix=libdtfl/ "$rev" > "$work/libdtfl.tgz"
+git -C "$dd" archive --format=tar.gz --prefix=dd/ "$pin" > "$work/dd.tgz"
+tpin=$(awk -F'`' '/^\| timely-dataflow \|/ {print $2; exit}' "$src/dev/PLAN.md")
+td=${TIMELY_SRC:-$HOME/src/timely-dataflow}
+git -C "$td" archive --format=tar.gz --prefix=timely/ "$tpin" > "$work/timely.tgz"
+
+# Launch: Debian (not Amazon Linux), SSH from here only.
+ami=$(aws ec2 describe-images --owners 136693071363 \
+    --filters 'Name=name,Values=debian-13-amd64-*' 'Name=state,Values=available' \
+    --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+myip=$(curl -s --max-time 10 https://checkip.amazonaws.com)
+vpc=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+aws ec2 create-key-pair --key-name "$name" --key-type ed25519 \
+    --tag-specifications "ResourceType=key-pair,Tags=[$tags]" \
+    --query KeyMaterial --output text > "$key"
+chmod 600 "$key"
+sg=$(aws ec2 create-security-group --group-name "$name" --vpc-id "$vpc" \
+    --description "libdtfl bench: ssh from operator" \
+    --tag-specifications "ResourceType=security-group,Tags=[$tags]" \
+    --query GroupId --output text)
+aws ec2 authorize-security-group-ingress --group-id "$sg" --protocol tcp \
+    --port 22 --cidr "$myip/32" >/dev/null
+printf '#!/bin/sh\nshutdown -h +480\n' > "$work/user-data"
+id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$itype" \
+    --key-name "$name" --security-group-ids "$sg" \
+    --instance-initiated-shutdown-behavior terminate \
+    --user-data "file://$work/user-data" \
+    --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":40,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
+    --tag-specifications "ResourceType=instance,Tags=[$tags,{Key=Name,Value=$name}]" \
+        "ResourceType=volume,Tags=[$tags]" \
+    --query 'Instances[0].InstanceId' --output text)
+log "launched $itype $id ($ami)"
+aws ec2 wait instance-running --instance-ids "$id"
+ip=$(aws ec2 describe-instances --instance-ids "$id" \
+    --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+ssh_opts=(-o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
+    -o UserKnownHostsFile="$work/known_hosts" -o ConnectTimeout=10
+    -o ServerAliveInterval=30 -i "$key")
+rsh() { ssh "${ssh_opts[@]}" "admin@$ip" "$@"; }
+for _ in $(seq 1 60); do rsh true 2>/dev/null && break; sleep 10; done
+scp -q "${ssh_opts[@]}" "$work/libdtfl.tgz" "$work/dd.tgz" "$work/timely.tgz" \
+    "$src/dev/bench-ec2.d/remote.sh" \
+    "$src/dev/bench-ec2.d/differential-v0.25.1.Cargo.lock" "admin@$ip:"
+
+log "provisioning, building and running the $matrix matrix ($placement)"
+rsh "bash remote.sh $matrix $reps $placement" 2>&1 | tee "$out/remote.log"
+scp -q -r "${ssh_opts[@]}" "admin@$ip:res/*" "$out/"
+echo "instance_type=$itype ami=$ami rev=$(git -C "$src" rev-parse "$rev") pin=$pin placement=$placement" >> "$out/host.txt"
+log "results in $out"
+python3 "$src/dev/bench-ec2.d/report.py" "$out" | tee "$out/summary.md"

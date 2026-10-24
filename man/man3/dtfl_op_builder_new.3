@@ -1,0 +1,188 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_OP_BUILDER_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_op_builder_new ,
+.Nm dtfl_op_builder_input ,
+.Nm dtfl_op_builder_input_connection ,
+.Nm dtfl_op_builder_output ,
+.Nm dtfl_op_builder_output_connection ,
+.Nm dtfl_op_builder_input_sparse ,
+.Nm dtfl_op_builder_output_sparse ,
+.Nm dtfl_op_builder_set_notify ,
+.Nm dtfl_op_builder_build ,
+.Nm dtfl_op_builder_index
+.Nd build a generic timely dataflow operator
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft dtfl_op_builder *
+.Fn dtfl_op_builder_new "dtfl_scope *s" "const char *name"
+.Ft size_t
+.Fn dtfl_op_builder_input "dtfl_op_builder *b" "dtfl_stream *in" "dtfl_pact pact"
+.Ft size_t
+.Fn dtfl_op_builder_input_connection "dtfl_op_builder *b" "dtfl_stream *in" "dtfl_pact pact" "const uint64_t *const *summaries"
+.Ft dtfl_stream *
+.Fn dtfl_op_builder_output "dtfl_op_builder *b" "const dtfl_type *type"
+.Ft dtfl_stream *
+.Fn dtfl_op_builder_output_connection "dtfl_op_builder *b" "const dtfl_type *type" "const uint64_t *const *summaries"
+.Ft size_t
+.Fn dtfl_op_builder_input_sparse "dtfl_op_builder *b" "dtfl_stream *in" "dtfl_pact pact" "size_t n" "const size_t *outputs" "const uint64_t *const *summaries"
+.Ft dtfl_stream *
+.Fn dtfl_op_builder_output_sparse "dtfl_op_builder *b" "const dtfl_type *type" "size_t n" "const size_t *inputs" "const uint64_t *const *summaries"
+.Ft void
+.Fn dtfl_op_builder_set_notify "dtfl_op_builder *b" "size_t input" "dtfl_interest interest"
+.Ft void
+.Fn dtfl_op_builder_build "dtfl_op_builder *b" "dtfl_logic_fn logic" "void *ctx" "void (*ctx_free)(void *)"
+.Ft size_t
+.Fn dtfl_op_builder_index "const dtfl_op_builder *b"
+.Sh DESCRIPTION
+These functions build an operator of arbitrary shape inside a scope's
+.Fn dtfl_build_fn
+callback.
+.Pp
+.Fn dtfl_op_builder_new
+reserves an operator slot in
+.Fa s
+with the given
+.Fa name
+and returns a builder.
+.Pp
+.Fn dtfl_op_builder_input
+adds an input reading from
+.Fa in
+through the parallelization contract
+.Fa pact
+.Pq Xr dtfl_pact_pipeline 3 ,
+and returns the input's index.
+.Fn dtfl_op_builder_input_connection
+is the same but takes, for each existing output, a path summary of
+.Fn dtfl_summary_depth
+words or
+.Dv NULL
+for no connection; a plain
+.Fn dtfl_op_builder_input
+promises the identity summary to every output.
+.Pp
+.Fn dtfl_op_builder_output
+adds an output carrying records of
+.Fa type ,
+which is retained, and returns the resulting stream.
+.Fn dtfl_op_builder_output_connection
+takes a summary per existing input the same way.
+.Pp
+.Fn dtfl_op_builder_input_sparse
+and
+.Fn dtfl_op_builder_output_sparse
+take the connection as
+.Fa n
+pairs instead: entry
+.Fa k
+connects the new port to existing output
+.Fa outputs Ns [ Fa k ]
+(or existing input
+.Fa inputs Ns [ Fa k ] )
+with summary
+.Fa summaries Ns [ Fa k ] .
+Ports not named are not connected, and a port named twice keeps the
+antichain of its summaries.
+Their cost is linear in
+.Fa n
+rather than in the number of existing ports, which matters for
+operators with many ports.
+.Pp
+.Fn dtfl_op_builder_set_notify
+sets the frontier interest of an input: whether the operator is
+scheduled on a frontier change always, only while it holds a
+capability, or never.
+The default is
+.Dv DTFL_NOTIFY_ALWAYS .
+An operator that neither reads its input frontier nor holds a
+capability between calls, such as a per-record map, should set
+.Dv DTFL_NOTIFY_NEVER ,
+as timely's
+.Fn Operator::unary
+does; otherwise it runs on every frontier change.
+.Pp
+.Fn dtfl_op_builder_build
+installs the operator and consumes the builder.
+.Fa logic
+runs on every schedule with an operator handle valid only during the
+call
+.Pq Xr dtfl_op_input_next 3
+and
+.Fa ctx ;
+returning
+.Dv true
+reports the operator incomplete, so the runtime keeps it live even with
+empty input frontiers and no held capabilities.
+.Fa ctx_free ,
+if not
+.Dv NULL ,
+runs when the operator is dropped.
+.Pp
+.Fn dtfl_op_builder_index
+returns the operator's scope-local index.
+.Sh RETURN VALUES
+.Fn dtfl_op_builder_new
+returns a builder the
+.Fn dtfl_op_builder_build
+call consumes.
+.Fn dtfl_op_builder_input
+and
+.Fn dtfl_op_builder_input_connection
+and
+.Fn dtfl_op_builder_input_sparse
+return the new input's index.
+.Fn dtfl_op_builder_output ,
+.Fn dtfl_op_builder_output_connection
+and
+.Fn dtfl_op_builder_output_sparse
+return the output stream, owned by the scope.
+.Fn dtfl_op_builder_index
+returns the operator's index.
+.Sh EXAMPLES
+A map operator that adds one to each input record:
+.Bd -literal -offset indent
+static bool logic(dtfl_op *op, void *ctx) {
+	dtfl_message *m;
+	dtfl_cap_drop(dtfl_op_initial_cap(op, 0));
+	while ((m = dtfl_op_input_next(op, 0)) != NULL) {
+		dtfl_cap *c = dtfl_op_input_cap(op, 0, 0);
+		dtfl_session *s = dtfl_op_session(op, 0, c);
+		dtfl_session_give_message(s, m);
+		dtfl_session_close(s);
+		dtfl_cap_drop(c);
+	}
+	return false;
+}
+
+dtfl_op_builder *b = dtfl_op_builder_new(scope, "Map");
+dtfl_op_builder_input(b, in, dtfl_pact_pipeline());
+dtfl_stream *out = dtfl_op_builder_output(b, dtfl_type_u64());
+dtfl_op_builder_build(b, logic, NULL, NULL);
+.Ed
+.Sh ERRORS
+These functions do not return error codes; a misuse, such as a summary
+that names an output that does not exist, is a contract violation that
+reaches the panic hook
+.Pq Xr dtfl_set_panic_hook 3 .
+.Sh SEE ALSO
+.Xr dtfl_cap_delayed 3 ,
+.Xr dtfl_op_input_next 3 ,
+.Xr dtfl_pact_pipeline 3 ,
+.Xr dtfl_stream_scope 3 ,
+.Xr dtfl_worker_dataflow 3
+.Sh HISTORY
+These are the C form of timely's
+.Vt OperatorBuilder
+.Pq builder_rc.rs ,
+layered on the raw
+.Vt OperatorBuilder
+of builder_raw.rs.
+.Sh THREAD SAFETY
+A builder and the operator it installs belong to the worker thread that
+runs the build callback and must not be shared.

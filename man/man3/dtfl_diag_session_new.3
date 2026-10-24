@@ -1,0 +1,149 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL_DIAG_SESSION_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_diag_session_new ,
+.Nm dtfl_diag_session_free ,
+.Nm dtfl_diag_server_start ,
+.Nm dtfl_diag_server_port ,
+.Nm dtfl_diag_server_stop ,
+.Nm dtfl_diag_replay_fd ,
+.Nm dtfl_diag_replay_fds
+.Nd in-process dataflow diagnostics server and log-stream replay
+.Sh SYNOPSIS
+.In dtfl/diag.h
+.Ft dtfl_diag_session *
+.Fn dtfl_diag_session_new "dtfl_worker *w"
+.Ft void
+.Fn dtfl_diag_session_free "dtfl_diag_session *s"
+.Ft int
+.Fn dtfl_diag_server_start "dtfl_diag_session *s" "const char *iface" "uint16_t port" "dtfl_diag_server **out"
+.Ft uint16_t
+.Fn dtfl_diag_server_port "const dtfl_diag_server *srv"
+.Ft void
+.Fn dtfl_diag_server_stop "dtfl_diag_server *srv"
+.Ft int
+.Fn dtfl_diag_replay_fd "int fd" "const char *stream" "dtfl_log_subscriber_fn fn" "void *ctx"
+.Ft int
+.Fn dtfl_diag_replay_fds "int const *fds" "size_t nfds" "const char *stream" "dtfl_log_subscriber_fn fn" "void *ctx"
+.Sh DESCRIPTION
+These functions are the C port of the dataflow-diag
+.Dq diagnostics
+crate: a live diagnostics console for timely and differential dataflow.
+.Pp
+.Fn dtfl_diag_session_new
+creates a diagnostics session on the worker
+.Fa w
+and subscribes it to the worker's
+.Dq timely
+and
+.Dq differential/arrange
+log streams
+.Pq Xr dtfl_worker_log_subscribe 3 .
+The session maintains the live set of operators, channels and
+statistics.
+It is worker-owned: create, use and free it on the worker
+thread.
+.Fn dtfl_diag_session_free
+releases the session; stop any server started from it first.
+.Pp
+.Fn dtfl_diag_server_start
+starts a WebSocket server for the session on interface
+.Fa iface
+.Pq a NULL Fa iface No means 127.0.0.1
+and
+.Fa port
+.Pq 0 lets the kernel choose .
+On success it stores the server in
+.Fa *out
+and returns
+.Dv DTFL_OK ;
+on failure it returns a
+.Dv DTFL_E*
+code with detail in
+.Xr dtfl_last_error_detail 3 .
+The server runs its accept and send loop on a background thread
+.Pq Xr dtfl_set_thread_hooks 3 applies
+and communicates with the session through an internal lock-free queue,
+so no worker-owned handle crosses the thread boundary.
+A browser that connects is replayed the full current state as one
+.Em Frame ,
+then follows the incremental Frames as the computation runs.
+.Pp
+.Fn dtfl_diag_server_port
+returns the port the server bound.
+.Fn dtfl_diag_server_stop
+stops the server, joins its thread and frees it; a NULL argument is a
+no-op.
+.Pp
+.Fn dtfl_diag_replay_fd
+and
+.Fn dtfl_diag_replay_fds
+replay a recorded log stream and deliver decoded event batches to a
+subscriber, the out-of-process counterpart of
+.Xr dtfl_worker_log_subscribe 3 .
+.Fa stream
+names the event enum to decode:
+.Dq timely ,
+.Dq differential/arrange
+or
+.Dq communication .
+.Fn dtfl_diag_replay_fd
+reads one descriptor to end of stream;
+.Fn dtfl_diag_replay_fds
+reads
+.Fa nfds
+descriptors, one per source worker.
+Both return
+.Dv DTFL_OK
+at clean end of stream, or a
+.Dv DTFL_E*
+code
+.Pq Dv DTFL_EPROTO No on malformed bytes .
+.Sh FRAME FORMAT
+Each WebSocket text message is one JSON Frame
+.Pq PLAN D9, Rust 0.31 compatible :
+.Bd -literal -offset indent
+{"type":"Frame","ts_us":<u64>,"updates":[
+  {"type":"Operator","id":<u>,"name":"...","addr":[...],"diff":<i64>},
+  {"type":"Channel","id":<u>,"scope_addr":[...],
+   "source":[<u>,<u>],"target":[<u>,<u>],"diff":<i64>},
+  {"type":"Stat","kind":"Elapsed|Messages|...","id":<u>,"diff":<i64>}
+]}
+.Ed
+The upstream
+.Pa index.html
+and React console render these Frames unmodified.
+.Sh DIVERGENCE
+The server binds 127.0.0.1 by default, where upstream binds 0.0.0.0
+.Pq Pa diagnostics/src/server.rs:154 ,
+so operator names and timings are not published to the network with no
+authentication
+.Pq PLAN D12 .
+Pass a different
+.Fa iface
+to restore the upstream behavior.
+.Sh RETURN VALUES
+.Fn dtfl_diag_session_new
+returns the session, or NULL on a bad argument.
+.Fn dtfl_diag_server_start ,
+.Fn dtfl_diag_replay_fd
+and
+.Fn dtfl_diag_replay_fds
+return
+.Dv DTFL_OK
+or a
+.Dv DTFL_E*
+code.
+.Sh SEE ALSO
+.Xr dtfl-diag 1 ,
+.Xr dtfl_config_log_subscribe 3 ,
+.Xr dtfl_worker_log_subscribe 3
+.Sh STANDARDS
+Ported from differential-dataflow
+.Pa diagnostics/src/lib.rs ,
+.Pa server.rs
+and
+.Pa logging.rs
+at tag differential-dataflow-v0.25.1.

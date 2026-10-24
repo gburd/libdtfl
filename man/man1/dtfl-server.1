@@ -1,0 +1,134 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL-SERVER 1
+.Os
+.Sh NAME
+.Nm dtfl-server
+.Nd shared-dataflow plugin server
+.Sh SYNOPSIS
+.Nm
+.Op Ar session-file
+.Sh DESCRIPTION
+.Nm
+is the differential-dataflow
+.Ql dd_server :
+a long-running host for several dataflows
+.Pq Dq plugins
+that share arrangements by name.
+One plugin publishes an indexed collection
+.Pq a trace
+under a name, and other plugins import that same trace into their own
+dataflows, so the cost of indexing the collection is paid once and shared
+across every importer.
+.Pp
+.Nm
+reads a command session from
+.Ar session-file ,
+or standard input.
+The four example plugins are linked in and selected by name; a line beginning
+with
+.Ql #
+or
+.Ql --
+is a comment.
+.Bl -tag -width Ds
+.It Ic load Ar instance plugin Op Ar args ...
+Build
+.Ar plugin Ap s
+dataflow on the shared worker under the given
+.Ar instance
+name, passing the positional
+.Ar args .
+Several loads of one plugin under different instance names coexist, each its
+own dataflow sharing the same imported traces.
+.It Ic tick
+Close the current epoch, advance every plugin input, and run to quiescence.
+.It Ic drop Ar instance
+Drop a loaded instance, releasing its dataflow and the inputs it created.
+Traces it published stay registered for importers that still reference them.
+.It Ic peek Ar trace
+Print a registered trace's consolidated contents as of the current epoch.
+Records are shown as a tuple of their fields.
+.It Ic list
+Print the registry: the epoch, each registered trace, each loaded instance.
+.It Ic plugins
+List the registered plugins.
+.It Ic exit
+Stop the session.
+.El
+.Pp
+The host time is a
+.Vt u64
+epoch shared across all plugins, advanced by one each
+.Ic tick .
+.Ss Plugins
+.Bl -tag -width Ds
+.It Ic random_graph Ar name nodes edges rate
+Generate a deterministic graph of
+.Ar edges
+random edges over
+.Ar nodes
+nodes, arrange it by source node, and publish the trace under
+.Ar name .
+The
+.Ar rate
+argument is accepted and ignored
+.Pq see Sx STANDARDS .
+.It Ic degr_dist Ar graph
+Import the shared
+.Ar graph
+edge trace and compute its degree distribution, published under
+.Ar graph Ns Fl degrees
+as
+.Pq Vt degree , Vt count
+rows.
+.It Ic reachability Ar graph source
+Import the shared
+.Ar graph
+edge trace and compute the set of nodes reachable from
+.Ar source ,
+published under
+.Ar graph Ns Fl reach .
+.It Ic neighborhood Ar graph source
+Import the shared
+.Ar graph
+edge trace and report the nodes reachable from
+.Ar source
+in exactly three hops.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ${datadir}/dtfl/server/sessions/
+The example sessions, replayable with
+.Nm .
+.El
+.Sh EXAMPLES
+Generate a graph, then run two queries that share its arrangement:
+.Bd -literal -offset indent
+load graph random_graph graph 5 8 1000
+load dd degr_dist graph
+load rr reachability graph 0
+tick
+peek graph-degrees
+peek graph-reach
+exit
+.Ed
+.Sh SEE ALSO
+.Xr dtfl-ddir 1 ,
+.Xr dtfl_collection_arrange_by_key 3
+.Sh STANDARDS
+Ported from the differential-dataflow
+.Ql server
+crate at tag
+.Ql differential-dataflow-v0.25.1 .
+Upstream loads plugins as dynamic libraries through
+.Xr dlopen 3 ;
+this port registers them statically
+.Pq a name and a build callback ,
+since library code may not
+.Xr dlopen 3 .
+The
+.Ic random_graph
+plugin upstream is an open-loop timed source;
+this port produces only its deterministic initial graph, so a session is
+replayable and its results are hand-checkable.

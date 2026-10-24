@@ -1,0 +1,76 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_PACT_PIPELINE 3
+.Os
+.Sh NAME
+.Nm dtfl_pact_pipeline ,
+.Nm dtfl_pact_exchange
+.Nd parallelization contracts for operator inputs
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely.h
+.Ft dtfl_pact
+.Fn dtfl_pact_pipeline "void"
+.Ft dtfl_pact
+.Fn dtfl_pact_exchange "uint64_t (*route)(const void *, size_t, void *)" "void *ctx"
+.Sh DESCRIPTION
+A parallelization contract describes how records reach an operator
+input across the workers of a computation.
+It is passed to
+.Xr dtfl_op_builder_new 3 Ap s
+.Fn dtfl_op_builder_input .
+A pact never changes the number of records at a time, which progress
+tracking relies on.
+.Pp
+.Fn dtfl_pact_pipeline
+keeps records on the worker that produced them: a direct, worker-local
+connection.
+.Pp
+.Fn dtfl_pact_exchange
+routes each record to the worker
+.Fa route Ns (record) modulo the number of peers, so records with the
+same route value meet on one worker.
+When
+.Fa route
+is
+.Dv NULL
+the record's type hash is used
+.Pq Xr dtfl_type_hash 3 .
+.Fa ctx
+is passed to
+.Fa route .
+.Sh RETURN VALUES
+Both functions return a
+.Vt dtfl_pact
+value to pass to the builder.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Keep data local. */
+dtfl_op_builder_input(b, in, dtfl_pact_pipeline());
+
+/* Route each record by a key hash across workers. */
+dtfl_op_builder_input(b, in, dtfl_pact_exchange(route_by_key, NULL));
+.Ed
+.Sh ERRORS
+These functions do not fail.
+.Sh SEE ALSO
+.Xr dtfl_op_builder_new 3 ,
+.Xr dtfl_stream_scope 3 ,
+.Xr dtfl_type_hash 3
+.Sh HISTORY
+These are the C forms of timely's
+.Vt Pipeline
+and
+.Vt ExchangeCore
+parallelization contracts
+.Pq channels/pact.rs .
+.Sh THREAD SAFETY
+A
+.Vt dtfl_pact
+is a plain value created and consumed on the worker thread that builds
+the operator.
+The
+.Fa route
+function runs on the worker that produces each record.

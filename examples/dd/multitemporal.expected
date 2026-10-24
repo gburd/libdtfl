@@ -1,0 +1,14 @@
+Report at (0, 0)
+    values with occurrence count 1: 3
+Report at (1, 1)
+    values with occurrence count 1: 2
+    values with occurrence count 3: 1
+Report at (2, 0)
+    values with occurrence count 1: 2
+Report at (2, 1)
+    values with occurrence count 1: 2
+    values with occurrence count 2: 1
+Report at (2, 2)
+    values with occurrence count 1: 2
+    values with occurrence count 2: 1
+validation: ok

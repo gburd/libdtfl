@@ -1,0 +1,117 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_1.texi: ports timely-dataflow
+@c mdbook/src/chapter_1/chapter_1.md, chapter_1_1.md (Dataflow),
+@c chapter_1_2.md (Logical Timestamps), chapter_1_3.md (Tracking Progress).
+
+@node Timely Dataflow Model
+@section Dataflow, timestamps and progress
+
+Three ideas underlie every timely dataflow program: dataflow, logical
+timestamps, and progress tracking.  This section takes the reactive
+example of the previous section apart to show each.
+
+@subsection Dataflow
+
+Dataflow programming describes a program as independent components, each
+acting in response to the availability of input data, plus the
+connections between them.  In the reactive example the components are
+the input, the @code{exchange}, the @code{inspect} and the probe; the
+stream handles returned by each operator are the connections.  Nothing
+in that program requires the workers to print in any particular order:
+if you run it on two workers with the probe removed, the output arrives
+in whatever order the workers happen to produce it.
+
+That is only a mess if order matters, and often it does not.  If instead
+of printing we filtered for prime numbers, the result would be the same
+primes regardless of the order the records were examined in.  A
+@code{filter} that keeps the primes is an operator like any other:
+
+@example
+static bool
+is_prime(void *ctx, const void *rec, size_t len)
+@{
+        uint64_t x = dtfl_get_u64(rec), i, limit = (uint64_t)sqrt((double)x);
+
+        if (x <= 1)
+                return false;
+        for (i = 2; i <= limit; i++)
+                if (x % i == 0)
+                        return false;
+        return true;
+@}
+/* dtfl_stream_filter(s, is_prime, DTFL_NOCTX); */
+@end example
+
+@subsection Logical timestamps
+
+When data move around arbitrarily, it becomes hard to correlate outputs
+with inputs.  The standard fix is a @emph{timestamp} on each record: a
+logical time that says @emph{when} the record should be thought to
+happen.  A timestamp need not be a wall-clock time; it is often just a
+sequence number identifying a batch of input.  As long as the
+computation does not change the timestamps, a record introduced at time
+@var{t} produces outputs at time @var{t}, so the output can always be
+put back in order.
+
+In the reactive example, each record carried the timestamp @code{round}.
+The @code{inspect} callback does not see the time, but
+@code{inspect_batch} does: it is called once per batch of records that
+share a time, with that time:
+
+@example
+static void
+hello_at(void *ctx, const uint64_t *time, const dtfl_message *msg)
+@{
+        size_t i, n = dtfl_message_len(msg);
+
+        for (i = 0; i < n; i++) @{
+                size_t len;
+                const void *rec = dtfl_message_record(msg, i, &len);
+
+                printf("hello %llu @ %llu\n",
+                    (unsigned long long)dtfl_get_u64(rec),
+                    (unsigned long long)time[0]);
+        @}
+@}
+/* dtfl_stream_inspect_batch(s, hello_at, DTFL_NOCTX); */
+@end example
+
+Timestamps help operators too, not just users.  An operator that reports
+a running sum @emph{as of} a timestamp cannot simply add records as they
+arrive, because they may arrive out of timestamp order; it must
+incorporate them in timestamp order.  To do that safely it needs to know
+when a timestamp is complete, which is what progress tracking provides.
+
+@subsection Tracking progress
+
+Progress tracking lets each component learn how much of its input it has
+seen.  Two methods on the input and the probe do the work:
+
+@example
+dtfl_input_advance_to(input, &next_epoch);
+while (dtfl_probe_less_than(probe, dtfl_input_time(input)))
+        dtfl_worker_step(w);
+@end example
+
+@code{dtfl_input_advance_to} is the important one.  An input has a
+timestamp; it may introduce data at that time or later.  Advancing the
+timestamp permanently restricts future data to times at or after the new
+one, and that is the moment the program tells the system, and through it
+every other worker, that a timestamp may soon be complete.  There may
+still be records of that time in flight, but as they drain the system
+can report progress.
+
+A @dfn{probe} is how a program observes that progress.
+@code{dtfl_probe_less_than} asks whether it is still possible to see a
+time less than the argument at the probed point in the graph;
+@code{dtfl_probe_less_equal} is the inclusive form.  Both are
+non-blocking: they return immediately with a definite yes or no.  A
+probe placed after @code{inspect} tells the program whether that
+@code{inspect} might fire again for a given time; when the answer is no,
+the program is free to advance the input and introduce the next round.
+
+Progress information is passive.  A program observes what has happened
+and may change its behavior, but it does not direct the system.  This
+keeps coordination cheap: a worker that wants to wait for progress may,
+but it may also go work on another part of the graph.  Synchronization
+is a choice a worker makes, not a discipline the system imposes.

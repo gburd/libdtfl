@@ -1,0 +1,188 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_ARRANGE 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_arrange ,
+.Nm dtfl_arrange_from_upsert ,
+.Nm dtfl_arranged_as_collection ,
+.Nm dtfl_arranged_emit_record ,
+.Nm dtfl_arranged_trace ,
+.Nm dtfl_trace_import ,
+.Nm dtfl_trace_free ,
+.Nm dtfl_arranged_enter ,
+.Nm dtfl_arranged_leave ,
+.Nm dtfl_arranged_enter_region ,
+.Nm dtfl_arranged_leave_region ,
+.Nm dtfl_arranged_type ,
+.Nm dtfl_arranged_diff ,
+.Nm dtfl_arranged_scope ,
+.Nm dtfl_arranged_stream ,
+.Nm dtfl_arranged_free
+.Nd arrange a collection into a shared, reusable trace
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.Ft dtfl_arranged *
+.Fn dtfl_collection_arrange "dtfl_collection *c" "const char *name"
+.Ft dtfl_arranged *
+.Fn dtfl_arrange_from_upsert "dtfl_collection *upserts" "const dtfl_type *key_type" "const dtfl_type *val_type" "const char *name"
+.Ft void
+.Fn dtfl_arranged_emit_record "dtfl_arranged_emit *e" "const void *rec" "size_t len"
+.Ft dtfl_collection *
+.Fn dtfl_arranged_as_collection "dtfl_arranged *a" "const dtfl_type *out_type" "dtfl_arranged_kv_fn fn" "dtfl_ctx ctx"
+.Ft dtfl_trace *
+.Fn dtfl_arranged_trace "const dtfl_arranged *a"
+.Ft dtfl_arranged *
+.Fn dtfl_trace_import "dtfl_trace *t" "dtfl_scope *scope" "const char *name"
+.Ft void
+.Fn dtfl_trace_free "dtfl_trace *t"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_enter "dtfl_arranged *a" "dtfl_scope *child"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_leave "dtfl_arranged *a"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_enter_region "dtfl_arranged *a" "dtfl_scope *region"
+.Ft dtfl_arranged *
+.Fn dtfl_arranged_leave_region "dtfl_arranged *a"
+.Ft const dtfl_type *
+.Fn dtfl_arranged_type "const dtfl_arranged *a"
+.Ft const dtfl_diff *
+.Fn dtfl_arranged_diff "const dtfl_arranged *a"
+.Ft dtfl_scope *
+.Fn dtfl_arranged_scope "const dtfl_arranged *a"
+.Ft dtfl_stream *
+.Fn dtfl_arranged_stream "const dtfl_arranged *a"
+.Ft void
+.Fn dtfl_arranged_free "dtfl_arranged *a"
+.Sh DESCRIPTION
+An
+.Vt dtfl_arranged
+is the indexed form of a
+.Vt dtfl_collection :
+a shared, reference-counted trace of
+.Pq key , value , time , diff
+updates, maintained by one writer and read by many operators on the same
+worker.
+The cost of indexing a collection is paid once and shared, which is why
+join, reduce and count read an arrangement rather than a collection.
+.Pp
+.Fn dtfl_collection_arrange
+indexes
+.Va c
+into a shared trace, exchanging updates by record so each record is
+accumulated on one worker, batching every input-frontier interval into a
+batch, and committing the batches to a spine.
+It indexes the whole record as the key.
+.Va name
+labels the operator, or is
+.Dv NULL
+for the default.
+.Pp
+.Fn dtfl_arrange_from_upsert
+arranges a stream of keyed upserts.
+Each record of
+.Va upserts
+is a key followed by an
+.Vt option
+value: one tag byte, 0 for None and 1 for Some, then the value when Some.
+The update's embedded time is the upsert time, and the diff is ignored.
+The collection holds, for each key, the most recent value by time; a None
+uninstalls the key.
+The operator computes the retractions itself, so the result trace indexes
+key to value with signed diffs.
+A repeated value produces no change, and a tie in time takes the greatest
+.Vt option
+value
+.Pq None < Some .
+The time class must be totally ordered.
+.Pp
+.Fn dtfl_arranged_as_collection
+reads an arrangement back as a collection.
+Each stored
+.Pq key , value
+becomes zero or more output records of
+.Va out_type :
+.Va fn
+writes them from the key and value bytes through the emit handle with
+.Fn dtfl_arranged_emit_record ,
+and the operator pairs each with every
+.Pq time , diff
+of that
+.Pq key , value .
+When
+.Va fn
+is
+.Dv NULL ,
+the output record is the stored record itself and
+.Va out_type
+must be the collection's record type.
+.Pp
+.Fn dtfl_arranged_trace
+extracts a shareable trace handle: a new reader of the shared trace that may
+outlive the arrangement.
+.Fn dtfl_trace_import
+brings a trace into another dataflow scope on the same worker, producing a
+second arrangement over the same backing data; this is how one index serves
+several downstream operators.
+A trace is worker-local and imports only into dataflows on the worker that
+created it.
+.Pp
+.Fn dtfl_arranged_enter
+and
+.Fn dtfl_arranged_leave
+carry an arrangement into a child scope and back, lifting each time with the
+scope refinement.
+.Fn dtfl_arranged_enter_region
+and
+.Fn dtfl_arranged_leave_region
+apply to a region, a subscope with the same time class, where no time
+transform is needed.
+.Pp
+.Fn dtfl_arranged_type ,
+.Fn dtfl_arranged_diff
+and
+.Fn dtfl_arranged_scope
+report the record type, the difference class and the scope the arrangement
+belongs to.
+.Pp
+.Fn dtfl_arranged_stream
+returns the arrangement's batch stream, which carries one opaque record per
+sealed batch.
+It is owned by the scope.
+Attach a probe to it with
+.Fn dtfl_stream_probe_with
+.Pq see Xr dtfl_probe_new 3
+to observe the arrangement's progress without reading its records.
+.Sh RETURN VALUES
+.Fn dtfl_collection_arrange ,
+.Fn dtfl_arrange_from_upsert ,
+.Fn dtfl_trace_import ,
+and the enter and leave functions return a new
+.Vt dtfl_arranged
+handle the caller owns.
+.Fn dtfl_arranged_as_collection
+returns a new collection.
+.Fn dtfl_arranged_trace
+returns a new trace handle.
+.Sh OWNERSHIP
+.Fn dtfl_arranged_free
+and
+.Fn dtfl_trace_free
+release a handle.
+Freeing a handle releases its compaction hold on the shared trace, which lets
+the trace compact further; a handle that is never freed holds compaction at
+its frontier for as long as the dataflow runs.
+The shared trace lives until its last reader is freed.
+.Sh THREAD SAFETY
+Every handle belongs to the worker that created it and must not be used from
+another thread.
+A trace imports only into dataflows on its own worker.
+.Sh SEE ALSO
+.Xr dtfl_collection_new 3 ,
+.Xr dtfl-differential 7
+.Sh STANDARDS
+Ported from differential-dataflow 0.25.1
+.Pq Pa operators/arrange/arrangement.rs , Pa operators/arrange/agent.rs , Pa operators/arrange/writer.rs , Pa operators/arrange/upsert.rs .

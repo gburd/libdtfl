@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: MIT
+name: release
+
+# Triggered by pushing a tag matching v* (e.g. v0.1.0).  Runs the full CI
+# suite against the tagged commit, then builds the artifacts (the source
+# tarball via make dist, plus a man-page bundle), TEST-BUILDS the source
+# tarball exactly as a packager would (from the committed configure, with
+# no autoreconf), and only then attaches them to a GitHub Release.
+#
+# GATING:  ci -> verify-tag -> build -> publish
+# Every job needs: its predecessor, so publish cannot start unless the
+# full suite, the tag/version check, and the tarball test-build all pass.
+# A tag push does not match ci.yml's branches filter, so without the
+# reusable `ci` job here the matrix would never run for a release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # GATE 1: the full CI suite at this commit, as a reusable workflow.
+  # The nightly-only tier (fuzz-nightly) carries an event_name guard and
+  # a tag push reaches it as 'push', so it SKIPs here; a release is gated
+  # on every per-push job but not on the 100k-seed nightly soak.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  verify-tag:
+    # GATE 2: the tag must name the version AC_INIT declares.
+    runs-on: ubuntu-latest
+    needs: ci
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag name must match the AC_INIT version
+        id: ver
+        run: |
+          set -eu
+          ver="$(sed -n 's/^AC_INIT(\[libdtfl\], \[\([^]]*\)\].*/\1/p' configure.ac)"
+          test -n "$ver" || { echo "FAIL: could not read version from configure.ac"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}  configure.ac=$ver"
+          if [ "${GITHUB_REF_NAME}" != "v$ver" ]; then
+            echo "FAIL: tag ${GITHUB_REF_NAME} != v$ver from configure.ac"
+            exit 1
+          fi
+
+  build:
+    # GATE 3: produce the artifacts and prove the published tarball
+    # builds.  Nothing is uploaded here; the artifacts are handed to
+    # publish so it consumes the exact bytes that were tested.
+    runs-on: ubuntu-latest
+    needs: verify-tag
+    env:
+      VER: ${{ needs.verify-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo gawk
+
+      - name: Make the source tarball
+        run: |
+          set -eu
+          ./bootstrap
+          mkdir build && cd build
+          ../configure
+          make -j"$(nproc)" dist
+          test -f "libdtfl-$VER.tar.gz" || { echo "FAIL: make dist did not produce libdtfl-$VER.tar.gz"; exit 1; }
+          mv "libdtfl-$VER.tar.gz" ..
+
+      - name: Test-build the PUBLISHED tarball as a packager would
+        # The tarball must build from its committed configure with NO
+        # autoreconf (the supported packager path).  PATH is emptied of
+        # autotools first, with trap shims, so the build cannot silently
+        # regenerate anything and pass for the wrong reason.
+        run: |
+          set -eu
+          work="$(mktemp -d)"
+          tar -xzf "libdtfl-$VER.tar.gz" -C "$work"
+          src="$work/libdtfl-$VER"
+          test -d "$src" || { echo "FAIL: tarball prefix is not libdtfl-$VER"; exit 1; }
+          test -x "$src/configure" || { echo "FAIL: configure missing or not executable in the tarball"; exit 1; }
+          mkdir -p "$work/nobin"
+          cat > "$work/nobin/autoreconf" <<'EOF'
+          #!/bin/sh
+          echo "FAIL: the tarball build invoked autoreconf; the packager path must not need it" >&2
+          exit 127
+          EOF
+          for t in autoconf automake aclocal autoheader libtoolize; do
+            cp "$work/nobin/autoreconf" "$work/nobin/$t"
+          done
+          chmod +x "$work/nobin"/*
+          mkdir -p "$src/b"
+          cd "$src/b"
+          export PATH="$work/nobin:$PATH"
+          ../configure
+          make -j"$(nproc)"
+          make check -j"$(nproc)" || { find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1; }
+          # The library must be usable through the installed surface:
+          # install into a throwaway prefix, then compile+link a consumer
+          # against only the installed headers via pkg-config.
+          make install DESTDIR="$work/inst"
+          prefix="$work/inst/usr/local"
+          test -f "$prefix/include/dtfl/dtfl.h" || { echo "FAIL: dtfl.h not installed"; exit 1; }
+          export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
+          printf '%s\n' '#include <dtfl/dtfl.h>' 'int main(void){return 0;}' > "$work/consumer.c"
+          cc "$work/consumer.c" $(pkg-config --cflags --libs dtfl) -o "$work/consumer"
+          echo "[release] tarball test-build OK (packager path, no autoreconf)"
+
+      - name: Man-page bundle
+        run: |
+          set -eu
+          tar -czf "libdtfl-man-$VER.tar.gz" man/
+          tar -tzf "libdtfl-man-$VER.tar.gz" | grep -q 'man/man3/.*\.3' \
+            || { echo "FAIL: man bundle has no man3 pages"; exit 1; }
+
+      - name: Release notes from NEWS
+        run: |
+          set -eu
+          # Extract the stanza for this version: from the "Version $VER"
+          # line to the next "Version " line.
+          awk -v v="$VER" '
+            $0 ~ "^Version "v {p=1}
+            p && /^Version / && $0 !~ ("^Version "v) {exit}
+            p {print}
+          ' NEWS > notes.md
+          test -s notes.md || echo "libdtfl $VER" > notes.md
+
+      - name: Hand the TESTED artifacts to publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            libdtfl-${{ env.VER }}.tar.gz
+            libdtfl-man-${{ env.VER }}.tar.gz
+            notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    # The only job that writes anything public.  It builds nothing; it
+    # downloads the artifacts the build job proved good.
+    runs-on: ubuntu-latest
+    needs: [ci, verify-tag, build]
+    env:
+      VER: ${{ needs.verify-tag.outputs.version }}
+    steps:
+      - name: Download the tested artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+      - name: Confirm every artifact arrived
+        run: |
+          set -eu
+          for f in "libdtfl-$VER.tar.gz" "libdtfl-man-$VER.tar.gz" notes.md; do
+            test -s "$f" || { echo "FAIL: missing artifact $f"; exit 1; }
+          done
+          ls -l
+      - name: Create GitHub Release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: |
+            libdtfl-${{ env.VER }}.tar.gz
+            libdtfl-man-${{ env.VER }}.tar.gz

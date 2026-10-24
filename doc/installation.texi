@@ -1,0 +1,189 @@
+@c SPDX-License-Identifier: MIT
+@c doc/installation.texi: the Installation chapter.
+
+@node Installation
+@chapter Installation
+
+libdtfl uses the GNU build system.  From a release tarball:
+
+@example
+./configure
+make
+make install
+@end example
+
+From a git checkout, generate the build system first with the bundled
+bootstrap script, which runs the autotools:
+
+@example
+./bootstrap
+./configure
+make
+make install
+@end example
+
+@command{make} builds the shared library @file{libdtfl.so}, the
+command-line tools @command{dtfl-diag} and @command{dtfl-ddir}, this
+manual (@file{libdtfl.info}), and the manual pages.  @command{make
+install} installs the library, the public headers under
+@file{dtfl/}, the @file{dtfl.pc} pkg-config file, the tools, the info
+manual and the manual pages.
+
+@section Configure options
+
+@table @option
+@item --with-hegel[=DIR]
+Build and run the property-based tests, which use the Hegel testing
+library.  Without it, the property tests report SKIP.  Give the install
+prefix as @var{DIR}, or rely on @command{pkg-config} finding it.
+
+@item --enable-debug
+Build with assertions and the debug-only contract checks (the
+worker-ownership checks of @ref{Threads}).
+
+@item --enable-asan
+@itemx --enable-ubsan
+@itemx --enable-tsan
+Build with the AddressSanitizer, UndefinedBehaviorSanitizer or
+ThreadSanitizer.  ThreadSanitizer verifies the thread-safety contract
+over the multi-worker suites.
+
+@item --enable-diag
+@itemx --enable-ddir
+@itemx --enable-server
+Build the diagnostics console, the DDIR language and tooling, and the
+diagnostics server component.  Each is on by default where its
+prerequisites are present.
+
+@item --enable-usdt
+@itemx --disable-usdt
+Build the USDT static probes (@pxref{Diagnostics}) for DTrace, SystemTap,
+@command{bpftrace} and @command{perf}.  On by default when
+@file{sys/sdt.h} is found (on Debian, the @code{systemtap-sdt-dev}
+package); without it each probe compiles to nothing.
+@option{--enable-usdt} fails when the header is missing.
+
+@item --disable-frame-pointers
+The library is built with @option{-fno-omit-frame-pointer} (and
+@option{-mno-omit-leaf-frame-pointer} where the compiler accepts it), so
+profilers can walk its stack in a release build; this option lets the
+compiler omit them.  A frame-pointer flag in @env{CFLAGS} takes
+precedence either way.
+@end table
+
+Link a program with @option{-ldtfl}, or let pkg-config supply the flags:
+
+@example
+cc myprog.c $(pkg-config --cflags --libs dtfl)
+@end example
+
+@section Running the test suite
+
+@command{make check} runs the unit, property-based and distribution
+tests.  Each test runs under a time limit, @env{DTFL_TEST_TIMEOUT}
+seconds (default 600; 0 turns it off): a test that hangs is killed and
+reported as FAIL, with a line in its log saying it timed out, instead of
+stalling the run.  The project's full gate, @command{dev/check-all}, builds and
+tests six configurations, each in its own build directory:
+
+@table @asis
+@item default
+assertions on (@option{--enable-debug}).
+@item asan
+AddressSanitizer and UndefinedBehaviorSanitizer
+(@option{--enable-asan --enable-ubsan}).
+@item hegel
+the property tests enabled (@option{--with-hegel}).
+@item hegel-asan
+the property tests under ASan and UBSan.
+@item tsan
+ThreadSanitizer (@option{--enable-tsan}).
+@item distcheck
+@command{make distcheck}: builds a distribution tarball and checks that
+it unpacks, configures, builds, tests and ships the manual and the
+manual pages.
+@end table
+
+A phase of the project is not finished until all six pass.
+
+@subheading Simulator coverage
+
+@command{make check-sim} runs the multi-worker property tests under the
+simulation allocator (@code{DTFL_COMM_SIM}), which runs every worker on
+one thread under a seeded scheduler.  Each test case draws its own
+simulator seed, worker count and progress mode, and a fault set: worker
+stalls (a worker skips a drawn number of scheduler turns) and delivery
+delays (a message waits a drawn number of turns).  A delay holds back
+everything behind the message on its (sender, receiver, channel) queue,
+so per-channel FIFO order, which timely relies on, is kept; only
+messages on different queues are reordered.  The properties cover the
+communication layer, join, count, notification order and an iterative
+bfs.
+
+It needs a build configured @option{--with-hegel}; without it every
+property reports SKIP and @command{make check-sim} fails with status 77,
+so a qualification script cannot mistake a run that tested nothing for
+a pass.  Two variables size the run:
+
+@table @env
+@item DTFL_SIM_SEEDS
+test cases per property (default 2000);
+@item DTFL_SIM_JOBS
+parallel shards (default 1).  Shard @var{k} runs hegel with seed
+@var{k}+1, so a run is reproducible from these two values.
+@end table
+
+For example, a release qualification run of 100,000 seeds per property
+on 16 cores:
+
+@example
+DTFL_SIM_SEEDS=100000 DTFL_SIM_JOBS=16 make check-sim
+@end example
+
+Each property prints PASS, FAIL or SKIP.  A failure prints the minimal
+case hegel shrank it to, including the simulator seed and faults, and a
+@env{DTFL_PBT_REPLAY} command that reruns that one case.
+
+@section Platform notes
+
+The test suite, with each sanitizer, passes on these platforms:
+
+@table @asis
+@item Linux x86_64 and arm64 (Debian 13, gcc 14 and clang 19)
+Everything, including ThreadSanitizer, the USDT probes (with
+@code{systemtap-sdt-dev}) and the property tests (hegel publishes
+@file{libhegel} for both).  The ThreadSanitizer tests run under
+@command{setarch -R}, which configure applies.
+
+@item FreeBSD 14 amd64 (base clang 21, and gcc 14 from ports)
+Use @command{gmake}.  Both compilers build and pass @command{make
+check} and @command{make distcheck}; clang passes under ASan, UBSan and
+TSan, gcc under ASan and UBSan.  Where they differ from Linux:
+
+@itemize @bullet
+@item
+The tests of a sanitizer build run with address randomization off,
+through @command{proccontrol -m aslr -s disable}, which configure
+applies.  gcc's @file{libasan} refuses to start under FreeBSD's ASLR
+(``This sanitizer is not compatible with enabled ASLR''); to run a
+gcc ASan program by hand, start it the same way.
+@item
+gcc has no ThreadSanitizer runtime on FreeBSD (the port ships no
+@file{libtsan}); configure stops on @option{--enable-tsan} with gcc.  Use
+clang.
+@item
+libthr allocates mutexes and condition variables with a private
+allocator that ThreadSanitizer does not intercept, which TSan
+misreports as a race inside @code{__thr_calloc}.
+@file{tests/tsan.supp} suppresses it, and @command{make check} passes
+it in @env{TSAN_OPTIONS}.  A program of yours run under TSan on FreeBSD
+needs the same suppressions.
+@item
+The USDT probes are off: FreeBSD's @file{sys/sdt.h} is the kernel's
+DTrace SDT header, not the userspace @code{STAP_PROBE} one, and configure
+detects that.  @file{tests/dist/test_usdt.sh} reports SKIP.
+@item
+hegel publishes no FreeBSD @file{libhegel}, so the property tests
+report SKIP and @command{make check-sim} exits 77.
+@end itemize
+@end table
