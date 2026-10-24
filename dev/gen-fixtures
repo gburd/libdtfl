@@ -44,11 +44,15 @@ mkdir -p "$dest"
 
 if [ "$mode" = "--check" ]; then
 	rc=0
-	for f in "$out"/*.bin; do
+	# Only the fixtures generated above: the diag_*.bin fixtures come
+	# from tests/interop/gen_diag_stream.c, not from cargo.
+	for f in "$dest"/*.bin; do
 		b=$(basename "$f")
-		if ! cmp -s "$f" "$dest/$b"; then
+		if ! cmp -s "$f" "$out/$b"; then
 			echo "gen-fixtures: $b differs from committed fixture" >&2
 			rc=1
+		else
+			echo "gen-fixtures: $b matches"
 		fi
 	done
 	rm -f "$dest"/*.bin
