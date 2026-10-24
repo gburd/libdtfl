@@ -128,15 +128,40 @@ one worker and 1.10x with four, and its `event_driven` example (one of
 many dataflows advanced per round) runs 100,000 rounds in 0.27 s
 against 0.22 s, whether the dataflows hold 100 or 1,000 operators.
 
-Latency is within 1.5 times at light load and not yet at heavy load.
-In the benchmark's open-loop mode, which schedules requests on a fixed
-clock so a stall delays every request behind it, one worker on the
-`arrange` arm answers at p99 in 16 microseconds against Rust's 12 at a
-quarter of the C build's capacity (1.39x), and in 26 against 14 at half
-(1.79x).  On the `count` arm the tail comes from merge work the spine
-does inside a step (3x Rust's p99 at half capacity).  Allocation calls
-per record are 1.10 times Rust's on the `arrange` arm and 1.35 times on
-`count`, and futex calls per record at 16 workers are below Rust's.
+Latency is within 1.5 times at light load and not at heavy load.  In
+the benchmark's open-loop mode, which schedules requests on a fixed clock
+so a stall delays every request behind it, one worker answers as follows
+(microseconds, p50 / p99 / p99.9, rates in records per second):
+
+| arm, offered rate | C | Rust | C p99 slower by |
+|---|---|---|---|
+| `arrange`, 2.0M | 12.3 / 16.4 / 17.4 | 8.2 / 11.8 / 12.3 | 1.39x |
+| `arrange`, 4.1M | 18.4 / 25.6 / 27.6 | 9.7 / 14.3 / 15.4 | 1.79x |
+| `arrange`, 6.1M | 29.7 / 38.9 / 43.0 | 12.3 / 17.4 / 18.4 | 2.24x |
+| `count`, 380k | 38.9 / 131 / 213 | 29.7 / 86.0 / 119 | 1.52x |
+| `count`, 760k | 111 / 1638 / 1901 | 69.6 / 557 / 721 | 2.94x |
+| `count`, 1.14M | 557 / 6291 / 7078 | 180 / 2621 / 2884 | 2.40x |
+
+(c7i.metal-24xl at 2.4 GHz, build 7792070, medians of three alternated
+runs.)  Both gaps come from per-update cost, not from doing different work.
+Both builds take three steps per round, seal one batch per round and
+make about the same number of allocation calls.  On `count` they apply
+the same merge fuel: 19.3M against 20.5M units of merge effort over a
+run, in calls of a few hundred to a few thousand units each.  What
+differs is how long a merge step takes: 463 of C's steps ran over half
+a millisecond, against 5 of Rust's.  On `arrange` a
+round with one insert and one remove costs C 6.5 microseconds against
+Rust's 4.9, and each further pair 0.21 microseconds against 0.13.  That
+makes the gap grow with load, since a round carries more updates the
+faster they arrive.  The fixed part is the progress tracker and channel
+bookkeeping, about a quarter more instructions than Rust's.  The per-update
+part is the sort, the batch builder and the session buffer.  On
+`count` a merge step runs longer in C (the cursor seeks and the update
+builder), so a request that arrives during one waits longer.  Closing
+these gaps means changing the sort and the trie builder, which are
+ported literally.  Allocation calls per record are 1.10 times Rust's on
+the `arrange` arm and 1.35 times on `count`, and futex calls per record
+at 16 workers are below Rust's.
 
 An incrementally maintained view (`bench/ivm_latency`: a join and a
 grouped sum over 100,000 rows, ten-row commits, one worker) turns a
