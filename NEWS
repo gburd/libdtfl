@@ -1,8 +1,8 @@
 libdtfl NEWS -- user-visible changes, newest first.
 
-Version 0.1.0 (unreleased)
+Version 0.1.0 (2026-10-24)
 
-	First development release.
+	First development release: timely 0.31.0 and differential 0.25.1 in C11.
 
 	Workers in processes, and a host runtime.  dtfl_execute_worker
 	joins the calling thread to an execution as worker i of n over

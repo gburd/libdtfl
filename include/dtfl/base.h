@@ -215,8 +215,8 @@ DTFL_API int dtfl_set_sync_hooks(const dtfl_sync_hooks *hooks);
 
 /* Library version. */
 #define DTFL_VERSION_MAJOR 0
-#define DTFL_VERSION_MINOR 0
-#define DTFL_VERSION_PATCH 1
+#define DTFL_VERSION_MINOR 1
+#define DTFL_VERSION_PATCH 0
 DTFL_API const char *dtfl_version(void);
 
 #ifdef __cplusplus

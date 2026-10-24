@@ -2,7 +2,7 @@
 # libdtfl -- process this file with autoconf (via ./bootstrap).
 
 AC_PREREQ([2.69])
-AC_INIT([libdtfl], [0.0.1], [greg@burd.me], [libdtfl])
+AC_INIT([libdtfl], [0.1.0], [greg@burd.me], [libdtfl])
 AC_CONFIG_SRCDIR([src/base/os_alloc.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
@@ -15,7 +15,8 @@ AM_PROG_AR
 LT_INIT([disable-static pic-only])
 
 # libtool -version-info current:revision:age.  Bumped only at release
-# (.kiro/steering/gnu-project.md).
+# (.kiro/steering/gnu-project.md).  0:0:0 is the first released
+# interface, soname libdtfl.so.0.
 AC_SUBST([DTFL_LT_VERSION], [0:0:0])
 
 AC_PROG_CC

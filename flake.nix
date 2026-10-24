@@ -20,7 +20,7 @@
             lines = pkgs.lib.splitString "\n" (builtins.readFile ./configure.ac);
             acLine = pkgs.lib.findFirst
               (l: pkgs.lib.hasPrefix "AC_INIT([libdtfl]" l) "" lines;
-            # "AC_INIT([libdtfl], [0.0.1], ..." splits on "[" and "]" so
+            # "AC_INIT([libdtfl], [0.1.0], ..." splits on "[" and "]" so
             # element 3 is the version string.
             parts = builtins.filter builtins.isString
               (builtins.split "[][]" acLine);
