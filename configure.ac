@@ -2,7 +2,7 @@
 # libdtfl -- process this file with autoconf (via ./bootstrap).
 
 AC_PREREQ([2.69])
-AC_INIT([libdtfl], [0.1.0], [greg@burd.me], [libdtfl])
+AC_INIT([libdtfl], [0.1.1], [greg@burd.me], [libdtfl])
 AC_CONFIG_SRCDIR([src/base/os_alloc.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])

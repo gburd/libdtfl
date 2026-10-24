@@ -1,5 +1,16 @@
 libdtfl NEWS -- user-visible changes, newest first.
 
+Version 0.1.1 (2026-10-24)
+
+	Packaging fix for 0.1.0; the library is unchanged.
+
+	The 0.1.0 tag was never published: the release workflow's test of
+	the installed tarball asked pkg-config for the configured prefix
+	instead of the staging directory, so its consumer program could not
+	find the headers.  The test now points pkg-config at the staging
+	directory.  The source is the 0.1.0 source with the version number
+	raised, so 0.1.0's qualification below covers it.
+
 Version 0.1.0 (2026-10-24)
 
 	First development release: timely 0.31.0 and differential 0.25.1 in C11.
