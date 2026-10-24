@@ -82,3 +82,19 @@ socket interconnect.  Pack workers onto one socket while they fit, and
 spread only when one socket's cores or memory bandwidth are not
 enough.  @command{dev/bench-ec2 --placement packed|spread} reruns the
 comparison.
+
+@section Latency under load
+
+With one worker in the @code{arrange} benchmark's open-loop mode, the
+C build's p99 latency is 1.4 times Rust's at a quarter of its capacity
+and 1.8 to 2.9 times at half capacity or more (the table is in the
+README).  The extra latency is a higher cost per round and per update,
+not extra work.  Both builds take the same steps per round, seal the
+same batches, make about the same allocation calls, and apply the same
+merge fuel to the trace.  A round with one update pair costs 6.5
+microseconds against 4.9, and each further pair 0.21 against 0.13, so
+the gap widens as rounds fill.  On a @code{count} pipeline, a merge
+step in the trace takes longer in C, and a request that arrives during
+one waits for it.  To keep tail latency low, keep the per-worker rate
+well below capacity: at a quarter of capacity both builds answer
+within tens of microseconds.
