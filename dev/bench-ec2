@@ -63,6 +63,10 @@ case $placement in packed|spread) ;; *) echo "bench-ec2: --placement packed|spre
 export AWS_REGION=$region
 
 src=$(cd "$(dirname "$0")/.." && pwd)
+# Resolve once: a branch can move during the hours-long run, and
+# host.txt must name the commit that was packed and measured.
+rev=$(git -C "$src" rev-parse --verify "$rev^{commit}") ||
+    { echo "bench-ec2: no such revision $rev" >&2; exit 2; }
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 out=${out:-/scratch/${USER}/bench-$stamp}
 mkdir -p "$out"
