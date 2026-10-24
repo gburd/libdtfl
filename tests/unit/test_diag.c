@@ -16,6 +16,11 @@
  *                         (Channel update).
  *   diag__bind_loopback   the default bind is 127.0.0.1 (D12): a connect
  *                         to 127.0.0.1 at the server's port succeeds.
+ *   diag__slow_handshake  a client that sends its Upgrade request well
+ *                         after the server accepted it still gets the
+ *                         101: the accepted socket blocks, bounded by
+ *                         its I/O timeout, even where accept(2) copies
+ *                         the listener's O_NONBLOCK (Darwin, the BSDs).
  *
  * Every socket call has a timeout so a stuck accept or read fails the
  * test instead of hanging the suite.
@@ -26,6 +31,7 @@
 #include "dtfl/timely_ops.h"
 #include "dtfl/diag.h"
 
+#include "base/os_sync.h"	/* __dtfl_sleep_ns */
 #include "timely/scope_int.h"	/* struct dtfl_worker { __dtfl_worker *w; } */
 
 #include <errno.h>
@@ -271,9 +277,33 @@ DTFL_TEST(diag__bind_loopback)
 	return MUNIT_OK;
 }
 
+DTFL_TEST(diag__slow_handshake)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_diag_session *s = dtfl_diag_session_new(w);
+	dtfl_diag_server *srv = NULL;
+	int fd;
+
+	(void)params; (void)data;
+	assert_not_null(s);
+	assert_int(dtfl_diag_server_start(s, NULL, 0, &srv), ==, DTFL_OK);
+	fd = connect_client(dtfl_diag_server_port(srv));
+	assert_int(fd, >=, 0);
+	/* Three of the serve loop's 100 ms passes: it has accepted by now. */
+	__dtfl_sleep_ns(300000000ULL);
+	assert_true(ws_client_handshake(fd));
+	(void)close(fd);
+
+	dtfl_diag_server_stop(srv);
+	dtfl_diag_session_free(s);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(diag__frame_over_ws),
 	DTFL_T(diag__bind_loopback),
+	DTFL_T(diag__slow_handshake),
 	DTFL_T_END
 };
 
