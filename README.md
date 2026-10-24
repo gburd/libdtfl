@@ -109,17 +109,13 @@ enforces them.
 
 Measured with `dev/bench-ec2` on a dedicated c7i.metal-24xl (Xeon
 Platinum 8488C, one socket, clock pinned at 2.4 GHz, C and Rust runs
-alternated, medians of five, at build 5d089fd), against the pinned Rust
+alternated, medians of five, at build 5cedb4c), against the pinned Rust
 build on the same host:
 
 | `arrange` benchmark, C slower by | 1 | 2 | 4 | 8 | 16 | 48 workers |
 |---|---|---|---|---|---|---|
-| `arrange` arm | 1.17x | 1.08x | 1.18x | 0.93x | 1.13x | 1.62x |
-| `count` arm | 1.30x | 1.30x | 1.31x | 1.24x | 1.31x | 1.30x |
-
-At 48 workers the `arrange` arm runs at 1.62x, beyond the 1.5x the plan
-sets; it was 1.41x before the one-block batches, so that case is under
-investigation.
+| `arrange` arm | 1.17x | 1.05x | 1.15x | 0.92x | 1.08x | 1.01x |
+| `count` arm | 1.29x | 1.29x | 1.30x | 1.23x | 1.27x | 1.00x |
 
 On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz) the
 ratios are the same with workers packed on one socket or spread across
@@ -136,10 +132,11 @@ Latency is within 1.5 times at light load and not yet at heavy load.
 In the benchmark's open-loop mode, which schedules requests on a fixed
 clock so a stall delays every request behind it, one worker on the
 `arrange` arm answers at p99 in 16 microseconds against Rust's 12 at a
-quarter of the C build's capacity (1.39x), and in 29 against 14 at half
-(2.0x).  Allocation calls per record are 1.10 times Rust's on the
-`arrange` arm and 1.51 times on `count`, and at 16 workers futex calls
-per record are 1.10 and 1.37 times Rust's.
+quarter of the C build's capacity (1.39x), and in 26 against 14 at half
+(1.79x).  On the `count` arm the tail comes from merge work the spine
+does inside a step (3x Rust's p99 at half capacity).  Allocation calls
+per record are 1.10 times Rust's on the `arrange` arm and 1.35 times on
+`count`, and futex calls per record at 16 workers are below Rust's.
 
 An incrementally maintained view (`bench/ivm_latency`: a join and a
 grouped sum over 100,000 rows, ten-row commits, one worker) turns a

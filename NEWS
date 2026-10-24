@@ -122,17 +122,14 @@ Version 0.1.0 (unreleased)
 	--disable-frame-pointers turns this off.
 
 	Throughput within 1.5 times of the Rust originals on the pinned
-	arrange benchmark at 1 to 16 workers on a dedicated bare-metal host
-	with the clock pinned: 0.93 to 1.18 times on the arrange arm (faster
-	than Rust at 8 workers) and 1.24 to 1.31 times on count; at 48
-	workers count is 1.30 times and arrange 1.62 times.  A reserved batch
-	is one allocation, and messages, capabilities and sessions come from
-	worker-owned free lists, so allocation calls per record are 1.10
-	(arrange) and 1.51 (count) times Rust's.
-	The cost of an idle step is 1.36 times Rust's (timely's barrier
-	example), and event_driven 1.24 times.  Open-loop latency is still
-	about twice Rust's; see the README.  Worker threads exchange data
-	through a lock-free port of Rust's mpsc list channel.
+	arrange benchmark at every worker count measured, 1 to 48, on a
+	dedicated bare-metal host with the clock pinned: 0.92 to 1.17 times
+	on the arrange arm and 1.00 to 1.30 times on count, matching Rust at
+	48 workers.  A reserved batch is one allocation; messages,
+	capabilities, sessions and received buffers come from worker-owned
+	free lists, so allocation calls per record are 1.10 (arrange) and
+	1.35 (count) times Rust's, and a buffer freed by the worker that
+	received it no longer makes glibc trim the sender's arena.
 
 	bench/idle_merge times the longest idle step with idle merge effort
 	(13 to 20 ms on a 10M-key trace, mostly freeing merged inputs), and
