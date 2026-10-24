@@ -15,6 +15,9 @@
 # This checks the format and the control flow, never performance.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 
 bin=bench/experiments/arrange
 [ -x "$bin" ] || bin="$top/bench/experiments/arrange"

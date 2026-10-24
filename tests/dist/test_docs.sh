@@ -97,7 +97,11 @@ for s in "$top"/doc/snippets/*.c; do
 		# link-order check would abort the run.  The snippet code is
 		# correct (it builds clean under -fsanitize=address), so relax
 		# that one check for the run; it is a no-op in a plain build.
-		if ! ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}verify_asan_link_order=0" "$exe" > "$exe.out" 2>&1 || ! cmp -s "$exe.out" "$top/doc/snippets/$name.expected"; then
+		# Darwin: the dylib's install name is its install path, so
+		# the rpath above does not find the build's copy.
+		if ! ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}verify_asan_link_order=0" \
+		    DYLD_LIBRARY_PATH="$build/.libs${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+		    "$exe" > "$exe.out" 2>&1 || ! cmp -s "$exe.out" "$top/doc/snippets/$name.expected"; then
 			echo "[docs] FAIL: snippet $name output differs"; diff "$top/doc/snippets/$name.expected" "$exe.out" | sed 's/^/    /'; fail=1
 		fi
 	fi

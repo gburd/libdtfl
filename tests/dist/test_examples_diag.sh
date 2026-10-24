@@ -8,6 +8,9 @@
 # (D12), so no network listener is exposed by the test.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 exp="$top/examples/diag"
 bindir="examples/diag"
 [ -x "$bindir/smoke" ] || bindir="$top/examples/diag"

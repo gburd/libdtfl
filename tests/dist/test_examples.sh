@@ -11,6 +11,9 @@
 # beside the sources under $top_srcdir/examples/timely.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 exp="$top/examples/timely"
 # Built binaries are relative to the build tree root (the cwd under
 # `make check`); fall back to the source tree for an in-tree build.

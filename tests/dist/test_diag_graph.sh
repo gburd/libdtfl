@@ -13,6 +13,9 @@
 # rewiring or the replay decode fails the build.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 tool="tools/dtfl-diag/dtfl-diag"
 [ -x "$tool" ] || tool="$top/tools/dtfl-diag/dtfl-diag"
 fixture="$top/tests/interop/fixtures/diag_graph_stream.bin"

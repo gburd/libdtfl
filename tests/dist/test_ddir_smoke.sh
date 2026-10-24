@@ -8,6 +8,9 @@
 # timeout: a program that does not converge is a bug.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 tool="tools/dtfl-ddir/dtfl-ddir"
 [ -f "$tool" ] || tool="$top/tools/dtfl-ddir/dtfl-ddir"
 progs="$top/tools/dtfl-ddir/programs"
