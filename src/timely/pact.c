@@ -181,6 +181,7 @@ __dtfl_pact_connect(dtfl_scope *s, const dtfl_pact *pact, size_t identifier,
 			senders[i] = log_pusher_new(senders[i], w, index, i, identifier);
 		*pusher = __dtfl_push_exchange_new(tc, type, senders, peers,
 		    pact->route, pact->ctx);
+		__dtfl_push_exchange_set_pool(*pusher, &w->buf_pool);
 		*puller = log_puller_new(recv, w, index, identifier);
 	}
 }

@@ -227,9 +227,11 @@ __dtfl_vec_last(const __dtfl_vec *v)
  * worker and only that worker's thread gets from or puts to it, so it
  * needs no synchronization.  Every block is an ordinary hook allocation,
  * so a block taken from a list may instead be released with __dtfl_free
- * anywhere; a block that crossed to another thread must be (never put it
- * on that thread's list).  get returns uninitialized memory.  Under ASan
- * a spare block is poisoned, so a use after put is still reported.
+ * anywhere, or put on another worker's list by that worker's thread once
+ * it holds the only reference (the buffer list does this; the message
+ * list does not, see __dtfl_message_free_local).  get returns
+ * uninitialized memory.  Under ASan a spare block is poisoned, so a use
+ * after put is still reported.
  */
 typedef struct __dtfl_freelist {
 	void *head;

@@ -72,6 +72,9 @@ __dtfl_worker_new(__dtfl_allocator *a, dtfl_progress_mode mode, bool timer,
 	__dtfl_freelist_init(&w->msg_pool, sizeof(dtfl_message), 64);
 	__dtfl_freelist_init(&w->cap_pool, sizeof(dtfl_cap), 64);
 	__dtfl_freelist_init(&w->session_pool, __dtfl_session_size(), 16);
+	/* shortcut: 64 buffers (about 1 MB); a longer burst is freed. */
+	__dtfl_freelist_init(&w->buf_pool,
+	    __dtfl_batch_buffer_block(DTFL_BUFFER_SIZE_BYTES), 64);
 	w->owner = __dtfl_thread_self();
 	return w;
 }
@@ -136,6 +139,7 @@ __dtfl_worker_free(__dtfl_worker *w)
 	__dtfl_freelist_free(&w->msg_pool);
 	__dtfl_freelist_free(&w->cap_pool);
 	__dtfl_freelist_free(&w->session_pool);
+	__dtfl_freelist_free(&w->buf_pool);
 	__dtfl_free(w);
 }
 

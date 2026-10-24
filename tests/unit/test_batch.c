@@ -522,6 +522,65 @@ DTFL_TEST(batch_copy_is_one_block)
 	return MUNIT_OK;
 }
 
+/*
+ * Buffer blocks pass between worker lists: a buffer made from one list
+ * and released to another lands on the second (the receiving worker's),
+ * and the next buffer made there is that block, empty, for any record
+ * size up to a word or larger.  A buffer that is still shared, grew a
+ * column out of its block, or was not made at the list's block size is
+ * released through the hooks instead, never put on the list.
+ */
+DTFL_TEST(batch_buffer_recycles_to_receiver)
+{
+	size_t blk = __dtfl_batch_buffer_block(256);
+	__dtfl_freelist sender, receiver;
+	__dtfl_batch *b, *c, *big;
+	unsigned char rec[24] = { 0 };
+	size_t i;
+
+	(void)params; (void)data;
+	count_hooks();
+	__dtfl_freelist_init(&sender, blk, 4);
+	__dtfl_freelist_init(&receiver, blk, 4);
+	b = __dtfl_batch_new_buffer_from(&sender, 256, 8);
+	assert_size(b->block, ==, blk);
+	/* Word records need the most offsets; fill to one past the threshold. */
+	for (i = 0; i < 256 / 8 + 1; i++)
+		__dtfl_batch_push(b, rec, 8, NULL, NULL);
+	assert_true(b->offs.borrowed && b->arena.borrowed);
+	__dtfl_batch_release_to(&receiver, b);
+	assert_size(receiver.len, ==, 1);
+	assert_size(sender.len, ==, 0);
+	n_malloc = n_free = 0;
+	c = __dtfl_batch_new_buffer_from(&receiver, 256, sizeof rec);
+	assert_ptr_equal(c, b);
+	assert_size(n_malloc, ==, 0);
+	assert_size(__dtfl_batch_len(c), ==, 0);
+	assert_size(c->arena.len, ==, 0);
+	for (i = 0; i < 256 / sizeof rec + 1; i++)
+		__dtfl_batch_push(c, rec, sizeof rec, NULL, NULL);
+	assert_true(c->offs.borrowed && c->arena.borrowed);
+	/* Shared: the other holder's release only drops a reference. */
+	(void)__dtfl_batch_retain(c);
+	__dtfl_batch_release_to(&receiver, c);
+	assert_size(receiver.len, ==, 0);
+	/* Grown out of its block: the moved columns are freed, block kept. */
+	for (i = 0; i < 64; i++)
+		__dtfl_batch_push(c, rec, sizeof rec, NULL, NULL);
+	assert_false(c->arena.borrowed);
+	__dtfl_batch_release_to(&receiver, c);
+	assert_size(receiver.len, ==, 1);
+	/* Another size of block goes to the hooks. */
+	big = __dtfl_batch_new_reserved(0, 0, 4, 64);
+	__dtfl_batch_release_to(&receiver, big);
+	assert_size(receiver.len, ==, 1);
+	__dtfl_freelist_free(&receiver);
+	__dtfl_freelist_free(&sender);
+	/* Every allocation since the reset, and b's block from before it. */
+	assert_size(n_free, ==, n_malloc + 1);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(batch_push_read),
 	DTFL_T(batch_drain_front_keeps_tail),
@@ -534,6 +593,7 @@ static MunitTest tests[] = {
 	DTFL_T(batch_reserved_shared_release_other_thread),
 	DTFL_T(batch_move_rows_keeps_blocks_apart),
 	DTFL_T(batch_copy_is_one_block),
+	DTFL_T(batch_buffer_recycles_to_receiver),
 	DTFL_T_END
 };
 

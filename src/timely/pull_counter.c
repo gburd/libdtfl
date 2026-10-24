@@ -23,6 +23,7 @@ struct __dtfl_pull_counter {
 	__dtfl_change_batch *consumed;	/* not owned */
 	dtfl_message *held;		/* current message; owned until released */
 	__dtfl_freelist *pool;		/* this worker's message list, or NULL */
+	__dtfl_freelist *buf_pool;	/* this worker's buffer blocks, or NULL */
 };
 
 __dtfl_pull_counter *
@@ -34,6 +35,7 @@ __dtfl_pull_counter_new(__dtfl_pull *inner, __dtfl_change_batch *consumed)
 	c->consumed = consumed;
 	c->held = NULL;
 	c->pool = NULL;
+	c->buf_pool = NULL;
 	return c;
 }
 
@@ -45,6 +47,9 @@ release_held(__dtfl_pull_counter *c)
 		int64_t count = (int64_t)__dtfl_batch_len(c->held->data);
 
 		__dtfl_cb_update(c->consumed, c->held->time, count);
+		/* The data first: a buffer is kept here, wherever it was made. */
+		__dtfl_batch_release_to(c->buf_pool, c->held->data);
+		c->held->data = NULL;
 		if (c->pool != NULL)
 			__dtfl_message_free_local(c->held, c->pool);
 		else
@@ -78,9 +83,11 @@ __dtfl_pull_counter_free(__dtfl_pull_counter *c)
 }
 
 void
-__dtfl_pull_counter_set_pool(__dtfl_pull_counter *c, __dtfl_freelist *pool)
+__dtfl_pull_counter_set_pool(__dtfl_pull_counter *c, __dtfl_freelist *pool,
+    __dtfl_freelist *buf_pool)
 {
 	c->pool = pool;
+	c->buf_pool = buf_pool;
 }
 
 void

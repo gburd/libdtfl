@@ -33,6 +33,7 @@ typedef struct exch_pusher {
 	void *ctx;
 	uint64_t current[DTFL_TIME_MAX];
 	bool have_current;
+	__dtfl_freelist *buf_pool;	/* the worker's buffer blocks, or NULL */
 } exch_pusher;
 
 static uint64_t
@@ -96,8 +97,8 @@ exch_push(__dtfl_push *p, void **msg)
 
 			/* ensure_capacity: the builder's preferred capacity. */
 			if (e->buffers[idx] == NULL)
-				e->buffers[idx] = __dtfl_batch_new_buffer(
-				    DTFL_BUFFER_SIZE_BYTES, len);
+				e->buffers[idx] = __dtfl_batch_new_buffer_from(
+				    e->buf_pool, DTFL_BUFFER_SIZE_BYTES, len);
 			__dtfl_batch_push(e->buffers[idx], rec, len, NULL, NULL);
 			/* partition: extract a container once it is full. */
 			if (__dtfl_batch_bytes(e->buffers[idx]) >=
@@ -156,5 +157,12 @@ __dtfl_push_exchange_new(const dtfl_time_class *tc, const dtfl_type *type,
 	e->route = route;
 	e->ctx = ctx;
 	e->have_current = false;
+	e->buf_pool = NULL;
 	return &e->base;
+}
+
+void
+__dtfl_push_exchange_set_pool(__dtfl_push *p, __dtfl_freelist *buf_pool)
+{
+	((exch_pusher *)p)->buf_pool = buf_pool;
 }
