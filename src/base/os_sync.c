@@ -10,6 +10,8 @@
  */
 #if defined(__linux__)
 #define _GNU_SOURCE	/* syscall(2) */
+#elif defined(__APPLE__)
+#define _DARWIN_C_SOURCE	/* pthread_cond_timedwait_relative_np */
 #else
 #define _POSIX_C_SOURCE 200809L	/* pthread_condattr_setclock */
 #endif
@@ -151,8 +153,14 @@ __dtfl_cond_init(__dtfl_cond *c)
 			__dtfl_panic("sync hook cond_init failed");
 		return;
 	}
+	/*
+	 * Darwin has no pthread_condattr_setclock; its timed wait below is
+	 * relative instead, so no clock is attached.
+	 */
 	if (pthread_condattr_init(&ca) != 0 ||
+#if !defined(__APPLE__)
 	    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC) != 0 ||
+#endif
 	    pthread_cond_init(&c->pc, &ca) != 0)
 		__dtfl_panic("pthread_cond_init failed");
 	(void)pthread_condattr_destroy(&ca);
@@ -171,7 +179,9 @@ void
 __dtfl_cond_wait(__dtfl_cond *c, __dtfl_mutex *m, uint64_t timeout_ns)
 {
 	struct timespec ts;
+#if !defined(__APPLE__)
 	uint64_t deadline;
+#endif
 
 	if (c->h != NULL) {
 		DTFL_ASSERT(m->h != NULL);
@@ -182,6 +192,12 @@ __dtfl_cond_wait(__dtfl_cond *c, __dtfl_mutex *m, uint64_t timeout_ns)
 		(void)pthread_cond_wait(&c->pc, &m->pm);
 		return;
 	}
+#if defined(__APPLE__)
+	/* Relative, so immune to wall-clock steps like a monotonic wait. */
+	ts.tv_sec = (time_t)(timeout_ns / UINT64_C(1000000000));
+	ts.tv_nsec = (long)(timeout_ns % UINT64_C(1000000000));
+	(void)pthread_cond_timedwait_relative_np(&c->pc, &m->pm, &ts);
+#else
 	/* The condition's own clock, not a host clock hook. */
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	deadline = (uint64_t)ts.tv_sec * UINT64_C(1000000000) +
@@ -191,6 +207,7 @@ __dtfl_cond_wait(__dtfl_cond *c, __dtfl_mutex *m, uint64_t timeout_ns)
 	ts.tv_sec = (time_t)(deadline / UINT64_C(1000000000));
 	ts.tv_nsec = (long)(deadline % UINT64_C(1000000000));
 	(void)pthread_cond_timedwait(&c->pc, &m->pm, &ts);
+#endif
 }
 
 void

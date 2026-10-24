@@ -144,7 +144,16 @@ set_io_timeout(int fd)
 {
 	struct timeval tv = { CLIENT_IO_TIMEOUT_SEC, 0 };
 	int one = 1;
+	int flags = fcntl(fd, F_GETFL, 0);
 
+	/*
+	 * Darwin and the BSDs copy the listener's O_NONBLOCK to the
+	 * accepted socket, where Linux does not.  The handshake and sends
+	 * must block, bounded by the timeouts below, or a request that has
+	 * not arrived yet fails the handshake with EAGAIN.
+	 */
+	if (flags >= 0 && (flags & O_NONBLOCK) != 0)
+		(void)fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
 	(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
 	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 	(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);

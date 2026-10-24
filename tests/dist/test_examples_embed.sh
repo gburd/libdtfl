@@ -12,6 +12,9 @@
 # checked on stdout.
 set -u
 top="${top_srcdir:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# macOS ships no timeout(1): there, run without the limit, as
+# tests/run-test.sh does.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
 exp="$top/examples/embed"
 bindir="examples/embed"
 [ -x "$bindir/pg_extension" ] || bindir="$top/examples/embed"

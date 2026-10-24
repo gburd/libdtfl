@@ -96,26 +96,28 @@ or excluded with a reason:
 | diagnostics (WebSocket + dtfl-diag)| complete                                |
 | DDIR compiler + dtfl-ddir + server | complete                                |
 | examples (timely, dd, dogs, diag)  | complete                                |
-| manual + 73 man pages              | complete, gate-enforced                 |
+| manual + 79 man pages              | complete, gate-enforced                 |
 | port ledger / test ledger          | 365 files, 130 tests, 0 outstanding     |
 
-Validated on Linux x86_64 (gcc 14, all six build configurations: default,
-ASan, UBSan, TSan, hegel, distcheck), FreeBSD (clang 19), and Linux riscv64
-(gcc 15, a strict-alignment architecture).  The port and test ledgers in
-`dev/` are the definition of done, and `tests/dist/test_completion.sh`
-enforces them.
+Release 0.1.0 passes its test suite on Linux x86_64 and arm64 (Debian 13,
+gcc 14 and clang 19, under ASan, UBSan and TSan and with the property
+tests), Linux with musl, FreeBSD 14 and 15 (clang 21 and gcc 14) and
+macOS 26 arm64; NEWS lists the tiers that ran.  An earlier build also
+passed on Linux riscv64 (gcc 15, a strict-alignment architecture).  The
+port and test ledgers in `dev/` are the definition of done, and
+`tests/dist/test_completion.sh` enforces them.
 
 ### Performance
 
 Measured with `dev/bench-ec2` on a dedicated c7i.metal-24xl (Xeon
 Platinum 8488C, one socket, clock pinned at 2.4 GHz, C and Rust runs
-alternated, medians of five, at build 5cedb4c), against the pinned Rust
-build on the same host:
+alternated, medians of five, at build 944d6d3 for release 0.1.0),
+against the pinned Rust build on the same host:
 
 | `arrange` benchmark, C slower by | 1 | 2 | 4 | 8 | 16 | 48 workers |
 |---|---|---|---|---|---|---|
-| `arrange` arm | 1.17x | 1.05x | 1.15x | 0.92x | 1.08x | 1.01x |
-| `count` arm | 1.29x | 1.29x | 1.30x | 1.23x | 1.27x | 1.00x |
+| `arrange` arm | 1.16x | 1.05x | 1.16x | 0.91x | 1.07x | 1.01x |
+| `count` arm | 1.29x | 1.29x | 1.30x | 1.23x | 1.28x | 1.00x |
 
 On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz) the
 ratios are the same with workers packed on one socket or spread across
@@ -123,8 +125,8 @@ both (1.27x to 1.40x at 1, 4 and 16 workers); spreading costs C and Rust
 alike, about 20% of throughput at 16 workers.
 
 The cost of a step is within 1.5 times too: timely's `barrier` example
-(an idle dataflow) runs a round in 1,839 ns against Rust's 1,350 with
-one worker and 1.10x with four, and its `event_driven` example (one of
+(an idle dataflow) runs a round in 1,845 ns against Rust's 1,350 with
+one worker and 1.12x with four, and its `event_driven` example (one of
 many dataflows advanced per round) runs 100,000 rounds in 0.27 s
 against 0.22 s, whether the dataflows hold 100 or 1,000 operators.
 
@@ -135,17 +137,19 @@ so a stall delays every request behind it, one worker answers as follows
 
 | arm, offered rate | C | Rust | C p99 slower by |
 |---|---|---|---|
-| `arrange`, 2.0M | 12.3 / 16.4 / 17.4 | 8.2 / 11.8 / 12.3 | 1.39x |
-| `arrange`, 4.1M | 18.4 / 25.6 / 27.6 | 9.7 / 14.3 / 15.4 | 1.79x |
-| `arrange`, 6.1M | 29.7 / 38.9 / 43.0 | 12.3 / 17.4 / 18.4 | 2.24x |
-| `count`, 380k | 38.9 / 131 / 213 | 29.7 / 86.0 / 119 | 1.52x |
-| `count`, 760k | 111 / 1638 / 1901 | 69.6 / 557 / 721 | 2.94x |
-| `count`, 1.14M | 557 / 6291 / 7078 | 180 / 2621 / 2884 | 2.40x |
+| `arrange`, 2.1M | 12.3 / 16.4 / 18.4 | 8.2 / 11.8 / 12.8 | 1.39x |
+| `arrange`, 4.1M | 19.5 / 25.6 / 28.7 | 10.2 / 14.3 / 15.4 | 1.79x |
+| `arrange`, 6.2M | 31.7 / 41.0 / 45.1 | 12.3 / 16.4 / 18.4 | 2.50x |
+| `count`, 379k | 38.9 / 123 / 188 | 29.7 / 81.9 / 115 | 1.50x |
+| `count`, 759k | 106 / 1573 / 1835 | 69.6 / 524 / 721 | 3.00x |
+| `count`, 1.14M | 524 / 5767 / 7078 | 172 / 2490 / 2884 | 2.32x |
 
-(c7i.metal-24xl at 2.4 GHz, build 7792070, medians of three alternated
-runs.)  Both gaps come from per-update cost, not from doing different work.
-Both builds take three steps per round, seal one batch per round and
-make about the same number of allocation calls.  On `count` they apply
+(The same run: c7i.metal-24xl at 2.4 GHz, build 944d6d3, medians of
+five alternated runs.  Latencies are histogram buckets 3% to 6% apart,
+so a ratio can move by a bucket between runs.)  Both gaps come from
+per-update cost, not from doing different work.  Both builds take
+three steps per round, seal one batch per round and make about the
+same number of allocation calls.  On `count` they apply
 the same merge fuel: 19.3M against 20.5M units of merge effort over a
 run, in calls of a few hundred to a few thousand units each.  What
 differs is how long a merge step takes: 463 of C's steps ran over half

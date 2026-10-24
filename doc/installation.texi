@@ -186,4 +186,19 @@ detects that.  @file{tests/dist/test_usdt.sh} reports SKIP.
 hegel publishes no FreeBSD @file{libhegel}, so the property tests
 report SKIP and @command{make check-sim} exits 77.
 @end itemize
+
+@item Linux x86_64 with musl (Ubuntu 24.04, musl 1.2.4, @command{musl-gcc})
+@command{make check} and @command{make distcheck} pass.  The
+@command{musl-gcc} wrapper has no kernel headers, so configure finds
+no @file{linux/futex.h} and a parked worker sleeps on a condition
+variable instead of a futex.  The USDT probes are off.
+
+@item macOS arm64 (macOS 26, Xcode clang)
+@command{make check} and @command{make distcheck} pass.  Darwin has no
+@code{pthread_condattr_setclock}, so a timed wait on a condition is
+relative (@code{pthread_cond_timedwait_relative_np}).  macOS has no
+@command{timeout}, so the test scripts run without their time limits.
+@file{tests/dist/test_symbols.sh} reads ELF symbol tables and reports
+SKIP on Mach-O, and the USDT probes are off.  The sanitizer builds and
+the property tests are not run on macOS.
 @end table

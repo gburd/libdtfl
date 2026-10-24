@@ -26,9 +26,12 @@
  */
 #if defined(__linux__)
 #define _GNU_SOURCE
-#else
+#elif !defined(__APPLE__) && !defined(__FreeBSD__)
+/* Darwin and FreeBSD hide MAP_ANON(YMOUS) under _POSIX_C_SOURCE. */
 #define _POSIX_C_SOURCE 200809L
 #endif
+
+#include "config.h"
 
 #include "dtfl_test.h"
 
@@ -51,7 +54,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#if defined(__linux__)
+/* musl-gcc has no kernel headers: futex only where configure found it. */
+#if defined(__linux__) && defined(HAVE_LINUX_FUTEX_H) && \
+    defined(HAVE_SYS_SYSCALL_H)
+#define SHM_FUTEX 1
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #endif
@@ -418,7 +424,7 @@ static void
 ring_bell(shm *s, size_t who)
 {
 	atomic_fetch_add_explicit(&s->bell[who], 1, memory_order_seq_cst);
-#if defined(__linux__)
+#ifdef SHM_FUTEX
 	/* Shared (not PRIVATE): the waiter is another process. */
 	(void)syscall(SYS_futex, (uint32_t *)&s->bell[who], FUTEX_WAKE,
 	    INT32_MAX, NULL, NULL, 0);
@@ -491,7 +497,7 @@ shm_wait(void *ctx, uint64_t timeout_ns)
 		t->seen = now;
 		return;
 	}
-#if defined(__linux__)
+#ifdef SHM_FUTEX
 	{
 		struct timespec ts, *tsp = NULL;
 

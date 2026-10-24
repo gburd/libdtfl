@@ -186,6 +186,14 @@ DTFL_TEST(strerror_covers_codes)
 		assert_string_not_equal(dtfl_strerror(e), "unknown error");
 	assert_string_equal(dtfl_strerror(-1), "unknown error");
 	assert_string_equal(dtfl_version(), PACKAGE_VERSION);
+	{
+		/* The header's version macros agree with AC_INIT. */
+		char v[32];
+
+		snprintf(v, sizeof v, "%d.%d.%d", DTFL_VERSION_MAJOR,
+		    DTFL_VERSION_MINOR, DTFL_VERSION_PATCH);
+		assert_string_equal(v, PACKAGE_VERSION);
+	}
 	return MUNIT_OK;
 }
 
