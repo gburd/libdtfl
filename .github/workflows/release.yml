@@ -109,7 +109,8 @@ jobs:
           test -f "$prefix/include/dtfl/dtfl.h" || { echo "FAIL: dtfl.h not installed"; exit 1; }
           export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
           printf '%s\n' '#include <dtfl/dtfl.h>' 'int main(void){return 0;}' > "$work/consumer.c"
-          cc "$work/consumer.c" $(pkg-config --cflags --libs dtfl) -o "$work/consumer"
+          # The .pc names the configured prefix, not DESTDIR: point it there.
+          cc "$work/consumer.c" $(pkg-config --define-variable=prefix="$prefix" --cflags --libs dtfl) -o "$work/consumer"
           echo "[release] tarball test-build OK (packager path, no autoreconf)"
 
       - name: Man-page bundle
