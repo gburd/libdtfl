@@ -66,7 +66,7 @@ jobs:
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y autoconf automake libtool pkgconf mandoc
+          prepare: pkg install -y autoconf automake libtool pkgconf mandoc gmake texinfo
           run: |
             ./bootstrap
             mkdir build && cd build
