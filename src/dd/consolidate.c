@@ -92,14 +92,30 @@ packed_cmp(const packed_row *a, const packed_row *b)
 	return (a->t > b->t) - (a->t < b->t);
 }
 
+/*
+ * Below this many rows msort_packed sorts by insertion, which is stable
+ * too, so the order is the same; it saves the merge's recursion and
+ * copies on the short runs an open-loop round consolidates.
+ */
+#define PACKED_INSERTION_ROWS 16
+
 /* msort over packed rows: the same stable merge, compared inline. */
 static void
 msort_packed(packed_row *v, packed_row *tmp, size_t n)
 {
 	size_t h = n / 2, i = 0, j = h, k = 0;
 
-	if (n < 2)
+	if (n <= PACKED_INSERTION_ROWS) {
+		for (i = 1; i < n; i++) {
+			packed_row x = v[i];
+
+			/* Strictly less: an equal row stays after its peers. */
+			for (j = i; j > 0 && packed_cmp(&x, &v[j - 1]) < 0; j--)
+				v[j] = v[j - 1];
+			v[j] = x;
+		}
 		return;
+	}
 	msort_packed(v, tmp, h);
 	msort_packed(v + h, tmp, n - h);
 	if (packed_cmp(&v[h - 1], &v[h]) <= 0)
