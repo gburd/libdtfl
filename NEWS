@@ -14,18 +14,21 @@ Version 0.1.0 (2026-10-24)
 	arm64: make check with hegel under gcc 14 and clang 19, ASan and
 	UBSan and TSan under both, and make distcheck under both.  On FreeBSD
 	14.5 amd64: make check and make distcheck under clang 21 and gcc 14,
-	ASan and UBSan under both, and TSan under clang.  On GitHub CI: Ubuntu
+	ASan and UBSan under both, and TSan under clang.  With musl-gcc on
+	Debian 13: make check and make distcheck.  On GitHub CI: Ubuntu
 	24.04 with gcc and clang, each plain, with ASan and UBSan and with
 	TSan, plus valgrind on a subset and make distcheck; musl; macOS 26
 	arm64; and FreeBSD 15.1 in a VM.  The full metal benchmark ran on a
-	c7i.metal-24xl at 944d6d3, whose code on Linux is the release's, and
-	the README's tables come from that run; every figure is within
-	run-to-run noise of the previous run.  Not run: the libFuzzer tier
-	(make fuzz has no target yet); the property tests on FreeBSD and
-	macOS (hegel publishes no libhegel there); the sanitizers on macOS
-	and musl; Linux riscv64 and the two-socket benchmark, which last ran
-	on earlier builds; and the event_driven, idle-merge and IVM latency
-	figures, which the benchmark matrix does not include.
+	c7i.metal-24xl at 944d6d3, which differs from the release only in
+	the portability fixes listed below, none of them on a path the
+	benchmark runs.  The README's tables come from that run, and every
+	figure is within run-to-run noise of the previous run.  Not run:
+	the libFuzzer tier (make fuzz has no target yet); the property
+	tests on FreeBSD and macOS (hegel publishes no libhegel there); the
+	sanitizers on macOS and musl; Linux riscv64 and the two-socket
+	benchmark, which last ran on earlier builds; and the event_driven,
+	idle-merge and IVM latency figures, which the benchmark matrix does
+	not include.
 
 	Workers in processes, and a host runtime.  dtfl_execute_worker
 	joins the calling thread to an execution as worker i of n over
@@ -80,8 +83,12 @@ Version 0.1.0 (2026-10-24)
 	wait is relative (pthread_cond_timedwait_relative_np), and the
 	test scripts run without timeout(1) when it is missing.  With
 	musl-gcc, which has no kernel headers, a parked worker sleeps on a
-	condition variable instead of a futex.  See "Platform notes" in
-	the manual.
+	condition variable instead of a futex.  On macOS and the BSDs the
+	diagnostics server no longer drops a client whose WebSocket
+	request arrives after the server accepted the connection: the
+	accepted socket inherited the listener's O_NONBLOCK there, so the
+	handshake read failed with EAGAIN.  See "Platform notes" in the
+	manual.
 
 	Embedding fixes.  The allocation hooks never receive a NULL
 	pointer in realloc_fn or free_fn: an empty buffer grows through
