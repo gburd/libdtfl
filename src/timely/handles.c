@@ -165,6 +165,7 @@ struct dtfl_session {
 	void (*elem_drop)(void *rec);
 	void (*elem_retain)(void *rec);
 	__dtfl_freelist *pool;		/* the worker's; close returns s here */
+	__dtfl_freelist *buf_pool;	/* the worker's buffer blocks */
 };
 
 size_t
@@ -187,6 +188,7 @@ dtfl_op_session(dtfl_op *op, size_t output, const dtfl_cap *cap)
 	/* A session lives within one logic call; reuse the worker's spare. */
 	s = __dtfl_freelist_get(&op->worker->session_pool);
 	s->pool = &op->worker->session_pool;
+	s->buf_pool = &op->worker->buf_pool;
 	s->out = o;
 	__dtfl_time_copy(o->tc, s->time, dtfl_cap_time(cap));
 	s->buffer = NULL;
@@ -239,7 +241,8 @@ session_ensure_capacity(dtfl_session *s, size_t len)
 	 * offset column does not regrow either.
 	 */
 	if (s->buffer == NULL) {
-		s->buffer = __dtfl_batch_new_buffer(s->cap_bytes, len);
+		s->buffer = __dtfl_batch_new_buffer_from(s->buf_pool,
+		    s->cap_bytes, len);
 		if (s->elem_drop != NULL || s->elem_retain != NULL)
 			__dtfl_batch_set_elem_hooks(s->buffer, s->elem_drop,
 			    s->elem_retain);

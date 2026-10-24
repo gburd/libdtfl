@@ -67,14 +67,15 @@ block_add(size_t a, size_t b)
  * when tw is 0, diffs when dw is 0, the arena when bytes is 0) starts
  * without a buffer, as a separately grown column does.  Upstream's chunk
  * is one Vec<(D, T, R)> allocation; this is its columnar counterpart.
+ *
+ * block_size is the block's size for these columns; block_carve lays
+ * the empty batch out over a block of at least that size.
  */
-__dtfl_batch *
-__dtfl_batch_new_reserved(unsigned time_words, unsigned diff_bytes,
-    size_t rows, size_t bytes)
+static size_t
+block_size(unsigned time_words, unsigned diff_bytes, size_t rows,
+    size_t bytes)
 {
-	size_t orows, osz, tsz, dsz, at_o, at_t, at_d, at_a, total;
-	unsigned char *blk;
-	__dtfl_batch *b;
+	size_t orows, osz, tsz, dsz;
 
 	/* An unsized batch keeps vec_grow's first capacity for its offsets. */
 	orows = rows != 0 ? block_add(rows, 1) : 4;
@@ -82,25 +83,98 @@ __dtfl_batch_new_reserved(unsigned time_words, unsigned diff_bytes,
 	tsz = __dtfl_mul_size(__dtfl_mul_size(rows, time_words),
 	    sizeof(uint64_t));
 	dsz = __dtfl_mul_size(rows, diff_bytes);
+	return block_add(block_add(block_add(block_add(
+	    block_align(sizeof(__dtfl_batch)), block_align(osz)),
+	    block_align(tsz)), block_align(dsz)), bytes);
+}
+
+static __dtfl_batch *
+block_carve(unsigned char *blk, size_t size, unsigned time_words,
+    unsigned diff_bytes, size_t rows, size_t bytes)
+{
+	__dtfl_batch *b = (__dtfl_batch *)(void *)blk;
+	size_t orows = rows != 0 ? rows + 1 : 4;
+	size_t nt = rows * time_words, nd = rows * diff_bytes;
+	size_t at_o, at_t, at_d, at_a;
+
+	/* block_size checked every product and sum here for overflow. */
 	at_o = block_align(sizeof *b);
-	at_t = block_add(at_o, block_align(osz));
-	at_d = block_add(at_t, block_align(tsz));
-	at_a = block_add(at_d, block_align(dsz));
-	total = block_add(at_a, bytes);
-	blk = __dtfl_alloc(total);
-	b = (__dtfl_batch *)(void *)blk;
+	at_t = at_o + block_align(orows * sizeof(size_t));
+	at_d = at_t + block_align(nt * sizeof(uint64_t));
+	at_a = at_d + block_align(nd);
 	__dtfl_arc_init(&b->ref);
 	__dtfl_vec_init_borrowed(&b->offs, sizeof(size_t), blk + at_o, orows);
-	__dtfl_vec_init_borrowed(&b->times, sizeof(uint64_t), blk + at_t,
-	    tsz / sizeof(uint64_t));
-	__dtfl_vec_init_borrowed(&b->diffs, 1, blk + at_d, dsz);
+	__dtfl_vec_init_borrowed(&b->times, sizeof(uint64_t), blk + at_t, nt);
+	__dtfl_vec_init_borrowed(&b->diffs, 1, blk + at_d, nd);
 	__dtfl_vec_init_borrowed(&b->arena, 1, blk + at_a, bytes);
 	b->tw = time_words;
 	b->dw = diff_bytes;
+	b->block = size;
 	b->elem_drop = NULL;
 	b->elem_retain = NULL;
 	__dtfl_vec_push_size(&b->offs, 0);
 	return b;
+}
+
+__dtfl_batch *
+__dtfl_batch_new_reserved(unsigned time_words, unsigned diff_bytes,
+    size_t rows, size_t bytes)
+{
+	size_t total = block_size(time_words, diff_bytes, rows, bytes);
+
+	return block_carve(__dtfl_alloc(total), total, time_words, diff_bytes,
+	    rows, bytes);
+}
+
+/* Rows and arena bytes of a buffer of `cap_bytes` (batch_int.h). */
+static void
+buffer_dims(size_t cap_bytes, size_t len, size_t *rows, size_t *bytes)
+{
+	*rows = cap_bytes / (len > sizeof(size_t) ? len : sizeof(size_t)) + 1;
+	*bytes = block_add(cap_bytes, len);
+}
+
+size_t
+__dtfl_batch_buffer_block(size_t cap_bytes)
+{
+	size_t rows, bytes;
+
+	/* Word-sized records need the most offsets for their bytes. */
+	buffer_dims(cap_bytes, sizeof(size_t), &rows, &bytes);
+	return block_size(0, 0, rows, bytes);
+}
+
+__dtfl_batch *
+__dtfl_batch_new_buffer_from(__dtfl_freelist *pool, size_t cap_bytes,
+    size_t len)
+{
+	size_t rows, bytes, total;
+
+	buffer_dims(cap_bytes, len, &rows, &bytes);
+	total = block_size(0, 0, rows, bytes);
+	if (pool == NULL || total > pool->size)
+		return block_carve(__dtfl_alloc(total), total, 0, 0, rows,
+		    bytes);
+	return block_carve(__dtfl_freelist_get(pool), pool->size, 0, 0, rows,
+	    bytes);
+}
+
+void
+__dtfl_batch_release_to(__dtfl_freelist *pool, __dtfl_batch *b)
+{
+	if (pool == NULL || b == NULL || b->block != pool->size ||
+	    b->elem_drop != NULL) {
+		__dtfl_batch_release(b);
+		return;
+	}
+	if (!__dtfl_arc_release(&b->ref))
+		return;
+	/* Columns that outgrew the block are their own allocations. */
+	__dtfl_vec_free(&b->arena);
+	__dtfl_vec_free(&b->offs);
+	__dtfl_vec_free(&b->times);
+	__dtfl_vec_free(&b->diffs);
+	__dtfl_freelist_put(pool, b);
 }
 
 void

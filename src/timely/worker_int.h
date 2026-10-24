@@ -118,6 +118,14 @@ struct __dtfl_worker {
 	__dtfl_freelist msg_pool;
 	__dtfl_freelist cap_pool;
 	__dtfl_freelist session_pool;
+	/*
+	 * Spare output buffer blocks (__dtfl_batch_new_buffer_from).  Unlike
+	 * the lists above, a block here may have been made by another worker:
+	 * a receiver keeps the buffers it is sent and refills its own from
+	 * them, so a buffer is not freed into the malloc arena of the thread
+	 * that made it.
+	 */
+	__dtfl_freelist buf_pool;
 	uintptr_t owner;		/* debug owner check (__dtfl_thread_self) */
 	int stepping;			/* reentrancy guard (PLAN section 5, rule 6) */
 };

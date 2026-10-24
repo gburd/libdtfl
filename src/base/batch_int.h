@@ -148,6 +148,7 @@ typedef struct __dtfl_batch {
 	__dtfl_vec diffs;	/* bytes; dw per record */
 	unsigned tw;
 	unsigned dw;
+	size_t block;		/* bytes in the one-block allocation (see new_reserved) */
 	/*
 	 * Optional per-record ownership hooks for arenas whose records are
 	 * owning pointers (the batch-pointer streams, where each record is a
@@ -260,13 +261,25 @@ void __dtfl_batch_reserve(__dtfl_batch *b, size_t rows, size_t bytes);
  * of `len` bytes: one block with room for that many records of that size
  * (counting each as at least a word) and the bytes of one record past
  * the threshold, so a buffer of like-sized records never regrows.
+ *
+ * _from takes the block from `pool` (a worker's buffer list, whose blocks
+ * are __dtfl_batch_buffer_block(cap_bytes) bytes, room for any record
+ * size) when it fits, and release_to puts a uniquely held buffer's block
+ * back on the calling worker's `pool`, whichever worker made it.  A
+ * buffer usually dies on the worker that received it, so this is how the
+ * receiver's next send reuses it instead of freeing it into the sender's
+ * malloc arena (a cross-thread free) while its own arena allocates
+ * afresh.  release_to releases any other batch as __dtfl_batch_release
+ * does.  NULL pool: plain allocation and release.
  */
+size_t __dtfl_batch_buffer_block(size_t cap_bytes);
+__dtfl_batch *__dtfl_batch_new_buffer_from(__dtfl_freelist *pool,
+    size_t cap_bytes, size_t len);
+void __dtfl_batch_release_to(__dtfl_freelist *pool, __dtfl_batch *b);
 static inline __dtfl_batch *
 __dtfl_batch_new_buffer(size_t cap_bytes, size_t len)
 {
-	return __dtfl_batch_new_reserved(0, 0,
-	    cap_bytes / (len > sizeof(size_t) ? len : sizeof(size_t)) + 1,
-	    cap_bytes + len);
+	return __dtfl_batch_new_buffer_from(NULL, cap_bytes, len);
 }
 /* Appends record i of src. */
 void __dtfl_batch_push_from(__dtfl_batch *b, const __dtfl_batch *src, size_t i);

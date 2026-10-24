@@ -127,9 +127,9 @@ __dtfl_pull_counter *__dtfl_pull_counter_new(__dtfl_pull *inner,
 /* Repoints the consumed batch after the builder relocates it. */
 void __dtfl_pull_counter_set_consumed(__dtfl_pull_counter *c,
     __dtfl_change_batch *consumed);
-/* The free list of the worker running this counter (NULL: none). */
+/* The message and buffer lists of the worker running this counter. */
 void __dtfl_pull_counter_set_pool(__dtfl_pull_counter *c,
-    __dtfl_freelist *pool);
+    __dtfl_freelist *pool, __dtfl_freelist *buf_pool);
 void __dtfl_pull_counter_free(__dtfl_pull_counter *c);
 /*
  * Pulls the next message, recording the previous message's consumption
@@ -156,6 +156,8 @@ void __dtfl_pull_counter_finish(__dtfl_pull_counter *c);
 __dtfl_push *__dtfl_push_exchange_new(const dtfl_time_class *tc,
     const dtfl_type *type, __dtfl_push **pushers, size_t n,
     uint64_t (*route)(const void *, size_t, void *), void *ctx);
+/* Buffers come from this worker buffer list (NULL: plain allocation). */
+void __dtfl_push_exchange_set_pool(__dtfl_push *p, __dtfl_freelist *buf_pool);
 
 /* ------------------------------------------------------------------ */
 /* Progress output pusher (pushers/progress.rs)                        */
