@@ -87,7 +87,7 @@ comparison.
 
 With one worker in the @code{arrange} benchmark's open-loop mode, the
 C build's p99 latency is 1.4 times Rust's at a quarter of its capacity
-and 1.8 to 2.9 times at half capacity or more (the table is in the
+and 1.8 to 3.0 times at half capacity or more (the table is in the
 README).  The extra latency is a higher cost per round and per update,
 not extra work.  Both builds take the same steps per round, seal the
 same batches, make about the same allocation calls, and apply the same
