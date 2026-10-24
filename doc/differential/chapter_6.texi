@@ -1,0 +1,27 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_6.texi: ports differential-dataflow
+@c mdbook/src/chapter_6/chapter_6.md (Windows Enough and Time).  The
+@c upstream page is a title only; this chapter sketches the C building
+@c blocks for windowed computations.
+
+@node Windowed Computations
+@section Windowed computations
+
+The upstream book leaves this chapter as a title.  The building blocks
+for windowed computations are already in libdtfl, so this section
+sketches how they fit together rather than porting prose that does not
+exist.
+
+A window is a bound on which times contribute to an output.  Two
+operators express it.  @code{dtfl_collection_delay} re-times each update
+by a monotone function, which can round a record's time up to the end of
+the window it falls in, so all records of a window share one output
+time.  Advancing the input past that time, with
+@code{dtfl_input_session_advance_to}, then lets the window's output
+finalize while later windows are still open; a probe reports exactly
+which windows are settled.  For a sliding window, @code{explode} can
+place one record into several windows by emitting it once per window
+with the appropriate factor.  Combined with @code{reduce} or
+@code{count} keyed by window, these give the windowed aggregates a
+streaming computation usually wants, maintained incrementally like every
+other differential collection.

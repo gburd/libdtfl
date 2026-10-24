@@ -1,0 +1,104 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL-DIAG 1
+.Os
+.Sh NAME
+.Nm dtfl-diag
+.Nd inspect a timely or differential dataflow computation
+.Sh SYNOPSIS
+.Nm
+.Op Fl i Ar iface
+.Op Fl p Ar port
+.Op Fl P Ar diff-port
+.Op Fl s Ar peers
+.Op Fl f Ar file ...
+.Op Fl o Ar path
+.Cm graph | profile | arrangements
+.Sh DESCRIPTION
+.Nm
+is the C port of the timely dataflow
+.Xr tdiag 1
+tool.
+It reconstructs the operator graph, the timing profile and the
+arrangement sizes of a running computation from its structured log
+streams, or from a recorded stream read from a file.
+.Pp
+The source program ships its log streams to
+.Nm
+over TCP.
+Add a few lines to the source program to connect its
+.Dq timely
+logger
+.Pq and, for Cm arrangements , its Dq differential/arrange logger
+to the address
+.Nm
+listens on, as
+.Xr dtfl_config_from_env 3
+installs from
+.Ev TIMELY_WORKER_LOG_ADDR
+and
+.Ev DIFFERENTIAL_LOG_ADDR .
+.Ss Options
+.Bl -tag -width Ds
+.It Fl i , Fl Fl interface Ar ip
+Interface to listen on; defaults to 127.0.0.1.
+.It Fl p , Fl Fl port Ar port
+Timely log port; defaults to 51317.
+.It Fl P , Fl Fl diff-port Ar port
+Differential log port; defaults to 51318.
+.It Fl s , Fl Fl source-peers Ar n
+Number of workers in the source computation.
+.It Fl f , Fl Fl file Ar file
+Read a recorded log stream from
+.Ar file
+instead of listening.
+Repeatable, one per source worker.
+.It Fl Fl diff-file Ar file
+A recorded differential stream file for
+.Cm arrangements .
+Repeatable.
+.It Fl o , Fl Fl out Ar path
+.Cm graph :
+output HTML path; defaults to
+.Pa dataflow-graph.html .
+.It Fl Fl output-interval Ar ms
+.Cm arrangements :
+reporting cadence in milliseconds; defaults to 1000.
+.El
+.Ss Commands
+.Bl -tag -width Ds
+.It Cm graph
+Reconstruct the dataflow graph from the Operates and Channels events
+and write an HTML file that renders it.
+Channels crossing a scope
+boundary are re-wired as in the upstream graph command.
+.It Cm profile
+Pair Schedule Start and Stop events to accumulate the time spent in
+each operator, and print the operators sorted by total time.
+.It Cm arrangements
+Track the logical size of each arrangement from the Batch, Merge and
+Drop events, and print the current size per operator.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev DTFL_DATA_DIR
+Directory holding
+.Pa dataflow-graph.html ,
+the template the
+.Cm graph
+command embeds.
+Defaults to the installed data directory.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr dtfl_config_from_env 3 ,
+.Xr dtfl_diag_session_new 3 ,
+.Xr dtfl 7
+.Sh STANDARDS
+Ported from the dataflow-diag
+.Pa tdiag
+crate at commit 0fa322c9.
+It reads the current bincode log stream, not
+the 0.11 abomonation stream
+.Pq PLAN D9 .

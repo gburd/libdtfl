@@ -1,0 +1,178 @@
+libdtfl NEWS -- user-visible changes, newest first.
+
+Version 0.1.0 (2026-10-24)
+
+	First development release: timely 0.31.0 and differential 0.25.1 in C11.
+
+	Qualification.  At the release commit, on Debian 13 amd64: make
+	check with hegel, under ASan and UBSan, under TSan, with clang 19,
+	under clang UBSan, and the heavy explain sweep; make distcheck; make
+	check-sim with 100,000 seeds for each of its six properties; the
+	interop tier, with dev/gen-fixtures --check regenerating the
+	fixtures from the pinned Rust crates byte for byte; and the docs
+	gate, with all 79 man pages clean under mandoc -Tlint.  On Debian 13
+	arm64: make check with hegel under gcc 14 and clang 19, ASan and
+	UBSan and TSan under both, and make distcheck under both.  On FreeBSD
+	14.5 amd64: make check and make distcheck under clang 21 and gcc 14,
+	ASan and UBSan under both, and TSan under clang.  With musl-gcc on
+	Debian 13: make check and make distcheck.  On GitHub CI: Ubuntu
+	24.04 with gcc and clang, each plain, with ASan and UBSan and with
+	TSan, plus valgrind on a subset and make distcheck; musl; macOS 26
+	arm64; and FreeBSD 15.1 in a VM.  The full metal benchmark ran on a
+	c7i.metal-24xl at 944d6d3, which differs from the release only in
+	the portability fixes listed below, none of them on a path the
+	benchmark runs.  The README's tables come from that run, and every
+	figure is within run-to-run noise of the previous run.  Not run:
+	the libFuzzer tier (make fuzz has no target yet); the property
+	tests on FreeBSD and macOS (hegel publishes no libhegel there); the
+	sanitizers on macOS and musl; Linux riscv64 and the two-socket
+	benchmark, which last ran on earlier builds; and the event_driven,
+	idle-merge and IVM latency figures, which the benchmark matrix does
+	not include.
+
+	Workers in processes, and a host runtime.  dtfl_execute_worker
+	joins the calling thread to an execution as worker i of n over
+	a dtfl_transport, the byte stream the cluster's network layer
+	is built on (upstream's Stream trait), and starts no thread:
+	the worker's own steps move its bytes and it parks in the
+	transport.  This lets PostgreSQL background workers share one
+	computation over shm_mq, and lets any host connect processes it
+	created.  dtfl_transport_socket is a ready-made transport over
+	connected sockets, and dtfl_config_set_workers with
+	DTFL_WORKERS_PROCESSES makes dtfl_execute fork its workers over
+	a socketpair mesh.  dtfl_set_sync_hooks, a fifth host hook,
+	routes every lock and wait libdtfl makes (mutexes, condition
+	variables, the word wait the parker sleeps on, yield, sleep, the
+	clock and the thread identity) through the host, so a fiber
+	runtime can keep its carriers out of the kernel.  The defaults
+	are unchanged.  dtfl_set_error_detail lets a host callback,
+	such as a transport returning DTFL_EIO, leave the reason that
+	dtfl_last_error_detail and the panic message report.
+	examples/embed/forked_workers shows the
+	process pattern; dtfl_embedding(7) and the manual's Embedding
+	chapter cover each PostgreSQL concurrency model and fiber hosts.
+
+	A C11 port of timely dataflow (pinned at timely-v0.31.0),
+	differential dataflow (differential-dataflow-v0.25.1), and the
+	timely diagnostics tools.  Functionally complete: the timely
+	runtime and all operators across five execution modes (single
+	thread, threads, processes, simulated, and a TCP cluster);
+	differential collections, traces, and shared arrangements; join,
+	reduce, iterate, count, threshold, and distinct; the graph
+	algorithms and the dogsdogsdogs worst-case-optimal joins; the
+	diagnostics WebSocket server with the dtfl-diag program; and the
+	DDIR dataflow compiler with the dtfl-ddir and dtfl-server tools.
+
+	Thread-safe, with allocation, panic, logging, thread and sync
+	hooks for embedding (for example in PostgreSQL).  A Texinfo
+	manual and 79 man pages, both gate-checked.
+
+	Portability.  The full suite, with ASan, UBSan and TSan, passes on
+	FreeBSD 14 amd64 (clang 21 and gcc 14) and on Linux arm64 (gcc 14
+	and clang 19), as well as Linux x86_64.  FreeBSD fixes: the build
+	with gcc and GNU ld no longer falls back to the Apple
+	exported-symbols list (configure's version-script probe hid
+	environ, which crt1.o exports); two sources that used usleep and
+	INADDR_LOOPBACK, which POSIX.1-2008 lacks, now build.  On FreeBSD a
+	sanitizer build's tests run under proccontrol -m aslr -s disable
+	(gcc's libasan will not start with ASLR on), tests/tsan.supp
+	silences a libthr-internal TSan report, and configure stops on
+	--enable-tsan with gcc, which has no TSan runtime there.  The USDT
+	probes are off on FreeBSD, whose sys/sdt.h is the kernel's.  On
+	macOS, which has no pthread_condattr_setclock, a timed condition
+	wait is relative (pthread_cond_timedwait_relative_np), and the
+	test scripts run without timeout(1) when it is missing.  With
+	musl-gcc, which has no kernel headers, a parked worker sleeps on a
+	condition variable instead of a futex.  On macOS and the BSDs the
+	diagnostics server no longer drops a client whose WebSocket
+	request arrives after the server accepted the connection: the
+	accepted socket inherited the listener's O_NONBLOCK there, so the
+	handshake read failed with EAGAIN.  See "Platform notes" in the
+	manual.
+
+	Embedding fixes.  The allocation hooks never receive a NULL
+	pointer in realloc_fn or free_fn: an empty buffer grows through
+	malloc_fn.  The PostgreSQL hooks in dtfl_embedding(7) used
+	repalloc, which crashes on NULL, and palloc, which refuses more
+	than 1 GB; they now use MemoryContextAllocHuge and repalloc_huge
+	in a dedicated memory context, and examples/embed enforces the
+	server's contract so a broken hook fails make check.  The manual
+	and dtfl_set_panic_hook(3) now say what a longjmping panic hook
+	leaves behind: the worker is unusable and must be discarded, for
+	example by resetting its memory context.  Thread hooks must start
+	threads in the same process, so a PostgreSQL background worker
+	cannot back them; the earlier documentation said it could.
+	man dtfl_set_panic_hook now finds its page.
+
+	Every operator that upstream builds on Operator::unary or ::binary
+	no longer runs on every frontier change, only when data arrives, as
+	upstream's FrontierInterest::Never makes it.  Among them: timely's
+	flat_map, filter and exchange; differential's map, flat_map,
+	explode, negate, enter, enter_at, leave, delay, results_in,
+	as_collection and the arranged enter and leave; dogsdogsdogs'
+	differentiate and integrate; and DDIR's linear operator.
+	Advancing an input past a chain of such operators no longer costs
+	time in the length of the chain: examples/timely/event_driven at
+	10 dataflows of 1000 maps runs 1000 rounds in about 0.1 s where it
+	took 1.4 s.
+
+	dtfl_config_set_idle_merge_effort (differential's
+	Config::idle_merge_effort) lets arrangement, reduce and upsert
+	operators keep merging their traces while their input is idle,
+	until each trace is a single batch.  Off by default.
+
+	dtfl_trace_stats_get reports a trace's layers, batches, pending
+	batches, merges in progress, updates and bytes, for monitoring.
+
+	make check-sim runs the multi-worker property tests under the
+	simulator with drawn seeds, worker stalls and delivery delays that
+	keep each channel's FIFO order; DTFL_SIM_SEEDS and DTFL_SIM_JOBS
+	size the run (see the manual's Installation chapter).
+
+	Fixed a hang inherited from timely 0.31.0 (timely-dataflow issue
+	#824): if an input that feeds an exchange was advanced, sent to,
+	flushed, its worker stepped, and the input then closed with
+	nothing sent since, the records still buffered in the exchange
+	were never sent and the dataflow never completed.  Advancing
+	instead of closing delayed them until the next send.  The pushing
+	Counter now forwards a flush whenever data went through it since
+	the last flush, where timely forwards one only while the
+	operator's produced counts are undrained.  This is a deliberate
+	divergence from the pin; see dev/upstream-notes.md.
+
+	The input operator no longer asks to be scheduled when it is built,
+	as upstream's does not.  It used to, which made the hang above
+	reachable without an advance.
+
+	USDT static probes under the provider dtfl, for DTrace, SystemTap,
+	bpftrace and perf: operator_start and operator_end, park,
+	park_end and unpark, batch_seal, and merge_begin and merge_end.
+	configure builds them when sys/sdt.h is present (--enable-usdt,
+	--disable-usdt); otherwise they compile to nothing.  The manual's
+	Diagnostics chapter lists their arguments.
+
+	The library keeps frame pointers by default, release builds
+	included, so profilers can walk its stack without DWARF unwinding.
+	--disable-frame-pointers turns this off.
+
+	Throughput within 1.5 times of the Rust originals on the pinned
+	arrange benchmark at every worker count measured, 1 to 48, on a
+	dedicated bare-metal host with the clock pinned: 0.91 to 1.16 times
+	on the arrange arm and 1.00 to 1.30 times on count, matching Rust at
+	48 workers.  A reserved batch is one allocation; messages,
+	capabilities, sessions and received buffers come from worker-owned
+	free lists, so allocation calls per record are 1.10 (arrange) and
+	1.35 (count) times Rust's, and a buffer freed by the worker that
+	received it no longer makes glibc trim the sender's arena.
+
+	bench/idle_merge times the longest idle step with idle merge effort
+	(13 to 20 ms on a 10M-key trace, mostly freeing merged inputs), and
+	bench/ivm_latency the commit-to-delta latency of a maintained view.
+	dev/bench-ec2 takes --placement packed|spread for two-socket hosts.
+
+	bench/experiments/arrange is a faithful port of arrange.rs: it
+	takes upstream's arguments (keys recs rate work comp, then timely
+	options and open-loop), and prints the same throughput and latency
+	lines in the closed-loop and the open-loop mode.
+	dtfl_collection_inner returns the update stream behind a
+	collection (Collection::inner).

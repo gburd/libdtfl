@@ -1,0 +1,56 @@
+Source: libdtfl
+Priority: optional
+Maintainer: Greg Burd <greg@burd.me>
+Build-Depends:
+ debhelper-compat (= 13),
+ autoconf,
+ automake,
+ libtool,
+ pkg-config,
+ systemtap-sdt-dev [linux-any]
+Standards-Version: 4.6.2
+Section: libs
+Homepage: https://codeberg.org/gregburd/libdtfl
+Vcs-Git: https://codeberg.org/gregburd/libdtfl.git
+Vcs-Browser: https://codeberg.org/gregburd/libdtfl
+Rules-Requires-Root: no
+
+Package: libdtfl0
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: timely and differential dataflow for C (shared library)
+ libdtfl is a C11 port of timely dataflow, differential dataflow, and
+ the timely diagnostics tools: a data-parallel runtime for cyclic
+ dataflows with progress tracking, incrementally maintained collections
+ with join, reduce, iterate and shared arrangements, graph algorithms
+ and worst-case-optimal joins, and an in-process diagnostics server.
+ .
+ This package contains the shared library.
+
+Package: libdtfl-dev
+Architecture: any
+Multi-Arch: same
+Section: libdevel
+Depends: libdtfl0 (= ${binary:Version}), ${misc:Depends}
+Description: timely and differential dataflow for C (development files)
+ libdtfl is a C11 port of timely dataflow, differential dataflow, and
+ the timely diagnostics tools: a data-parallel runtime for cyclic
+ dataflows with progress tracking, incrementally maintained collections
+ with join, reduce, iterate and shared arrangements, graph algorithms
+ and worst-case-optimal joins, and an in-process diagnostics server.
+ .
+ This package contains the static library, the public headers, the
+ pkg-config metadata, and the manual pages needed to build against
+ libdtfl.
+
+Package: libdtfl-tools
+Architecture: any
+Depends: libdtfl0 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: timely and differential dataflow for C (command-line tools)
+ libdtfl is a C11 port of timely dataflow, differential dataflow, and
+ the timely diagnostics tools.
+ .
+ This package contains the dtfl-diag diagnostics client, the dtfl-ddir
+ dataflow compiler, and the dtfl-server plugin host, with their manual
+ pages.

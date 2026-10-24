@@ -1,0 +1,48 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_STREAM_BROADCAST 3
+.Os
+.Sh NAME
+.Nm dtfl_stream_broadcast
+.Nd replicate every record to every worker
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_stream_broadcast "dtfl_stream *st"
+.Sh DESCRIPTION
+.Fn dtfl_stream_broadcast
+sends a copy of every record of
+.Fa st
+to every worker.
+Each record is tagged with each peer index, exchanged by that index so
+one copy lands on each worker, and then the index is stripped; the
+output carries the input's record type at the record's time.
+.Pp
+This is the simplified broadcast of the pinned release, built from
+flat_map, exchange and map.
+On a single worker it is the identity on records.
+.Sh RETURN VALUES
+.Fn dtfl_stream_broadcast
+returns the broadcast stream, carrying the same record type as
+.Fa st .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+/* Every worker sees every record one worker fed. */
+dtfl_stream *all = dtfl_stream_broadcast(src);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_stream_exchange 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of timely's
+.Vt Broadcast
+trait.
+It is public at the pinned release
+.Pq Li timely-v0.31.0 .
+The vec and core variants collapse into one here (PLAN D2).
+.Sh THREAD SAFETY
+The streams and the operator belong to the thread that runs the worker
+and must not be used from another thread (PLAN section 5).

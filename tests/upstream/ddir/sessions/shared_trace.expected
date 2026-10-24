@@ -1,0 +1,19 @@
+installed "prod"
+installed "reach"
+epoch: 0
+traces (2):
+  edges (importers: 1)
+  result (importers: 0)
+programs (2):
+  prod (inputs: 1, imports: 0, exports: 1)
+  reach (inputs: 1, imports: 1, exports: 1)
+tick -> epoch 1
+tick -> epoch 2
+tick -> epoch 3
+epoch: 3
+traces (2):
+  edges (importers: 1)
+  result (importers: 0)
+programs (2):
+  prod (inputs: 1, imports: 0, exports: 1)
+  reach (inputs: 1, imports: 1, exports: 1)

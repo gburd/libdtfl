@@ -1,0 +1,44 @@
+installed "reach"
+installed "counter"
+tick -> epoch 1
+epoch: 1
+traces (3):
+  edge_count (importers: 0)
+  random:nodes=8,edges=12,arity=2,seed=0 (importers: 2)
+  result (importers: 0)
+programs (3):
+  counter (inputs: 0, imports: 1, exports: 1)
+  random:nodes=8,edges=12,arity=2,seed=0 [generated] (inputs: 1, imports: 0, exports: 1)
+  reach (inputs: 1, imports: 1, exports: 1)
+peek "random:nodes=8,edges=12,arity=2,seed=0" (11 rows):
+  (Tuple([Int(0), Int(3)]), Tuple([]))  x1
+  (Tuple([Int(0), Int(5)]), Tuple([]))  x2
+  (Tuple([Int(0), Int(7)]), Tuple([]))  x1
+  (Tuple([Int(2), Int(4)]), Tuple([]))  x1
+  (Tuple([Int(3), Int(1)]), Tuple([]))  x1
+  (Tuple([Int(3), Int(5)]), Tuple([]))  x1
+  (Tuple([Int(3), Int(7)]), Tuple([]))  x1
+  (Tuple([Int(4), Int(0)]), Tuple([]))  x1
+  (Tuple([Int(5), Int(3)]), Tuple([]))  x1
+  (Tuple([Int(7), Int(5)]), Tuple([]))  x1
+  (Tuple([Int(7), Int(6)]), Tuple([]))  x1
+peek "result" (6 rows):
+  (Tuple([Int(0)]), Tuple([]))  x1
+  (Tuple([Int(1)]), Tuple([]))  x1
+  (Tuple([Int(3)]), Tuple([]))  x1
+  (Tuple([Int(5)]), Tuple([]))  x1
+  (Tuple([Int(6)]), Tuple([]))  x1
+  (Tuple([Int(7)]), Tuple([]))  x1
+peek "edge_count" (1 rows):
+  (Tuple([]), Tuple([Int(12)]))  x1
+dropped "reach"
+dropped "counter"
+epoch: 1
+traces (1):
+  random:nodes=8,edges=12,arity=2,seed=0 (importers: 0)
+programs (1):
+  random:nodes=8,edges=12,arity=2,seed=0 [generated] (inputs: 1, imports: 0, exports: 1)
+dropped "random:nodes=8,edges=12"
+epoch: 1
+traces (0):
+programs (0):

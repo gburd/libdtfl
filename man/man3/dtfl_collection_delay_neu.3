@@ -1,0 +1,94 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_DELAY_NEU 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_delay_neu ,
+.Nm dtfl_collection_differentiate ,
+.Nm dtfl_collection_integrate
+.Nd AltNeu timing and the differential calculus for delta queries
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dogs.h
+.Ft dtfl_collection *
+.Fn dtfl_collection_delay_neu "dtfl_collection *c"
+.Ft dtfl_collection *
+.Fn dtfl_collection_differentiate "dtfl_collection *c" "dtfl_scope *child"
+.Ft dtfl_collection *
+.Fn dtfl_collection_integrate "dtfl_collection *c"
+.Sh DESCRIPTION
+A delta query runs in an
+.Vt AltNeu
+scope
+.Pq Fn dtfl_time_altneu .
+A time in such a scope is one coordinate encoding a base time
+.Va t
+and a bit
+.Va neu
+as
+.Li 2t + neu ,
+so the
+.Dq alt
+copy of a time is even and the
+.Dq neu
+copy is odd.
+Entering the scope places updates at their alt times; a relation that
+appears after the delta stream in the join order is moved to its neu time,
+so every pair of concurrent updates interacts exactly once.
+.Pp
+.Fn dtfl_collection_delay_neu
+re-times every update of
+.Va c
+from its alt time to its neu time, keeping the base time
+.Pq upstream Dq .delay(|t| AltNeu::neu(t.time)) .
+The scope of
+.Va c
+must be an
+.Vt AltNeu
+scope.
+.Pp
+.Fn dtfl_collection_differentiate
+enters the
+.Vt AltNeu
+scope
+.Va child
+and presents
+.Va c
+as its instantaneous changes: each update
+.Pq data , alt(t) , diff
+is emitted together with
+.Pq data , neu(t) , \-diff ,
+so the accumulated collection holds each change only at the moment it
+occurs.
+The diff class of
+.Va c
+must be Abelian, and
+.Va child
+must directly refine the scope of
+.Va c .
+.Pp
+.Fn dtfl_collection_integrate
+reconstructs a collection from its instantaneous changes: every neu update
+is discarded and every alt update has its wrapper stripped, leaving the
+scope for its parent.
+The scope of
+.Va c
+must be an
+.Vt AltNeu
+scope.
+.Sh RETURN VALUES
+Each function returns a new
+.Vt dtfl_collection
+handle the caller frees with
+.Fn dtfl_collection_free .
+.Sh SEE ALSO
+.Xr dtfl_collection_extend 3 ,
+.Xr dtfl_collection_index_new 3 ,
+.Xr dtfl_time_altneu 3
+.Sh STANDARDS
+A C11 port of the dogsdogsdogs
+.Pa src/altneu.rs
+and
+.Pa src/calculus.rs .

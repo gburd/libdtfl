@@ -1,0 +1,183 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 13, 2026
+.Dt DTFL_DD_SERVER 3
+.Os
+.Sh NAME
+.Nm dtfl_dd_server_new ,
+.Nm dtfl_dd_server_free ,
+.Nm dtfl_dd_server_epoch ,
+.Nm dtfl_dd_server_handles ,
+.Nm dtfl_dd_server_register ,
+.Nm dtfl_dd_server_load ,
+.Nm dtfl_dd_server_tick ,
+.Nm dtfl_dd_server_drop ,
+.Nm dtfl_dd_server_peek ,
+.Nm dtfl_dd_server_list ,
+.Nm dtfl_trace_handler_get ,
+.Nm dtfl_trace_handler_set ,
+.Nm dtfl_trace_handler_has ,
+.Nm dtfl_dd_env_scope ,
+.Nm dtfl_dd_env_handles ,
+.Nm dtfl_dd_env_probe ,
+.Nm dtfl_dd_env_elapsed_ns ,
+.Nm dtfl_dd_env_argc ,
+.Nm dtfl_dd_env_arg ,
+.Nm dtfl_dd_env_add_input
+.Nd shared-dataflow plugin server
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/dd_server.h
+.Ft dtfl_dd_server *
+.Fn dtfl_dd_server_new "FILE *out"
+.Ft void
+.Fn dtfl_dd_server_free "dtfl_dd_server *s"
+.Ft uint64_t
+.Fn dtfl_dd_server_epoch "const dtfl_dd_server *s"
+.Ft dtfl_trace_handler *
+.Fn dtfl_dd_server_handles "dtfl_dd_server *s"
+.Ft void
+.Fn dtfl_dd_server_register "dtfl_dd_server *s" "const dtfl_dataflow_plugin *plugin"
+.Ft int
+.Fn dtfl_dd_server_load "dtfl_dd_server *s" "const char *instance" "const char *plugin" "size_t argc" "const char *const *argv"
+.Ft void
+.Fn dtfl_dd_server_tick "dtfl_dd_server *s"
+.Ft int
+.Fn dtfl_dd_server_drop "dtfl_dd_server *s" "const char *instance"
+.Ft int
+.Fn dtfl_dd_server_peek "dtfl_dd_server *s" "const char *trace"
+.Ft void
+.Fn dtfl_dd_server_list "const dtfl_dd_server *s"
+.Ft dtfl_trace *
+.Fn dtfl_trace_handler_get "dtfl_trace_handler *h" "const char *name"
+.Ft void
+.Fn dtfl_trace_handler_set "dtfl_trace_handler *h" "const char *name" "dtfl_trace *trace" "const dtfl_type *record_type"
+.Ft bool
+.Fn dtfl_trace_handler_has "const dtfl_trace_handler *h" "const char *name"
+.Ft dtfl_scope *
+.Fn dtfl_dd_env_scope "dtfl_dd_env *e"
+.Ft dtfl_trace_handler *
+.Fn dtfl_dd_env_handles "dtfl_dd_env *e"
+.Ft dtfl_probe *
+.Fn dtfl_dd_env_probe "dtfl_dd_env *e"
+.Ft uint64_t
+.Fn dtfl_dd_env_elapsed_ns "const dtfl_dd_env *e"
+.Ft size_t
+.Fn dtfl_dd_env_argc "const dtfl_dd_env *e"
+.Ft const char *
+.Fn dtfl_dd_env_arg "const dtfl_dd_env *e" "size_t i"
+.Ft void
+.Fn dtfl_dd_env_add_input "dtfl_dd_env *e" "dtfl_input_session *in"
+.Sh DESCRIPTION
+These functions implement the differential-dataflow
+.Ql server
+crate: a long-running host for several dataflows
+.Pq Dq plugins
+that share arrangements by name.
+One plugin publishes an indexed collection
+.Pq a trace
+under a name through
+.Fn dtfl_trace_handler_set ,
+and other plugins import that same trace with
+.Fn dtfl_trace_handler_get
+and
+.Xr dtfl_trace_import 3 ,
+so the cost of indexing the collection is paid once and shared across every
+importer.
+.Pp
+.Fn dtfl_dd_server_new
+creates a server with the host clock at epoch 0, writing status and output
+to
+.Fa out
+.Pq or standard output when Dv NULL .
+.Fn dtfl_dd_server_free
+releases it.
+.Fn dtfl_dd_server_epoch
+returns the current open epoch.
+.Pp
+.Fn dtfl_dd_server_register
+registers a plugin so
+.Fn dtfl_dd_server_load
+can select it by name.
+A
+.Vt dtfl_dataflow_plugin
+is a name and a build callback
+.Pq Vt dtfl_dd_build_fn ,
+the static-registration stand-in for a dynamically loaded shared object.
+.Fn dtfl_dd_server_load
+builds a new dataflow on the shared worker under
+.Fa instance ,
+passing the build callback the positional
+.Fa argv
+arguments.
+It returns 0, or a
+.Dv DTFL_E Ns Em *
+code with a message through
+.Xr dtfl_last_error_detail 3 .
+.Pp
+.Fn dtfl_dd_server_tick
+closes the current epoch, advances every plugin input, and runs the worker
+to quiescence.
+.Fn dtfl_dd_server_drop
+drops a loaded instance, releasing its dataflow and the inputs it created.
+.Fn dtfl_dd_server_peek
+prints a registered trace's consolidated contents as of the current epoch.
+.Fn dtfl_dd_server_list
+prints the registry.
+.Pp
+The build callback receives a
+.Vt dtfl_dd_env
+describing its environment.
+.Fn dtfl_dd_env_scope
+is the dataflow scope to build in;
+.Fn dtfl_dd_env_handles
+is the shared trace handler;
+.Fn dtfl_dd_env_probe
+is the common probe to attach outputs to;
+.Fn dtfl_dd_env_elapsed_ns
+is nanoseconds since the server started;
+.Fn dtfl_dd_env_argc
+and
+.Fn dtfl_dd_env_arg
+are the load's positional arguments.
+A plugin that creates its own input hands it to the server through
+.Fn dtfl_dd_env_add_input ,
+which advances and flushes it each
+.Ic tick .
+.Pp
+.Fn dtfl_dd_server_handles
+returns the shared handler, so a caller can confirm that a trace is shared.
+.Fn dtfl_trace_handler_has
+reports whether a trace is registered under a name.
+.Sh RETURN VALUES
+.Fn dtfl_dd_server_new
+returns the server, or
+.Dv NULL
+only through the panic hook.
+.Fn dtfl_dd_server_load ,
+.Fn dtfl_dd_server_drop
+and
+.Fn dtfl_dd_server_peek
+return 0 on success or a
+.Dv DTFL_E Ns Em *
+code.
+.Fn dtfl_trace_handler_get
+returns the handle, or
+.Dv NULL
+if no trace is registered under
+.Fa name .
+.Sh SEE ALSO
+.Xr dtfl-server 1 ,
+.Xr dtfl_collection_arrange_by_key 3 ,
+.Xr dtfl_trace_import 3
+.Sh STANDARDS
+Ported from the differential-dataflow
+.Ql server
+crate at tag
+.Ql differential-dataflow-v0.25.1
+.Pq Pa server/src/lib.rs , Pa server/src/bin/dd_server.rs .
+Upstream loads plugins through
+.Xr dlopen 3 ;
+this port registers them statically, since library code may not
+.Xr dlopen 3 .

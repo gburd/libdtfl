@@ -1,0 +1,101 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 11, 2026
+.Dt DTFL_UNORDERED_INPUT_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_unordered_input_new ,
+.Nm dtfl_unordered_input_send ,
+.Nm dtfl_unordered_input_flush ,
+.Nm dtfl_unordered_input_free
+.Nd supply records under caller-managed capabilities
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/timely_ops.h
+.Ft dtfl_stream *
+.Fn dtfl_unordered_input_new "dtfl_scope *scope" "const dtfl_type *type" \
+"dtfl_unordered_input **handle" "dtfl_cap **cap"
+.Ft void
+.Fn dtfl_unordered_input_send "dtfl_unordered_input *h" "const dtfl_cap *cap" \
+"const void *rec" "size_t len"
+.Ft void
+.Fn dtfl_unordered_input_flush "dtfl_unordered_input *h"
+.Ft void
+.Fn dtfl_unordered_input_free "dtfl_unordered_input *h"
+.Sh DESCRIPTION
+An unordered input is the capability-based cousin of
+.Xr dtfl_input_new 3 :
+instead of a single advancing epoch, the caller holds capabilities and
+may keep several epochs open at once.
+.Fn dtfl_unordered_input_new
+creates the input operator in
+.Fa scope
+for records of
+.Fa type ,
+stores the handle through
+.Fa handle ,
+and stores an initial capability at the minimum time through
+.Fa cap .
+.Pp
+.Fn dtfl_unordered_input_send
+sends
+.Fa rec
+at
+.Fa cap Ns 's
+time.
+The caller controls progress through the capability: obtain a later
+capability with
+.Xr dtfl_cap_delayed 3
+before downgrading or dropping the current one, and drop every
+capability to signal end of input.
+.Fn dtfl_unordered_input_flush
+flushes any pending records and activates the operator.
+.Pp
+.Fn dtfl_unordered_input_free
+releases the handle.
+Capabilities obtained from this input are released separately with
+.Xr dtfl_cap_drop 3 .
+.Sh RETURN VALUES
+.Fn dtfl_unordered_input_new
+returns the input stream and stores the handle and the initial
+capability through its out-parameters.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_unordered_input *in;
+dtfl_cap *cap;
+dtfl_stream *s = dtfl_unordered_input_new(scope, dtfl_type_u64(),
+    &in, &cap);
+dtfl_stream_capture_into(s, pusher, ctx);
+/* feed values 0..10 at times 0..10. */
+for (uint64_t round = 0; round < 10; round++) {
+	unsigned char buf[8];
+	uint64_t next = round + 1;
+	dtfl_put_u64(buf, round);
+	dtfl_unordered_input_send(in, cap, buf, sizeof buf);
+	dtfl_cap *later = dtfl_cap_delayed(cap, &next);
+	dtfl_cap_drop(cap);
+	cap = later;
+	dtfl_worker_step(w);
+}
+dtfl_cap_drop(cap);
+dtfl_unordered_input_free(in);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_cap_delayed 3 ,
+.Xr dtfl_input_new 3 ,
+.Xr dtfl_probe_new 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+These are the C forms of timely's
+.Vt UnorderedHandle
+and the
+.Fn new_unordered_input
+method of the
+.Vt UnorderedInput
+trait.
+.Sh THREAD SAFETY
+A
+.Vt dtfl_unordered_input
+and the capabilities it hands out belong to the thread that runs the
+worker and must not be used from another thread (PLAN section 5).

@@ -1,0 +1,64 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_3.texi: ports differential-dataflow
+@c mdbook/src/chapter_3/* (Creating inputs, Making changes, Advancing
+@c time, Observing probes, Performing work).
+
+@node Differential Interactions
+@section Interacting with a computation
+
+Once a computation is written, interacting with it reduces to changing
+the inputs and observing the output changes.  There is deliberate
+latitude in how, which lets a program trade latency for throughput.
+
+@subsection Creating inputs
+
+A differential input is usually a @code{dtfl_input_session}: create one
+with @code{dtfl_input_session_new} (over a record type and a diff
+class), add it to a scope with
+@code{dtfl_input_session_to_collection}, and the collection it returns
+is the bridge from imperative code into the dataflow.  The scope's time
+class must be totally ordered.
+
+@subsection Making changes
+
+Three calls change a collection.  @code{dtfl_input_session_insert} adds
+one copy of a record (a diff of @code{+1}); @code{dtfl_input_session_remove}
+retracts one (@code{-1}); both need an Abelian diff class.
+@code{dtfl_input_session_update} adds an arbitrary diff, and
+@code{dtfl_input_session_update_at} adds one at a future time.  These are
+buffered at the session's current epoch until flushed.
+
+@subsection Advancing time
+
+@code{dtfl_input_session_advance_to} moves the session's epoch forward to
+a time at or after the current one (it panics otherwise).  Advancing is
+the promise that no more changes will be made at an earlier time, which
+is what lets downstream operators finalize their output for the times
+left behind.  Batch changes under one epoch when you can: progress
+tracking does work per distinct time, so a new time for every single
+change is expensive.
+
+@subsection Observing probes
+
+A probe reports the frontier at the point it is attached, exactly as in
+timely.  @code{dtfl_collection_probe_with} attaches one to a collection;
+@code{dtfl_probe_less_than(probe, dtfl_input_session_time(input))} is
+true while the output has not yet caught up to the input's current time.
+
+@subsection Performing work
+
+All the computation happens in @code{dtfl_worker_step}: each call
+schedules the operators and performs some outstanding work, and repeated
+calls bring the output probes in line with the inputs they depend on.
+When a worker function returns, libdtfl steps the worker until the
+computation completes (the inputs close as their sessions are closed),
+so a program that only loads changes and returns still runs them all to
+completion.  Explicit stepping matters when a program keeps interactive
+access to a probe and does not want to run straight to the end:
+
+@example
+dtfl_input_session_advance_to(input, &next);
+dtfl_input_session_flush(input);
+while (dtfl_probe_less_than(probe, dtfl_input_session_time(input)))
+        dtfl_worker_step(w);
+@end example

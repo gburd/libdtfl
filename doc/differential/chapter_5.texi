@@ -1,0 +1,61 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_5.texi: ports differential-dataflow
+@c mdbook/src/chapter_5/* (An arrangement example, Different
+@c arrangements, Sharing across dataflows, Trace wrappers).
+
+@node Arrangements
+@section Arrangements
+
+An arrangement is an indexed representation of a collection, and often a
+far more efficient one than a stream of update triples.  Many operators
+do the same thing with their input: they build and maintain an index so
+they can look updates up later.  An arrangement builds that index once
+and shares it, so the cost of indexing, in communication, computation
+and memory, is paid a single time across every operator that reads it.
+
+@subsection Building an arrangement
+
+@code{dtfl_collection_arrange} indexes a collection by its whole record;
+@code{dtfl_collection_arrange_by_key} indexes a collection of
+@code{key || val} records by key, which is the form join and reduce
+read.  Each returns a @code{dtfl_arranged} handle:
+
+@example
+dtfl_arranged *knows = dtfl_collection_arrange_by_key(c, u64, u64,
+    "knows");
+@end example
+
+@code{dtfl_arranged_as_collection} reads an arrangement back as a
+collection; the arranged forms of join and reduce
+(@code{dtfl_arranged_join_core}, @code{dtfl_arranged_reduce_core}) take
+arrangements directly, so two operators sharing one index do not each
+rebuild it.
+
+@subsection Sharing across dataflows
+
+An arrangement can be shared not only within a dataflow but
+@emph{across} dataflows on the same worker.  @code{dtfl_arranged_trace}
+extracts a shareable trace handle, a new reader of the shared index that
+may outlive the arrangement.  @code{dtfl_trace_import} brings that trace
+into another dataflow on the same worker, producing a second arrangement
+over the same backing data.  This is how one maintained collection
+serves an arbitrary number of later queries at almost no additional
+cost: build and arrange it in one dataflow, keep the trace, and import
+it wherever a query needs it.
+
+Trace sharing is worker-local: a trace imports only into dataflows on
+the worker that created it (@pxref{Threads}).  A trace handle holds the
+shared index back from compacting past its frontier, so free it with
+@code{dtfl_trace_free} when done; a handle never freed holds compaction
+forever.
+
+@subsection Trace wrappers and compaction
+
+An arrangement maintains its updates in a compact form, merging batches
+as they accumulate so every reader has an efficient index of all updates
+so far.  As a program advances its inputs and no longer needs to
+distinguish old times, the trace @emph{compacts}: it coarsens the times
+of old updates (down to the frontier its readers still hold) and
+combines updates that have become indistinguishable, which bounds the
+memory an arrangement uses even as the stream of updates grows without
+end.

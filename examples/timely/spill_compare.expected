@@ -1,0 +1,12 @@
+spill_compare configuration:
+  workers:         2
+  total:           64 MB (256 chunks of 256 KB)
+  per worker:      128 chunks (32 MB)
+  with_spill:      true
+  threshold:       4 MB
+  head_reserve:    2 MB
+
+worker 0: received 128 chunks (32 MB) checksum f52e254f236afdec
+worker 1: received 128 chunks (32 MB) checksum 5d9f41fdf487eca1
+
+OK

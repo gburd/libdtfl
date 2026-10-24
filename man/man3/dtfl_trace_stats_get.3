@@ -1,0 +1,104 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 22, 2026
+.Dt DTFL_TRACE_STATS_GET 3
+.Os
+.Sh NAME
+.Nm dtfl_trace_stats_get
+.Nd report the shape of a trace
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/arrange.h
+.Bd -literal
+typedef struct dtfl_trace_stats {
+	size_t size;
+	size_t layers;
+	size_t batches;
+	size_t pending;
+	size_t merges;
+	size_t updates;
+	size_t bytes;
+} dtfl_trace_stats;
+.Ed
+.Ft int
+.Fn dtfl_trace_stats_get "const dtfl_trace *t" "dtfl_trace_stats *out"
+.Sh DESCRIPTION
+.Fn dtfl_trace_stats_get
+fills
+.Fa out
+with the current shape of the shared trace behind the handle
+.Fa t ,
+for monitoring a long-running dataflow.
+Set
+.Fa out->size
+to
+.Li sizeof(dtfl_trace_stats)
+first; fields past that size are left alone, so a program built
+against an older, shorter structure keeps working.
+.Pp
+The fields are:
+.Bl -tag -width updates
+.It Fa layers
+the spine's levels, vacant ones included.
+.It Fa batches
+the batches a cursor over the whole trace would visit, empty batches
+included: each in-progress merge counts its two inputs.
+.It Fa pending
+batches not yet past the physical compaction frontier, which wait
+outside the spine
+.Pq Xr dtfl_trace_set_physical_compaction 3 .
+.It Fa merges
+levels with a merge in progress.
+.It Fa updates
+the (key, value, time, difference) updates across all batches.
+.It Fa bytes
+the bytes the batches' key, value, offset, time and difference columns
+occupy, not counting allocation slack.
+.El
+.Pp
+A trace whose readers never advance their compaction holds keeps every
+batch:
+.Fa batches
+and
+.Fa pending
+grow with each sealed epoch.
+A healthy trace keeps
+.Fa batches
+near the logarithm of
+.Fa updates .
+.Sh RETURN VALUES
+Returns
+.Dv DTFL_OK ,
+or
+.Dv DTFL_EINVAL
+if an argument is
+.Dv NULL
+or
+.Fa out->size
+is smaller than a field or larger than the structure this library
+knows.
+Once every reader has dropped the trace, all counts are zero.
+.Sh EXAMPLES
+A handle kept only for monitoring should give up its compaction holds,
+or it will itself keep every batch alive:
+.Bd -literal -offset indent
+dtfl_trace *watch = dtfl_arranged_trace(a);
+dtfl_trace_stats st = { .size = sizeof st };
+
+dtfl_trace_set_logical_compaction(watch, NULL, 0);
+dtfl_trace_set_physical_compaction(watch, NULL, 0);
+/* ... later, on the same worker ... */
+if (dtfl_trace_stats_get(watch, &st) == DTFL_OK)
+	printf("%zu batches, %zu updates\en", st.batches, st.updates);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_arranged_trace 3 ,
+.Xr dtfl_trace_set_logical_compaction 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+A libdtfl addition; differential dataflow reports the same information
+as logging events
+.Pq Pa logging.rs .
+.Sh THREAD SAFETY
+The trace handle belongs to the worker thread that created it.

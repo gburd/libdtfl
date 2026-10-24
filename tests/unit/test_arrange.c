@@ -1,0 +1,1044 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Greg Burd
+ *
+ * tests/unit/test_arrange.c: the arrange operator and the Arranged type.
+ *
+ * A worker builds a collection from an input session, arranges it into a
+ * shared trace, reads it back with as_collection, and an inspect sink
+ * records the (record, time, diff) multiset.  The result must equal the
+ * input consolidated: one net update per (record, time), zeros dropped.
+ * Further tests check a multi-epoch insert then retract, enter/leave into a
+ * region, and a shared import where two downstream operators read one trace.
+ */
+#include "dtfl_test.h"
+
+#include "dd/arrange_int.h"
+
+#include "dtfl/arrange.h"
+#include "dtfl/config.h"
+#include "dtfl/collection.h"
+#include "dtfl/record.h"
+#include "dtfl/reduce.h"
+#include "dtfl/time.h"
+#include "dtfl/timely.h"
+#include "dtfl/timely_ops.h"
+
+#include <string.h>
+
+#define MAX_OUT 4096
+
+typedef struct out_upd {
+	uint64_t rec, time;
+	int64_t diff;
+} out_upd;
+
+typedef struct collected {
+	out_upd u[MAX_OUT];
+	size_t n;
+} collected;
+
+static void
+inspect_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	collected *c = ctx;
+
+	(void)len;
+	if (c->n >= MAX_OUT)
+		return;
+	c->u[c->n].rec = dtfl_get_u64(rec);
+	c->u[c->n].time = time[0];
+	memcpy(&c->u[c->n].diff, diff, sizeof(int64_t));
+	c->n++;
+}
+
+static int64_t
+out_diff(const collected *c, uint64_t rec, uint64_t time)
+{
+	size_t i;
+
+	for (i = 0; i < c->n; i++)
+		if (c->u[i].rec == rec && c->u[i].time == time)
+			return c->u[i].diff;
+	return 0;
+}
+
+typedef struct build_ctx {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	collected *out;
+	collected *out2;	/* second import consumer */
+} build_ctx;
+
+typedef struct probe_cond {
+	dtfl_probe *probe;
+	uint64_t target;
+} probe_cond;
+
+static bool
+probe_behind(void *vctx)
+{
+	probe_cond *pc = vctx;
+
+	return dtfl_probe_less_than(pc->probe, &pc->target);
+}
+
+/* ------------------------------------------------------------------ */
+/* arrange then as_collection equals consolidate.                      */
+/* ------------------------------------------------------------------ */
+
+static void
+build_arrange(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange(base, "Arrange");
+	dtfl_collection *coll = dtfl_arranged_as_collection(arr,
+	    dtfl_type_u64(), NULL, DTFL_NOCTX);
+	dtfl_collection *ins = dtfl_collection_inspect(coll, inspect_sink,
+	    DTFL_CTX(c->out, NULL));
+	dtfl_collection *probed = dtfl_collection_probe_with(ins, c->probe);
+
+	dtfl_collection_free(probed);
+	dtfl_collection_free(ins);
+	dtfl_collection_free(coll);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+DTFL_TEST(arrange__as_collection_equals_consolidate)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	collected out;
+	uint64_t round;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.out2 = NULL;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_arrange, &c), ==, 0);
+
+	/*
+	 * Epoch 0: insert keys 0..4, and insert key 2 a second time so its
+	 * net multiplicity is +2.  Epoch 1: retract key 0.  Consolidated,
+	 * the output is +1 for keys 1,3,4 and +2 for key 2 at time 0, and
+	 * -1 for key 0 at time 1.
+	 */
+	{
+		unsigned char key[8];
+		uint64_t next = 1;
+		int k;
+
+		for (k = 0; k < 5; k++) {
+			dtfl_put_u64(key, (uint64_t)k);
+			dtfl_input_session_insert(c.in, key, sizeof key);
+		}
+		dtfl_put_u64(key, 2);
+		dtfl_input_session_insert(c.in, key, sizeof key);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{
+			probe_cond pc = { c.probe, next };
+
+			dtfl_worker_step_while(w, probe_behind, &pc);
+		}
+	}
+	{
+		unsigned char key[8];
+		uint64_t next = 2;
+
+		dtfl_put_u64(key, 0);
+		dtfl_input_session_remove(c.in, key, sizeof key);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{
+			probe_cond pc = { c.probe, next };
+
+			dtfl_worker_step_while(w, probe_behind, &pc);
+		}
+	}
+	(void)round;
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	assert_true(dtfl_probe_done(c.probe));
+
+	/* The consolidated multiset. */
+	assert_int64(out_diff(&out, 0, 0), ==, 1);
+	assert_int64(out_diff(&out, 1, 0), ==, 1);
+	assert_int64(out_diff(&out, 2, 0), ==, 2);
+	assert_int64(out_diff(&out, 3, 0), ==, 1);
+	assert_int64(out_diff(&out, 4, 0), ==, 1);
+	assert_int64(out_diff(&out, 0, 1), ==, -1);
+	/* No other (record, time) carries a diff, and none is zero. */
+	{
+		size_t i;
+
+		for (i = 0; i < out.n; i++)
+			assert_int64(out.u[i].diff, !=, 0);
+	}
+	assert_size(out.n, ==, 6);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* Multi-epoch: insert at t0, retract at t1; net is +1 at 0, -1 at 1.  */
+/* ------------------------------------------------------------------ */
+
+DTFL_TEST(arrange__multi_epoch_insert_retract)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	collected out;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.out2 = NULL;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_arrange, &c), ==, 0);
+
+	/* Insert key 7 at t0, retract it at t1. */
+	{
+		unsigned char key[8];
+		uint64_t next = 1;
+
+		dtfl_put_u64(key, 7);
+		dtfl_input_session_insert(c.in, key, sizeof key);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{ probe_cond pc = { c.probe, next }; dtfl_worker_step_while(w, probe_behind, &pc); }
+	}
+	{
+		unsigned char key[8];
+		uint64_t next = 2;
+
+		dtfl_put_u64(key, 7);
+		dtfl_input_session_remove(c.in, key, sizeof key);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{ probe_cond pc = { c.probe, next }; dtfl_worker_step_while(w, probe_behind, &pc); }
+	}
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	/* The trace, read as a collection, holds +1 at t0 and -1 at t1. */
+	assert_int64(out_diff(&out, 7, 0), ==, 1);
+	assert_int64(out_diff(&out, 7, 1), ==, -1);
+	assert_size(out.n, ==, 2);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* enter / leave a region.                                             */
+/* ------------------------------------------------------------------ */
+
+/* The region body: enter the arrangement, read it back, inspect. */
+static dtfl_arranged *region_arr_in;
+static collected *region_out;
+static dtfl_probe *region_probe;
+
+static void
+region_body(dtfl_scope *region, void *arg)
+{
+	dtfl_arranged *inner;
+	dtfl_collection *coll;
+	dtfl_collection *ins;
+	dtfl_collection *probed;
+
+	(void)arg;
+	inner = dtfl_arranged_enter_region(region_arr_in, region);
+	coll = dtfl_arranged_as_collection(inner, dtfl_type_u64(), NULL,
+	    DTFL_NOCTX);
+	ins = dtfl_collection_inspect(coll, inspect_sink,
+	    DTFL_CTX(region_out, NULL));
+	probed = dtfl_collection_probe_with(ins, region_probe);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(ins);
+	dtfl_collection_free(coll);
+	dtfl_arranged_free(inner);
+}
+
+static void
+build_enter_region(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange(base, "Arrange");
+
+	region_arr_in = arr;
+	region_out = c->out;
+	region_probe = c->probe;
+	assert_int(dtfl_scope_region(scope, "Region", region_body, NULL), ==,
+	    0);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+DTFL_TEST(arrange__enter_region)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	collected out;
+
+	(void)params; (void)data;
+	memset(&out, 0, sizeof out);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out;
+	c.out2 = NULL;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_enter_region, &c),
+	    ==, 0);
+
+	{
+		unsigned char key[8];
+		uint64_t next = 1;
+		int k;
+
+		for (k = 0; k < 3; k++) {
+			dtfl_put_u64(key, (uint64_t)k);
+			dtfl_input_session_insert(c.in, key, sizeof key);
+		}
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{ probe_cond pc = { c.probe, next }; dtfl_worker_step_while(w, probe_behind, &pc); }
+	}
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	/* The region read the same arrangement: keys 0,1,2 at time 0, +1. */
+	assert_int64(out_diff(&out, 0, 0), ==, 1);
+	assert_int64(out_diff(&out, 1, 0), ==, 1);
+	assert_int64(out_diff(&out, 2, 0), ==, 1);
+	assert_size(out.n, ==, 3);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared import: two downstream operators read one trace.             */
+/* ------------------------------------------------------------------ */
+
+static void
+build_import(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange(base, "Arrange");
+	dtfl_trace *trace = dtfl_arranged_trace(arr);
+	/* Two importers of the same shared trace. */
+	dtfl_arranged *imp1 = dtfl_trace_import(trace, scope, "Import1");
+	dtfl_arranged *imp2 = dtfl_trace_import(trace, scope, "Import2");
+	dtfl_collection *coll1 = dtfl_arranged_as_collection(imp1,
+	    dtfl_type_u64(), NULL, DTFL_NOCTX);
+	dtfl_collection *coll2 = dtfl_arranged_as_collection(imp2,
+	    dtfl_type_u64(), NULL, DTFL_NOCTX);
+	dtfl_collection *ins1 = dtfl_collection_inspect(coll1, inspect_sink,
+	    DTFL_CTX(c->out, NULL));
+	dtfl_collection *ins2 = dtfl_collection_inspect(coll2, inspect_sink,
+	    DTFL_CTX(c->out2, NULL));
+	dtfl_collection *p1 = dtfl_collection_probe_with(ins1, c->probe);
+	dtfl_collection *p2 = dtfl_collection_probe_with(ins2, c->probe);
+
+	dtfl_collection_free(p1);
+	dtfl_collection_free(p2);
+	dtfl_collection_free(ins1);
+	dtfl_collection_free(ins2);
+	dtfl_collection_free(coll1);
+	dtfl_collection_free(coll2);
+	dtfl_arranged_free(imp1);
+	dtfl_arranged_free(imp2);
+	dtfl_trace_free(trace);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+DTFL_TEST(arrange__shared_import_two_readers)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	collected out1, out2;
+
+	(void)params; (void)data;
+	memset(&out1, 0, sizeof out1);
+	memset(&out2, 0, sizeof out2);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = &out1;
+	c.out2 = &out2;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_import, &c), ==, 0);
+
+	{
+		unsigned char key[8];
+		uint64_t next = 1;
+		int k;
+
+		for (k = 0; k < 4; k++) {
+			dtfl_put_u64(key, (uint64_t)(k * 10));
+			dtfl_input_session_insert(c.in, key, sizeof key);
+		}
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		{ probe_cond pc = { c.probe, next }; dtfl_worker_step_while(w, probe_behind, &pc); }
+	}
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+
+	/* Both importers saw the same data from the one shared trace. */
+	{
+		uint64_t keys[] = { 0, 10, 20, 30 };
+		size_t i;
+
+		for (i = 0; i < 4; i++) {
+			assert_int64(out_diff(&out1, keys[i], 0), ==, 1);
+			assert_int64(out_diff(&out2, keys[i], 0), ==, 1);
+		}
+	}
+	assert_size(out1.n, ==, 4);
+	assert_size(out2.n, ==, 4);
+
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* Compaction holds on a public trace handle.                          */
+/* ------------------------------------------------------------------ */
+
+static dtfl_trace *compact_trace;
+
+static void
+build_compact(dtfl_scope *scope, void *arg)
+{
+	build_ctx *c = arg;
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange(base, "Arrange");
+	dtfl_collection *coll = dtfl_arranged_as_collection(arr,
+	    dtfl_type_u64(), NULL, DTFL_NOCTX);
+	dtfl_collection *probed = dtfl_collection_probe_with(coll, c->probe);
+
+	compact_trace = dtfl_arranged_trace(arr);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(coll);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+typedef struct trace_rows {
+	uint64_t key[64], time[64];
+	int64_t diff[64];
+	size_t n;
+} trace_rows;
+
+static void
+trace_row(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, const uint64_t *time, const void *diff)
+{
+	trace_rows *r = ctx;
+
+	(void)klen; (void)val; (void)vlen;
+	if (r->n >= 64)
+		return;
+	r->key[r->n] = dtfl_get_u64(key);
+	r->time[r->n] = time[0];
+	memcpy(&r->diff[r->n], diff, sizeof(int64_t));
+	r->n++;
+}
+
+/* Net diff of `key` at times <= `t` in a trace walk. */
+static int64_t
+rows_accum(const trace_rows *r, uint64_t key, uint64_t t)
+{
+	int64_t sum = 0;
+	size_t i;
+
+	for (i = 0; i < r->n; i++)
+		if (r->key[i] == key && r->time[i] <= t)
+			sum += r->diff[i];
+	return sum;
+}
+
+/*
+ * Updates `key` by `diff` at the session's current time, then seals that
+ * time by advancing to `next` and stepping until the probe passes it.
+ */
+static void
+feed(dtfl_worker *w, build_ctx *c, uint64_t key, int64_t diff, uint64_t next)
+{
+	unsigned char k[8];
+	probe_cond pc = { c->probe, next };
+
+	dtfl_put_u64(k, key);
+	if (diff > 0)
+		dtfl_input_session_insert(c->in, k, sizeof k);
+	else
+		dtfl_input_session_remove(c->in, k, sizeof k);
+	dtfl_input_session_advance_to(c->in, &next);
+	dtfl_input_session_flush(c->in);
+	dtfl_worker_step_while(w, probe_behind, &pc);
+}
+
+DTFL_TEST(arrange__trace_compaction_holds)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	build_ctx c;
+	trace_rows before, after;
+	const uint64_t *hold;
+	uint64_t f, early = 1;
+	size_t n, i;
+	unsigned round;
+
+	(void)params; (void)data;
+	memset(&before, 0, sizeof before);
+	memset(&after, 0, sizeof after);
+	c.in = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	c.out = NULL;
+	c.out2 = NULL;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_compact, &c), ==, 0);
+	assert_not_null(compact_trace);
+
+	/* A new handle holds both frontiers at the minimum time. */
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 0);
+	hold = dtfl_trace_physical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 0);
+
+	/* 7: +1 at t0, -1 at t1.  9: +1 at t2, +1 at t3. */
+	feed(w, &c, 7, 1, 1);
+	feed(w, &c, 7, -1, 2);
+	feed(w, &c, 9, 1, 3);
+	feed(w, &c, 9, 1, 4);
+
+	/* Held at 0, the walk reports every update at its original time. */
+	dtfl_trace_to_vec(compact_trace, trace_row, DTFL_CTX(&before, NULL));
+	assert_size(before.n, ==, 4);
+	assert_int64(rows_accum(&before, 7, 0), ==, 1);
+	assert_int64(rows_accum(&before, 7, 1), ==, 0);
+	assert_int64(rows_accum(&before, 9, 2), ==, 1);
+	assert_int64(rows_accum(&before, 9, 3), ==, 2);
+
+	/* Advance both holds to 4; the getters report the new hold. */
+	f = 4;
+	dtfl_trace_set_logical_compaction(compact_trace, &f, 1);
+	dtfl_trace_set_physical_compaction(compact_trace, &f, 1);
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(hold[0], ==, 4);
+
+	/* A frontier behind the hold is joined in, so the hold stays at 4. */
+	dtfl_trace_set_logical_compaction(compact_trace, &early, 1);
+	hold = dtfl_trace_logical_compaction(compact_trace, &n);
+	assert_uint64(hold[0], ==, 4);
+
+	/*
+	 * Give the spine work to do so it merges: more epochs, each a no-op
+	 * pair on an unrelated key, then close.  Every reader is past 4.
+	 */
+	for (round = 0; round < 8; round++) {
+		feed(w, &c, 100 + round, 1, 5 + 2 * round);
+		feed(w, &c, 100 + round, -1, 6 + 2 * round);
+	}
+	f = 20;
+	dtfl_trace_set_logical_compaction(compact_trace, &f, 1);
+	dtfl_trace_set_physical_compaction(compact_trace, &f, 1);
+	/*
+	 * Observe compaction while the dataflow is live: the input stays open
+	 * and the arrange operator still runs, so no operator-held reader may
+	 * pin the trace behind the handle's holds.  Two more epochs give the
+	 * spine fuel to finish its merges.
+	 */
+	feed(w, &c, 200, 1, 21);
+	feed(w, &c, 200, -1, 22);
+
+	dtfl_trace_to_vec(compact_trace, trace_row, DTFL_CTX(&after, NULL));
+	/* Accumulations at times beyond the frontier are unchanged. */
+	assert_int64(rows_accum(&after, 7, UINT64_MAX), ==, 0);
+	assert_int64(rows_accum(&after, 9, UINT64_MAX), ==, 2);
+	for (round = 0; round < 8; round++)
+		assert_int64(rows_accum(&after, 100 + round, UINT64_MAX), ==, 0);
+	/*
+	 * Compaction happened in the merged history: key 9's two updates
+	 * (t2, t3) are one update advanced to the frontier, and key 7 and
+	 * the early no-op keys cancelled out and are gone.  The spine merges
+	 * with amortized effort, so the newest batches (keys 107 and 200)
+	 * need not have merged yet; nothing older may survive unadvanced.
+	 */
+	for (i = 0; i < after.n; i++) {
+		if (after.key[i] == 9) {
+			assert_uint64(after.time[i], ==, 20);
+			assert_int64(after.diff[i], ==, 2);
+		} else {
+			assert_true(after.key[i] == 107 || after.key[i] == 200);
+		}
+	}
+	assert_size(after.n, <, before.n + 2 * 8);
+	assert_int64(rows_accum(&after, 200, UINT64_MAX), ==, 0);
+
+	/*
+	 * A cut behind the physical hold has no clean cut: the batches below
+	 * it may have merged (spine_fueled.rs batches_through asserts
+	 * physical_frontier <= upper).  A cut at a batch boundary at or
+	 * beyond the hold is clean.
+	 */
+	{
+		trace_rows scratch;
+		uint64_t behind = 5, at = 22;
+
+		memset(&scratch, 0, sizeof scratch);
+		assert_false(dtfl_trace_to_vec_through(compact_trace, &behind,
+		    1, trace_row, DTFL_CTX(&scratch, NULL)));
+		assert_size(scratch.n, ==, 0);
+		assert_true(dtfl_trace_to_vec_through(compact_trace, &at, 1,
+		    trace_row, DTFL_CTX(&scratch, NULL)));
+	}
+
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_trace_free(compact_trace);
+	compact_trace = NULL;
+	dtfl_probe_free(c.probe);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/*
+ * __dtfl_caps_insert keeps the held capabilities an antichain, as timely's
+ * Antichain<Capability<T>>::insert does: a capability above a held one is
+ * dropped, and a capability below held ones replaces them.  The arrange,
+ * reduce and upsert batch tilings depend on it; a set holding (0,4,2) and
+ * (2,4,2) together tiles a degenerate [lower, lower) batch.
+ */
+typedef struct caps_build {
+	dtfl_unordered_input *in;
+	dtfl_cap *cap;
+} caps_build;
+
+static void
+build_caps(dtfl_scope *scope, void *arg)
+{
+	caps_build *b = arg;
+
+	(void)dtfl_unordered_input_new(scope, dtfl_type_u64(), &b->in,
+	    &b->cap);
+}
+
+DTFL_TEST(arrange__caps_insert_antichain)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *u = dtfl_time_u64();
+	dtfl_time_class *p2 = dtfl_time_product(u, u);
+	dtfl_time_class *tc = dtfl_time_product(p2, u);
+	const uint64_t lo[3] = { 0, 4, 2 }, hi[3] = { 2, 4, 2 };
+	const uint64_t side[3] = { 3, 0, 0 };
+	caps_build b;
+	__dtfl_vec caps;
+	size_t i;
+
+	(void)params; (void)data;
+	munit_assert_int(dtfl_worker_dataflow(w, "caps", tc, build_caps, &b),
+	    ==, 0);
+	__dtfl_vec_init(&caps, sizeof(dtfl_cap *));
+
+	/* (2,4,2) then (0,4,2): the lower one replaces the higher. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, hi));
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, lo));
+	munit_assert_size(caps.len, ==, 1);
+	munit_assert_memory_equal(sizeof lo,
+	    dtfl_cap_time(*DTFL_VEC_AT(&caps, dtfl_cap *, 0)), lo);
+
+	/* (2,4,2) again: redundant, dropped. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, hi));
+	munit_assert_size(caps.len, ==, 1);
+
+	/* (3,0,0) is incomparable to (0,4,2): both held. */
+	__dtfl_caps_insert(&caps, tc, dtfl_cap_delayed(b.cap, side));
+	munit_assert_size(caps.len, ==, 2);
+
+	for (i = 0; i < caps.len; i++)
+		dtfl_cap_drop(*DTFL_VEC_AT(&caps, dtfl_cap *, i));
+	__dtfl_vec_free(&caps);
+	dtfl_cap_drop(b.cap);
+	dtfl_unordered_input_free(b.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_time_class_free(tc);
+	dtfl_time_class_free(p2);
+	dtfl_time_class_free(u);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/*
+ * Config::idle_merge_effort (lib.rs): a trace left idle keeps merging
+ * toward one batch only when the effort is set.  Epochs 0..3 load 64, 16,
+ * 4 and 1 new keys, which leaves four Single layers in each spine; then
+ * the input stays open at time 4 and the worker steps with nothing to do.
+ * With effort, each operator's own activator reschedules it and each
+ * activation's writer.exert() merges, until every trace is one batch and
+ * the default logic answers None.  Without it, nothing is scheduled and
+ * the batches stay.  The shapes cover each operator that installs the
+ * logic: arrange (arrangement.rs), arrange_by_key and reduce (reduce.rs
+ * output trace), and arrange_from_upsert (upsert.rs).
+ */
+static const size_t idle_sizes[] = { 64, 16, 4, 1 };
+
+enum idle_shape { IDLE_ARRANGE, IDLE_REDUCE, IDLE_UPSERT };
+
+typedef struct idle_ctx {
+	enum idle_shape shape;
+	bool pin;			/* hold a reader at physical 0 while loading */
+	dtfl_trace *reader;		/* the pinned reader (pin only) */
+	dtfl_trace *watch;		/* pin: an unpinned handle for stats */
+	dtfl_trace_stats pinned_st;	/* pin: while the reader holds */
+	dtfl_trace_stats final_st;	/* pin: after the idle merges */
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	__dtfl_trace_box *box[2];	/* retained: traces outlive Arranged */
+	size_t nbox;
+	size_t loaded[2], idle[2];	/* batch counts after loading, idling */
+	size_t steps;			/* idle steps taken */
+} idle_ctx;
+
+static void
+idle_keep(idle_ctx *c, dtfl_arranged *a)
+{
+	c->box[c->nbox++] = __dtfl_trace_box_retain(
+	    __dtfl_arranged_agent(a)->box);
+}
+
+static void
+idle_count(void *ctx, const void *key, size_t klen, size_t n,
+    const void *const *in_vals, const size_t *in_vlens, const void *in_diffs,
+    size_t m, const void *const *out_vals, const size_t *out_vlens,
+    const void *out_diffs, dtfl_reduce_emit *out)
+{
+	int64_t one = 1;
+	unsigned char b[8];
+
+	(void)ctx; (void)key; (void)klen; (void)in_vals; (void)in_vlens;
+	(void)in_diffs; (void)m; (void)out_vals; (void)out_vlens;
+	(void)out_diffs;
+	dtfl_put_u64(b, n);
+	dtfl_reduce_emit_pair(out, b, 8, &one);
+}
+
+static void
+build_idle(dtfl_scope *scope, void *arg)
+{
+	idle_ctx *c = arg;
+	const dtfl_type *u64 = dtfl_type_u64();
+	dtfl_collection *base = dtfl_input_session_to_collection(c->in, scope);
+	dtfl_arranged *arr, *red = NULL;
+
+	/* No reader holds compaction back, so the spines may merge freely. */
+	switch (c->shape) {
+	case IDLE_ARRANGE:
+		arr = dtfl_collection_arrange(base, "Arrange");
+		break;
+	case IDLE_REDUCE:
+		arr = dtfl_collection_arrange_by_key(base, u64, u64, "ByKey");
+		red = dtfl_arranged_reduce_abelian(arr, "Count", u64,
+		    dtfl_arranged_diff(arr), idle_count, DTFL_NOCTX);
+		break;
+	default:
+		arr = dtfl_arrange_from_upsert(base, u64, u64, "Upsert");
+		break;
+	}
+	idle_keep(c, arr);
+	if (c->pin) {
+		uint64_t zero = 0;
+
+		c->reader = dtfl_arranged_trace(arr);
+		dtfl_trace_set_physical_compaction(c->reader, &zero, 1);
+		/*
+		 * A second reader for the stats.  A reader that never advances
+		 * pins the trace, so this one releases both holds at once (the
+		 * empty frontier), as a monitoring handle should.
+		 */
+		c->watch = dtfl_arranged_trace(arr);
+		dtfl_trace_set_logical_compaction(c->watch, NULL, 0);
+		dtfl_trace_set_physical_compaction(c->watch, NULL, 0);
+	}
+	if (red != NULL) {
+		idle_keep(c, red);
+		dtfl_stream_probe_with(dtfl_arranged_stream(red), c->probe);
+		dtfl_arranged_free(red);
+	} else {
+		dtfl_stream_probe_with(dtfl_arranged_stream(arr), c->probe);
+	}
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(base);
+}
+
+static size_t
+idle_most(const idle_ctx *c)
+{
+	size_t i, most = 0;
+
+	for (i = 0; i < c->nbox; i++)
+		most = DTFL_MAX(most, __dtfl_trace_batch_count(c->box[i]->trace));
+	return most;
+}
+
+static void
+idle_worker(dtfl_worker *w, void *arg)
+{
+	idle_ctx *c = arg;
+	dtfl_time_class *tc = dtfl_time_u64();
+	uint64_t e, key = 0;
+	size_t i;
+
+	munit_assert_int(dtfl_worker_dataflow(w, "idle", tc, build_idle, c),
+	    ==, 0);
+	for (e = 0; e < 4; e++) {
+		uint64_t next = e + 1;
+		probe_cond pc = { c->probe, next };
+
+		for (i = 0; i < idle_sizes[e]; i++) {
+			unsigned char r[17];
+			size_t len = 16;
+
+			dtfl_put_u64(r, key);
+			if (c->shape == IDLE_UPSERT) {
+				r[8] = 1;	/* Some(key) */
+				dtfl_put_u64(r + 9, key);
+				len = 17;
+			} else {
+				dtfl_put_u64(r + 8, key);
+				if (c->shape == IDLE_ARRANGE)
+					len = 8;
+			}
+			key++;
+			dtfl_input_session_insert(c->in, r, len);
+		}
+		dtfl_input_session_advance_to(c->in, &next);
+		dtfl_input_session_flush(c->in);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+	if (c->pin) {
+		/*
+		 * The pinned reader kept the batches pending; let the worker go
+		 * quiet, then release them.  Only consider_merges' activation
+		 * can now reschedule the operator: no input arrives.
+		 */
+		for (i = 0; i < 50; i++)
+			dtfl_worker_step(w);
+		c->pinned_st.size = sizeof c->pinned_st;
+		munit_assert_int(dtfl_trace_stats_get(c->watch, &c->pinned_st),
+		    ==, DTFL_OK);
+		dtfl_trace_free(c->reader);
+		c->reader = NULL;
+	}
+	for (i = 0; i < c->nbox; i++)
+		c->loaded[i] = __dtfl_trace_batch_count(c->box[i]->trace);
+	for (c->steps = 0; c->steps < 200 && idle_most(c) > 1; c->steps++)
+		dtfl_worker_step(w);
+	for (i = 0; i < c->nbox; i++)
+		c->idle[i] = __dtfl_trace_batch_count(c->box[i]->trace);
+	if (c->watch != NULL) {
+		c->final_st.size = sizeof c->final_st;
+		munit_assert_int(dtfl_trace_stats_get(c->watch, &c->final_st),
+		    ==, DTFL_OK);
+		dtfl_trace_free(c->watch);
+		c->watch = NULL;
+	}
+	dtfl_input_session_close(c->in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_time_class_free(tc);
+}
+
+static void run_idle_ctx(enum idle_shape shape, int64_t effort, idle_ctx *c);
+
+static void
+run_idle(enum idle_shape shape, int64_t effort, idle_ctx *c)
+{
+	memset(c, 0, sizeof *c);
+	run_idle_ctx(shape, effort, c);
+}
+
+/* run_idle on a context the caller prepared (c->pin). */
+static void
+run_idle_ctx(enum idle_shape shape, int64_t effort, idle_ctx *c)
+{
+	dtfl_config *cfg = dtfl_config_new();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *rt = NULL, *fields[2];
+	size_t i;
+
+	munit_assert_int(dtfl_config_set_idle_merge_effort(cfg, effort), ==, 0);
+	munit_assert_int64(dtfl_config_idle_merge_effort(cfg), ==, effort);
+	c->shape = shape;
+	fields[0] = dtfl_type_u64();
+	switch (shape) {
+	case IDLE_ARRANGE:
+		c->in = dtfl_input_session_new(dtfl_type_u64(), r);
+		break;
+	case IDLE_REDUCE:
+		rt = dtfl_type_pair(dtfl_type_u64(), dtfl_type_u64());
+		c->in = dtfl_input_session_new(rt, r);
+		break;
+	default:
+		fields[1] = dtfl_type_option(dtfl_type_u64());
+		rt = dtfl_type_tuple(fields, 2);
+		c->in = dtfl_input_session_new(rt, r);
+		break;
+	}
+	c->probe = dtfl_probe_new();
+	munit_assert_int(dtfl_execute(cfg, idle_worker, c, NULL), ==, 0);
+	for (i = 0; i < c->nbox; i++) {
+		munit_assert_size(c->loaded[i], >, 1);
+		__dtfl_trace_box_release(c->box[i]);
+	}
+	dtfl_probe_free(c->probe);
+	if (rt != NULL)
+		dtfl_type_free((dtfl_type *)rt);
+	if (shape == IDLE_UPSERT)
+		dtfl_type_free((dtfl_type *)fields[1]);
+	dtfl_diff_free(r);
+	dtfl_config_free(cfg);
+}
+
+static void
+check_idle(enum idle_shape shape, size_t nbox)
+{
+	idle_ctx c;
+	size_t i;
+
+	run_idle(shape, 0, &c);
+	munit_assert_size(c.nbox, ==, nbox);
+	for (i = 0; i < c.nbox; i++)
+		munit_assert_size(c.idle[i], ==, c.loaded[i]);
+
+	run_idle(shape, 16, &c);
+	munit_assert_size(c.nbox, ==, nbox);
+	for (i = 0; i < c.nbox; i++)
+		munit_assert_size(c.idle[i], ==, 1);
+}
+
+DTFL_TEST(arrange__idle_merge_effort)
+{
+	dtfl_config *cfg = dtfl_config_new();
+
+	(void)params; (void)data;
+	munit_assert_int(dtfl_config_set_idle_merge_effort(cfg, -1), ==,
+	    DTFL_EINVAL);
+	munit_assert_int64(dtfl_config_idle_merge_effort(cfg), ==, 0);
+	dtfl_config_free(cfg);
+
+	check_idle(IDLE_ARRANGE, 1);
+	check_idle(IDLE_REDUCE, 2);
+	check_idle(IDLE_UPSERT, 1);
+	return MUNIT_OK;
+}
+
+/*
+ * The activation at the end of consider_merges (spine_fueled.rs 432-436):
+ * a reader pins the physical frontier at 0 while the batches load, so they
+ * stay pending; the worker goes quiet; then the reader is dropped, which
+ * releases the hold and migrates the batches into the spine from the
+ * compaction call, outside any operator activation.  With effort set, the
+ * spine must reschedule its operator from there, or nothing ever merges.
+ */
+DTFL_TEST(arrange__idle_merge_after_release)
+{
+	idle_ctx c;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.pin = true;
+	run_idle_ctx(IDLE_ARRANGE, 16, &c);
+	munit_assert_size(c.nbox, ==, 1);
+	munit_assert_size(c.idle[0], ==, 1);
+	return MUNIT_OK;
+}
+
+/*
+ * dtfl_trace_stats_get on the pinned run above: while the pinned reader
+ * holds the physical frontier at 0, the four loaded epochs (plus the
+ * empty seals) wait as pending batches holding all 85 updates; after the
+ * release and the idle merges, one batch holds them, nothing is pending
+ * and no merge is in progress.  The byte count covers at least the 85
+ * eight-byte keys.  A bad size is refused.
+ */
+DTFL_TEST(arrange__trace_stats)
+{
+	idle_ctx c;
+	dtfl_trace_stats bad;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.pin = true;
+	run_idle_ctx(IDLE_ARRANGE, 16, &c);
+	munit_assert_size(c.pinned_st.pending, >=, 4);
+	munit_assert_size(c.pinned_st.batches, ==, c.pinned_st.pending);
+	munit_assert_size(c.pinned_st.updates, ==, 85);
+	munit_assert_size(c.pinned_st.merges, ==, 0);
+	munit_assert_size(c.final_st.batches, ==, 1);
+	munit_assert_size(c.final_st.pending, ==, 0);
+	munit_assert_size(c.final_st.merges, ==, 0);
+	munit_assert_size(c.final_st.updates, ==, 85);
+	munit_assert_size(c.final_st.bytes, >=, 85 * 8);
+	munit_assert_size(c.final_st.layers, >=, 1);
+
+	memset(&bad, 0, sizeof bad);
+	bad.size = sizeof bad + 8;
+	munit_assert_int(dtfl_trace_stats_get(NULL, &bad), ==, DTFL_EINVAL);
+	return MUNIT_OK;
+}
+
+static MunitTest tests[] = {
+	DTFL_T(arrange__as_collection_equals_consolidate),
+	DTFL_T(arrange__multi_epoch_insert_retract),
+	DTFL_T(arrange__enter_region),
+	DTFL_T(arrange__shared_import_two_readers),
+	DTFL_T(arrange__trace_compaction_holds),
+	DTFL_T(arrange__caps_insert_antichain),
+	DTFL_T(arrange__idle_merge_effort),
+	DTFL_T(arrange__idle_merge_after_release),
+	DTFL_T(arrange__trace_stats),
+	DTFL_T_END
+};
+
+DTFL_TEST_MAIN("arrange", tests)

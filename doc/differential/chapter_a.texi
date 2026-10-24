@@ -1,0 +1,64 @@
+@c SPDX-License-Identifier: MIT
+@c doc/differential/chapter_a.texi: ports differential-dataflow
+@c mdbook/src/chapter_a/chapter_a.md (Increase all the things),
+@c chapter_a_1.md (scale), chapter_a_2.md (parallelism), chapter_a_3.md
+@c (interactivity).
+
+@node Scaling Up
+@section Scale, parallelism, and interactivity
+
+Differential dataflow is meant to scale in three directions: the amount
+of data, the number of workers, and the rate of interaction.  Each is a
+small change to the skip-level program of the previous section.
+
+@subsection Increase the scale
+
+Ten people is a small organization; the same program handles ten
+million.  Nothing in the dataflow changes, only the input loop bound.
+Because the result is maintained incrementally, applying ten million
+single-person changes after the initial load costs far less than ten
+million recomputations; in practice it is well under a microsecond per
+change.  (Turn off the per-record @code{inspect} first, or printing
+dominates the time.)
+
+@subsection Increase the parallelism
+
+Differential dataflow runs across many workers and produces the same
+output.  The one thing to get right is that each worker should load only
+its share of the input, not the whole thing.  A worker knows its own
+index and the total count:
+
+@example
+for (person = dtfl_worker_index(w); person < size;
+     person += dtfl_worker_peers(w)) @{
+        unsigned char buf[16];
+        dtfl_put_u64(buf, person / 2);
+        dtfl_put_u64(buf + 8, person);
+        dtfl_input_session_insert(input, buf, sizeof buf);
+@}
+@end example
+
+Each worker inserts the people whose number is its index modulo the peer
+count, and the same partition applies to the changes.  Select the worker
+count and communication mode through @code{dtfl_config}
+(@pxref{Installation}); the dataflow is identical.
+
+@subsection Increase the interactivity
+
+Rather than load every change and wait for the final result, a program
+can apply one change and await its output before supplying the next.
+The tool is the same probe loop as in timely (@pxref{Running Timely
+Dataflows}): attach a probe to the end of the dataflow, and after each
+change advance the input, flush it, and step until the probe catches up.
+
+@example
+dtfl_input_session_advance_to(input, &next);
+dtfl_input_session_flush(input);
+while (dtfl_probe_less_than(probe, dtfl_input_session_time(input)))
+        dtfl_worker_step(w);
+@end example
+
+The flush is what pushes the buffered changes into the dataflow; the
+step loop runs the computation until the output reflects the input's
+current time.  This turns the batch program into an interactive one, one
+change in and its consequences out, at the latency of a single update.

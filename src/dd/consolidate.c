@@ -1,0 +1,559 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Greg Burd
+ * Ported from differential-dataflow differential-dataflow-v0.25.1
+ *   differential-dataflow/src/consolidation.rs
+ * Copyright (c) 2015 Frank McSherry and contributors.
+ *
+ * src/dd/consolidate.c: consolidation of update batches.
+ *
+ * Upstream consolidates a Vec<(D, R)> or Vec<(D, T, R)> in place by
+ * sorting and folding equal runs.  Here the updates are the rows of a
+ * __dtfl_batch (record bytes, tw time words, dw diff bytes), so both
+ * consolidate and consolidate_updates are __dtfl_consolidate_batch,
+ * with tw == 0 for the former.  Records order by their dtfl_type (D1)
+ * and times by Ord, which is word order (D3).  The sort is a stable
+ * merge sort of row indices, then the runs are rebuilt into fresh
+ * storage that replaces the batch's.  Rows with a memcmp-ordered record
+ * of one width up to 8 bytes and at most one time word sort as packed
+ * (word, time, index) triples instead, in the same order.
+ */
+#include "dd/dd_int.h"
+
+/* Rows of one batch, compared by (record, time). */
+typedef struct row_cmp {
+	const __dtfl_batch *b;
+	const dtfl_type *rt;
+} row_cmp;
+
+static int
+cmp_rows(const row_cmp *c, size_t i, size_t j)
+{
+	const void *a, *b;
+	size_t alen, blen;
+	int r;
+
+	a = __dtfl_batch_rec(c->b, i, &alen);
+	b = __dtfl_batch_rec(c->b, j, &blen);
+	r = __dtfl_type_cmp(c->rt, a, alen, b, blen);
+	if (r != 0)
+		return r;
+	return __dtfl_words_cmp(__dtfl_batch_time(c->b, i),
+	    __dtfl_batch_time(c->b, j), c->b->tw);
+}
+
+/* Stable top-down merge sort of v[0..n) using tmp[0..n) as scratch. */
+static void
+msort(const row_cmp *c, size_t *v, size_t *tmp, size_t n)
+{
+	size_t h = n / 2, i = 0, j = h, k = 0;
+
+	if (n < 2)
+		return;
+	msort(c, v, tmp, h);
+	msort(c, v + h, tmp, n - h);
+	if (cmp_rows(c, v[h - 1], v[h]) <= 0)
+		return;		/* already in order */
+	while (i < h && j < n)
+		tmp[k++] = cmp_rows(c, v[j], v[i]) < 0 ? v[j++] : v[i++];
+	while (i < h)
+		tmp[k++] = v[i++];
+	memcpy(v, tmp, k * sizeof *v);	/* v[j..n) is already in place */
+}
+
+/*
+ * Consolidate::consolidate_into's swap: moves out's storage into b and
+ * b's old storage into out, which is left empty with its capacity, so a
+ * caller that keeps out reuses it as the next target.  A column that
+ * lives in its batch's one-block allocation is copied instead of moved
+ * (__dtfl_batch_move_rows), so neither batch points into the other.
+ */
+static void
+swap_storage(__dtfl_batch *b, __dtfl_batch *out)
+{
+	__dtfl_batch_move_rows(b, out);
+}
+
+/*
+ * A row packed for the fixed-width sort: the record as a big-endian word
+ * (so word order is memcmp order), its time word, and its row index.
+ */
+typedef struct packed_row {
+	uint64_t k;
+	uint64_t t;
+	size_t i;
+} packed_row;
+
+static inline int
+packed_cmp(const packed_row *a, const packed_row *b)
+{
+	if (a->k != b->k)
+		return a->k < b->k ? -1 : 1;
+	return (a->t > b->t) - (a->t < b->t);
+}
+
+/*
+ * Below this many rows msort_packed sorts by insertion, which is stable
+ * too, so the order is the same; it saves the merge's recursion and
+ * copies on the short runs an open-loop round consolidates.
+ */
+#define PACKED_INSERTION_ROWS 16
+
+/* msort over packed rows: the same stable merge, compared inline. */
+static void
+msort_packed(packed_row *v, packed_row *tmp, size_t n)
+{
+	size_t h = n / 2, i = 0, j = h, k = 0;
+
+	if (n <= PACKED_INSERTION_ROWS) {
+		for (i = 1; i < n; i++) {
+			packed_row x = v[i];
+
+			/* Strictly less: an equal row stays after its peers. */
+			for (j = i; j > 0 && packed_cmp(&x, &v[j - 1]) < 0; j--)
+				v[j] = v[j - 1];
+			v[j] = x;
+		}
+		return;
+	}
+	msort_packed(v, tmp, h);
+	msort_packed(v + h, tmp, n - h);
+	if (packed_cmp(&v[h - 1], &v[h]) <= 0)
+		return;		/* already in order */
+	while (i < h && j < n)
+		tmp[k++] = packed_cmp(&v[j], &v[i]) < 0 ? v[j++] : v[i++];
+	while (i < h)
+		tmp[k++] = v[i++];
+	memcpy(v, tmp, k * sizeof *v);	/* v[j..n) is already in place */
+}
+
+/*
+ * Stable LSD radix sort of v[0..n) by (k, t), using tmp[0..n) as scratch.
+ * Stability gives the order msort_packed gives: by (k, t), ties in input
+ * order.  Only the bytes that differ between some two rows are passed
+ * over, least significant first (t's bytes, then k's), so a buffer whose
+ * keys and times span a few low bytes sorts in a few passes.  n must fit
+ * the 32-bit bucket counts.
+ */
+static void
+radix_packed(packed_row *v, packed_row *tmp, size_t n)
+{
+	packed_row *src = v, *dst = tmp, *sw;
+	uint64_t dk = 0, dt = 0;
+	uint32_t count[256];
+	unsigned pass;
+	size_t i;
+
+	DTFL_ASSERT(n <= UINT32_MAX);
+	for (i = 1; i < n; i++) {
+		dk |= v[i].k ^ v[0].k;
+		dt |= v[i].t ^ v[0].t;
+	}
+	for (pass = 0; pass < 16; pass++) {
+		bool on_t = pass < 8;
+		unsigned shift = 8 * (pass & 7), bkt;
+		uint32_t sum = 0, c;
+
+		if ((((on_t ? dt : dk) >> shift) & 0xff) == 0)
+			continue;
+		memset(count, 0, sizeof count);
+		for (i = 0; i < n; i++)
+			count[((on_t ? src[i].t : src[i].k) >> shift) & 0xff]++;
+		for (bkt = 0; bkt < 256; bkt++) {
+			c = count[bkt];
+			count[bkt] = sum;
+			sum += c;
+		}
+		for (i = 0; i < n; i++)
+			dst[count[((on_t ? src[i].t : src[i].k) >> shift) &
+			    0xff]++] = src[i];
+		sw = src;
+		src = dst;
+		dst = sw;
+	}
+	if (src != v)
+		memcpy(v, src, n * sizeof *v);
+}
+
+/*
+ * Below this many rows the merge sort beats the radix sort's fixed cost
+ * (a 256-bucket count per pass).
+ */
+#define RADIX_MIN_ROWS 64
+
+/*
+ * The packed rows of b, sorted, when b admits the packed sort: a
+ * memcmp-ordered record type, every record the same length of at most 8
+ * bytes, and at most one time word.  A record left-aligned in a
+ * big-endian word then orders as memcmp does, the lengths tie, and
+ * msort_packed is the same stable merge as msort, so the row order comes
+ * out identical.  Returns NULL otherwise.  The array lives in `scratch`
+ * (a byte vector the caller owns) and has room for 2n rows (the second
+ * half is sort scratch); it is valid until scratch next grows.
+ */
+static packed_row *
+sort_packed(const __dtfl_batch *b, const dtfl_type *rt, __dtfl_vec *scratch)
+{
+	size_t n = __dtfl_batch_len(b), i, len, len0;
+	packed_row *v;
+
+	if (rt->cmp != NULL || b->tw > 1)
+		return NULL;
+	(void)__dtfl_batch_rec(b, 0, &len0);
+	if (len0 > sizeof(uint64_t))
+		return NULL;
+	__dtfl_vec_clear(scratch);
+	__dtfl_vec_reserve(scratch, __dtfl_mul_size(n, 2 * sizeof *v));
+	v = (packed_row *)(void *)scratch->data;
+	for (i = 0; i < n; i++) {
+		const unsigned char *rec = __dtfl_batch_rec(b, i, &len);
+		uint64_t k = 0;
+		size_t j;
+
+		if (len != len0)
+			return NULL;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (len == 8) {
+			/* The big-endian load of all 8 bytes, as the loop builds. */
+			memcpy(&k, rec, 8);
+			k = __builtin_bswap64(k);
+		} else
+#endif
+		for (j = 0; j < len; j++)
+			k |= (uint64_t)rec[j] << (56 - 8 * j);
+		v[i].k = k;
+		v[i].t = b->tw != 0 ? __dtfl_batch_time(b, i)[0] : 0;
+		v[i].i = i;
+	}
+	if (n >= RADIX_MIN_ROWS && n <= UINT32_MAX)
+		radix_packed(v, v + n, n);
+	else
+		msort_packed(v, v + n, n);
+	return v;
+}
+
+/* Pushes row r of b with diff accum, unless accum is zero. */
+static inline void
+push_folded(__dtfl_batch *out, const __dtfl_batch *b, size_t r,
+    const __dtfl_diff_class *dc, const void *accum)
+{
+	const void *rec;
+	size_t len;
+
+	if (dc->is_zero(dc, accum))
+		return;
+	rec = __dtfl_batch_rec(b, r, &len);
+	__dtfl_batch_push(out, rec, len, __dtfl_batch_time(b, r), accum);
+}
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+/*
+ * The fold of sorted packed rows when every record is 8 bytes, there is
+ * one time word and the diff is a 64-bit built-in integer: the same runs
+ * summed and zeros dropped as the general fold, written straight into
+ * out's columns (reserved for n rows).  The packed word is the record
+ * read big-endian, so storing it back big-endian restores the bytes.
+ */
+static void
+fold_packed_t1_int8(__dtfl_batch *out, const __dtfl_batch *b,
+    const packed_row *v, size_t n)
+{
+	unsigned char *ka = out->arena.data, *da = out->diffs.data;
+	size_t *offs = (size_t *)(void *)out->offs.data;
+	uint64_t *ta = (uint64_t *)(void *)out->times.data;
+	size_t i, k, m = 0;
+
+	DTFL_ASSERT(out->arena.len == 0 && __dtfl_batch_len(out) == 0);
+	for (i = 0; i < n; i = k) {
+		uint64_t acc, x, kb;
+
+		memcpy(&acc, __dtfl_batch_diff(b, v[i].i), 8);
+		for (k = i + 1; k < n && v[k].k == v[i].k && v[k].t == v[i].t;
+		    k++) {
+			memcpy(&x, __dtfl_batch_diff(b, v[k].i), 8);
+			acc += x;
+		}
+		if (acc == 0)
+			continue;
+		kb = __builtin_bswap64(v[i].k);
+		memcpy(ka + 8 * m, &kb, 8);
+		offs[m + 1] = 8 * (m + 1);
+		ta[m] = v[i].t;
+		memcpy(da + 8 * m, &acc, 8);
+		m++;
+	}
+	out->arena.len = 8 * m;
+	out->offs.len = m + 1;
+	out->times.len = m;
+	out->diffs.len = 8 * m;
+}
+#endif
+
+/*
+ * consolidate_updates_slice_slow: sort, then accumulate each run of
+ * equal (record, time) into its first diff and keep the run only if the
+ * sum is non-zero.  b must be uniquely held (it is rewritten).  The runs
+ * are rebuilt in `out` (uniquely held, empty, b's tw and dw), whose
+ * storage then replaces b's; out is left empty holding b's old storage.
+ * `scratch` is a byte vector for the sort.  Both are the caller's, so a
+ * caller that keeps them consolidates without allocating once they have
+ * grown (upstream's consolidate_into target).
+ */
+static void
+consolidate_into(__dtfl_batch *b, const dtfl_type *rt,
+    const __dtfl_diff_class *dc, __dtfl_batch *out, __dtfl_vec *scratch)
+{
+	size_t n = __dtfl_batch_len(b), i, k;
+	size_t *idx, *tmp;
+	row_cmp c = { b, rt };
+	union {
+		max_align_t align;
+		unsigned char bytes[64];
+	} abuf;
+	unsigned char *accum;
+	packed_row *v;
+
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	DTFL_ASSERT(dc->width == b->dw);
+	DTFL_ASSERT(__dtfl_arc_count(&out->ref) == 1 &&
+	    __dtfl_batch_len(out) == 0 && out->arena.len == 0 &&
+	    out->tw == b->tw && out->dw == b->dw && out->elem_drop == NULL);
+	if (n == 0)
+		return;
+	accum = b->dw <= sizeof abuf.bytes ? abuf.bytes : __dtfl_alloc(b->dw);
+	__dtfl_batch_reserve(out, n, b->arena.len);
+	if ((v = sort_packed(b, rt, scratch)) != NULL) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && \
+    (defined(__GNUC__) || defined(__clang__))
+		if (b->tw == 1 && b->arena.len == 8 * n &&
+		    __dtfl_diff_is_int64(dc)) {
+			fold_packed_t1_int8(out, b, v, n);
+			n = 0;	/* folded */
+		}
+#endif
+		for (i = 0; i < n; i = k) {
+			/* accum = sum of the diffs of rows v[i..k), all equal. */
+			if (b->dw != 0)
+				memcpy(accum, __dtfl_batch_diff(b, v[i].i),
+				    b->dw);
+			for (k = i + 1; k < n && packed_cmp(&v[i], &v[k]) == 0;
+			    k++)
+				dc->plus_equals(dc, accum,
+				    __dtfl_batch_diff(b, v[k].i));
+			push_folded(out, b, v[i].i, dc, accum);
+		}
+	} else {
+		__dtfl_vec_clear(scratch);
+		__dtfl_vec_reserve(scratch, __dtfl_mul_size(n, 2 * sizeof *idx));
+		idx = (size_t *)(void *)scratch->data;
+		tmp = idx + n;
+		for (i = 0; i < n; i++)
+			idx[i] = i;
+		msort(&c, idx, tmp, n);
+		for (i = 0; i < n; i = k) {
+			/* accum = sum of the diffs of rows idx[i..k), all equal. */
+			if (b->dw != 0)
+				memcpy(accum, __dtfl_batch_diff(b, idx[i]),
+				    b->dw);
+			for (k = i + 1;
+			    k < n && cmp_rows(&c, idx[i], idx[k]) == 0; k++)
+				dc->plus_equals(dc, accum,
+				    __dtfl_batch_diff(b, idx[k]));
+			push_folded(out, b, idx[i], dc, accum);
+		}
+	}
+	swap_storage(b, out);
+	if (accum != abuf.bytes)
+		__dtfl_free(accum);
+}
+
+/* consolidate_updates over a batch, with a target made for the call. */
+void
+__dtfl_consolidate_batch(__dtfl_batch *b, const dtfl_type *rt,
+    const __dtfl_diff_class *dc)
+{
+	__dtfl_batch *out;
+	__dtfl_vec scratch;
+
+	/* Checked before allocating, so a panic leaves nothing behind. */
+	DTFL_ASSERT(__dtfl_arc_count(&b->ref) == 1);
+	DTFL_ASSERT(dc->width == b->dw);
+	if (__dtfl_batch_len(b) == 0)
+		return;
+	/* One block sized for every row, so the target is one allocation. */
+	out = __dtfl_batch_new_reserved(b->tw, b->dw, __dtfl_batch_len(b),
+	    b->arena.len);
+	__dtfl_vec_init(&scratch, 1);
+	consolidate_into(b, rt, dc, out, &scratch);
+	__dtfl_vec_free(&scratch);
+	__dtfl_batch_release(out);
+}
+
+/* ------------------------------------------------------------------ */
+/* ConsolidatingContainerBuilder                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * timely container::buffer::default_capacity::<(D, T, R)>(): the rows
+ * that fit in BUFFER_SIZE_BYTES.  A record of constant width counts as
+ * that width, which is size_of for the unpadded tuples of the common
+ * cases (so (u64, ()) is 8 bytes, the unit adding nothing; Rust would pad
+ * (u32, u64) to 16 where this counts 12); a variable-length record
+ * counts as 24 bytes, the size of the String or Vec that holds it in
+ * Rust.
+ */
+static size_t
+default_capacity(const dtfl_type *rt, unsigned tw, size_t dw)
+{
+	size_t w = __dtfl_type_const_width(rt);
+	size_t size = (w != SIZE_MAX ? w : 24) +
+	    (size_t)tw * sizeof(uint64_t) + dw;
+
+	if (size == 0)
+		return DTFL_BUFFER_SIZE_BYTES;
+	if (size <= DTFL_BUFFER_SIZE_BYTES)
+		return DTFL_BUFFER_SIZE_BYTES / size;
+	return 1;
+}
+
+/* An empty builder.  rt and dc must outlive it. */
+void
+__dtfl_consolidator_init(__dtfl_consolidator *c, const dtfl_type *rt,
+    unsigned tw, const __dtfl_diff_class *dc)
+{
+	c->rt = rt;
+	c->dc = dc;
+	c->current = __dtfl_batch_new(tw, (unsigned)dc->width);
+	c->spare = __dtfl_batch_new(tw, (unsigned)dc->width);
+	__dtfl_vec_init(&c->scratch, 1);
+	__dtfl_vec_init(&c->empty, sizeof(__dtfl_batch *));
+	__dtfl_vec_init(&c->outbound, sizeof(__dtfl_batch *));
+	c->cap = default_capacity(rt, tw, dc->width);
+	{
+		size_t w = __dtfl_type_const_width(rt);
+
+		__dtfl_batch_reserve(c->current, 2 * c->cap,
+		    w == SIZE_MAX ? 0 : 2 * c->cap * w);
+	}
+}
+
+/*
+ * consolidate_and_flush_through: consolidates current, then moves its
+ * first (len / multiple) * multiple rows to outbound in batches of at
+ * most cap rows.  The remainder stays in current, moved to its front in
+ * place as drain(..k) leaves it, so current keeps its storage; the
+ * consolidation target is the builder's spare, as Consolidate's
+ * consolidate_into swaps into a kept target.
+ */
+static void
+flush_through(__dtfl_consolidator *c, size_t multiple)
+{
+	__dtfl_batch *cur = c->current, *out;
+	size_t n, end, i, run, avg, len;
+
+	consolidate_into(cur, c->rt, c->dc, c->spare, &c->scratch);
+	n = __dtfl_batch_len(cur);
+	end = n / multiple * multiple;
+	/* Pre-size each output chunk: cap rows and their arena bytes. */
+	avg = n != 0 ? cur->arena.len / n : 0;
+	for (i = 0; i < end; i += run) {
+		/* self.empty.pop().unwrap_or_else(|| with_capacity(preferred)) */
+		if (c->empty.len != 0) {
+			out = *DTFL_VEC_AT(&c->empty, __dtfl_batch *,
+			    c->empty.len - 1);
+			__dtfl_vec_truncate(&c->empty, c->empty.len - 1);
+			__dtfl_batch_reserve(out, c->cap, c->cap * avg);
+		} else
+			out = __dtfl_batch_new_reserved(cur->tw, cur->dw,
+			    c->cap, c->cap * avg);
+		run = DTFL_MIN(c->cap, end - i);
+		__dtfl_batch_push_run(out, cur, i, run);
+		__dtfl_vec_push(&c->outbound, &out);
+	}
+	__dtfl_batch_drain_front(cur, end);
+	/*
+	 * push_into keeps current's capacity at 2 * preferred, so the
+	 * buffer refills without growing.
+	 */
+	len = __dtfl_batch_len(cur);
+	if (len < 2 * c->cap)
+		__dtfl_batch_reserve(cur, 2 * c->cap - len,
+		    (2 * c->cap - len) * avg);
+}
+
+/* push_into: buffers one update; flushes full batches at 2 * cap rows. */
+void
+__dtfl_consolidator_push(__dtfl_consolidator *c, const void *rec, size_t len,
+    const uint64_t *time, const void *diff)
+{
+	__dtfl_batch_push(c->current, rec, len, time, diff);
+	if (__dtfl_batch_len(c->current) >= 2 * c->cap)
+		flush_through(c, c->cap);
+}
+
+/* extract: the oldest completed batch (caller owns it), or NULL. */
+__dtfl_batch *
+__dtfl_consolidator_extract(__dtfl_consolidator *c)
+{
+	__dtfl_batch *b;
+
+	if (c->outbound.len == 0)
+		return NULL;
+	b = *DTFL_VEC_AT(&c->outbound, __dtfl_batch *, 0);
+	__dtfl_vec_remove(&c->outbound, 0);
+	return b;
+}
+
+/* finish: flushes every buffered update, then extract. */
+__dtfl_batch *
+__dtfl_consolidator_finish(__dtfl_consolidator *c)
+{
+	if (__dtfl_batch_len(c->current) != 0)
+		flush_through(c, 1);
+	return __dtfl_consolidator_extract(c);
+}
+
+/*
+ * The most batches the empty stash keeps.  shortcut: a fixed cap, about
+ * one wave of the arrange benchmark's chunks; size it from the flush
+ * rate if a workload churns more.
+ */
+#define CONSOLIDATOR_EMPTY_MAX 16
+
+void
+__dtfl_consolidator_recycle(__dtfl_consolidator *c, __dtfl_batch *b)
+{
+	if (b == NULL)
+		return;
+	if (c->empty.len < CONSOLIDATOR_EMPTY_MAX &&
+	    __dtfl_arc_count(&b->ref) == 1 && b->elem_drop == NULL &&
+	    b->elem_retain == NULL && b->tw == c->current->tw &&
+	    b->dw == c->current->dw) {
+		__dtfl_batch_clear(b);
+		__dtfl_vec_push(&c->empty, &b);
+	} else
+		__dtfl_batch_release(b);
+}
+
+/* Releases the buffer and any batches not yet extracted. */
+void
+__dtfl_consolidator_free(__dtfl_consolidator *c)
+{
+	size_t i;
+
+	for (i = 0; i < c->outbound.len; i++)
+		__dtfl_batch_release(*DTFL_VEC_AT(&c->outbound,
+		    __dtfl_batch *, i));
+	__dtfl_vec_free(&c->outbound);
+	for (i = 0; i < c->empty.len; i++)
+		__dtfl_batch_release(*DTFL_VEC_AT(&c->empty,
+		    __dtfl_batch *, i));
+	__dtfl_vec_free(&c->empty);
+	__dtfl_batch_release(c->current);
+	c->current = NULL;
+	__dtfl_batch_release(c->spare);
+	c->spare = NULL;
+	__dtfl_vec_free(&c->scratch);
+}

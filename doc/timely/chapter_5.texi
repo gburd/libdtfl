@@ -1,0 +1,68 @@
+@c SPDX-License-Identifier: MIT
+@c doc/timely/chapter_5.texi: ports timely-dataflow
+@c mdbook/src/chapter_5/chapter_5.md (Internals), chapter_5_1.md
+@c (Communication), chapter_5_2.md (Progress Tracking), chapter_5_3.md
+@c (Containers), chapter_5_4.md (Logging).
+
+@node Timely Internals
+@section Internals
+
+This section sketches how timely dataflow works underneath.  You do not
+need any of it to write a program; it is here for the curious and for
+anyone diagnosing a computation.
+
+@subsection Communication
+
+Underneath the dataflow layer is the communication layer, which starts
+the worker threads, gives each an identity, and moves messages between
+them.  A program selects the communication mode through the
+@code{dtfl_config} (@pxref{Installation}): a single worker on the
+calling thread, several worker threads in one process exchanging typed
+queues, the same with serialized zero-copy byte queues, or many
+processes exchanging over TCP.  Inter-worker data moves only through
+these queues, and record batches are reference counted with atomic
+counts because they cross threads (@pxref{Threads}).  You rarely touch
+this layer directly; the point of the dataflow API is that you need not.
+
+@subsection Progress tracking
+
+Progress tracking is how multiple workers, moving data through a shared
+dataflow graph, make meaningful statements about what data may still
+arrive.  Each record bears a logical timestamp.  To send a message at a
+time, an operator must hold a @dfn{capability} for that time
+(@code{dtfl_cap_*}), so the set of outstanding capabilities at each
+point bounds the times that can still appear there.
+
+The mechanism has two halves: the workers collectively maintain a view
+of the outstanding capabilities at each location in the graph, and each
+worker independently computes and communicates the consequences of
+changes in its own view.  Following each stream's @dfn{path summary}
+(the least a time advances crossing an operator), the runtime propagates
+those changes to produce every input's frontier.  When the set of
+possible future times at a location becomes empty, that part of the
+stream is complete.  A probe (@pxref{Running Timely Dataflows}) is a
+read-only window onto this computed frontier.
+
+@subsection Containers
+
+Rust's timely is generic over the container that holds a batch of
+records (a vector, a columnar layout, a shared reference).  libdtfl has
+a single container: one arena of record bytes with an offsets array, and
+for a differential batch, parallel time and diff columns.  Batches are
+reference counted, so fan-out hands each consumer a reference rather
+than a copy, and a consumer that mutates gets copy-on-write only when
+the batch is shared.  The flat arena gives in C what the columnar layout
+gives Rust, so there is no user-defined container type.
+
+@subsection Logging
+
+A worker logs structural and runtime events to named streams as it runs:
+operator and channel creation, scheduling, messages, parking, and the
+differential arrangement events.  Each event carries a timestamp of
+elapsed time since the worker started.  These are the structured
+machine-readable streams that the diagnostics tools consume
+(@pxref{Diagnostics}); a program subscribes to a stream with
+@code{dtfl_worker_log_subscribe} or @code{dtfl_config_log_subscribe} and
+receives each batch of events already decoded.  This is distinct from
+the human-readable diagnostic sink of @code{dtfl_set_log_hook}
+(@pxref{Error handling}).

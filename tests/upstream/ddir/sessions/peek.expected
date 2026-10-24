@@ -1,0 +1,13 @@
+installed "prod"
+installed "reach"
+tick -> epoch 1
+peek "edges" (2 rows):
+  (Tuple([Int(1)]), Tuple([Int(2)]))  x1
+  (Tuple([Int(2)]), Tuple([Int(3)]))  x1
+peek "result" (3 rows):
+  (Tuple([Int(1)]), Tuple([]))  x1
+  (Tuple([Int(2)]), Tuple([]))  x1
+  (Tuple([Int(3)]), Tuple([]))  x1
+peek "result" key=Tuple([Int(2)]) (1 rows):
+  (Tuple([Int(2)]), Tuple([]))  x1
+error: no trace "nope"

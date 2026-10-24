@@ -1,0 +1,8 @@
+libdtfl ChangeLog
+
+	This project does not keep a hand-written ChangeLog.  The commit
+	history is the change log:
+
+		git log
+
+	User-visible changes per release are summarized in NEWS.

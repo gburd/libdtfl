@@ -1,0 +1,40 @@
+[package]
+name = "dtfl-gen-fixtures"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "ord_order"
+path = "ord_order.rs"
+
+[[bin]]
+name = "capture_wire"
+path = "capture_wire.rs"
+
+[[bin]]
+name = "log_stream"
+path = "log_stream.rs"
+
+[[bin]]
+name = "operator_oracle"
+path = "operator_oracle.rs"
+
+[[bin]]
+name = "fuzz_oracle"
+path = "fuzz_oracle.rs"
+
+[profile.release]
+opt-level = 1
+
+# ord_order uses only std and the documented libdtfl encodings.  The other
+# generators exercise real upstream serialization and semantics, so they
+# depend on the pinned crates by exact version (the crates.io 0.31.0 and
+# 0.25.1 releases ARE the pins timely-v0.31.0 / differential-dataflow-v0.25.1).
+# Pinning the exact version keeps a fixture regeneration machine-independent
+# and tied to the pin without a path into a local checkout.
+[dependencies]
+timely = "=0.31.0"
+differential-dataflow = "=0.25.1"
+bincode = "=1.3.3"
+serde = { version = "1.0", features = ["derive"] }

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Linker version script.  Until 1.0 every dtfl_ symbol is exported by
+# pattern, and tests/dist/test_symbols.sh checks the result against the
+# per-component src/*/exports.sym lists.  At 1.0 this file is generated
+# from those lists and frozen (PLAN section 13).
+DTFL_0 {
+	global:
+		dtfl_*;
+	local:
+		*;
+};

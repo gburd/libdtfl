@@ -1,0 +1,95 @@
+.\" SPDX-License-Identifier: MIT
+.Dd May 18, 2026
+.Dt DTFL_CONFIG_SET_IDLE_MERGE_EFFORT 3
+.Os
+.Sh NAME
+.Nm dtfl_config_set_idle_merge_effort ,
+.Nm dtfl_config_idle_merge_effort
+.Nd merge work for idle arrangements
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/config.h
+.Ft int
+.Fn dtfl_config_set_idle_merge_effort "dtfl_config *cfg" "int64_t effort"
+.Ft int64_t
+.Fn dtfl_config_idle_merge_effort "const dtfl_config *cfg"
+.Sh DESCRIPTION
+A trace merges its batches only as new updates arrive, so an
+arrangement whose input goes quiet can be left holding several batches,
+and every reader then walks all of them.
+.Fn dtfl_config_set_idle_merge_effort
+sets the effort that operators maintaining a trace spend when they have
+no input to process.
+With an
+.Fa effort
+greater than 0, every operator started by
+.Xr dtfl_execute 3
+under
+.Fa cfg
+that keeps a trace (arrange, arrange by key, reduce and the operators
+built on it, and arrange from upsert) reschedules itself while its trace
+has more than one non-empty batch or a merge in progress.
+Each time it runs it does as much merge work as if
+.Fa effort
+updates had been added to the trace.
+Once the trace is a single batch, the operator stops rescheduling
+itself.
+An
+.Fa effort
+of 0, the default, turns this off: operators maintain their traces only
+when they have updates to process.
+.Pp
+Larger values compact an idle trace in fewer steps but make each step
+longer.
+The setting is read when a worker starts, and does not apply to a
+worker made with
+.Fn dtfl_worker_new_standalone
+.Pq Xr dtfl_worker_dataflow 3 .
+.Pp
+.Fn dtfl_config_idle_merge_effort
+returns the current setting.
+.Sh RETURN VALUES
+.Fn dtfl_config_set_idle_merge_effort
+returns 0 on success, or
+.Er DTFL_EINVAL
+if
+.Fa cfg
+is
+.Dv NULL
+or
+.Fa effort
+is negative; the setting is then unchanged.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+dtfl_config *cfg = dtfl_config_new();
+
+if (dtfl_config_set_idle_merge_effort(cfg, 1000) != 0)
+	errx(1, "%s", dtfl_last_error_detail());
+dtfl_execute(cfg, run, ctx, NULL);
+dtfl_config_free(cfg);
+.Ed
+.Sh SEE ALSO
+.Xr dtfl_collection_arrange 3 ,
+.Xr dtfl_config 3 ,
+.Xr dtfl_execute 3 ,
+.Xr dtfl_worker_dataflow 3
+.Sh HISTORY
+These functions are differential dataflow's
+.Vt Config::idle_merge_effort
+and
+.Fn configure ,
+which install the same default exertion logic on every trace.
+Upstream takes an
+.Vt Option<isize> ;
+here 0 is
+.Dv None ,
+and a negative effort, which upstream converts to a very large unsigned
+one, is refused.
+Upstream also lets a program replace the exertion logic of a single
+trace; libdtfl does not expose that.
+.Sh THREAD SAFETY
+As for
+.Xr dtfl_config 3 :
+a configuration must not be modified while another thread uses it.

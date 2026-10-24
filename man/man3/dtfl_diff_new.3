@@ -1,0 +1,258 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 14, 2026
+.Dt DTFL_DIFF_NEW 3
+.Os
+.Sh NAME
+.Nm dtfl_diff_new ,
+.Nm dtfl_diff_retain ,
+.Nm dtfl_diff_free ,
+.Nm dtfl_diff_width ,
+.Nm dtfl_diff_is_abelian
+.Nd a user-defined differential dataflow diff class
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/collection.h
+.Ft dtfl_diff *
+.Fn dtfl_diff_new "const dtfl_diff_ops *ops"
+.Ft dtfl_diff *
+.Fn dtfl_diff_retain "const dtfl_diff *d"
+.Ft void
+.Fn dtfl_diff_free "const dtfl_diff *d"
+.Ft size_t
+.Fn dtfl_diff_width "const dtfl_diff *d"
+.Ft bool
+.Fn dtfl_diff_is_abelian "const dtfl_diff *d"
+.Bd -literal
+typedef struct dtfl_diff_ops {
+	const char *name;
+	size_t width;
+	void (*plus_equals)(void *ctx, void *acc, const void *x);
+	bool (*is_zero)(void *ctx, const void *x);
+	int  (*cmp)(void *ctx, const void *a, const void *b);
+	void (*multiply)(void *ctx, void *acc, const void *x);
+	void (*negate)(void *ctx, void *x);
+	void (*zero)(void *ctx, void *out);
+	const dtfl_type *type;
+	void *ctx;
+	void (*ctx_free)(void *ctx);
+} dtfl_diff_ops;
+.Ed
+.Sh DESCRIPTION
+A differential dataflow collection tracks, for each record, a difference
+drawn from a user-chosen algebra: at minimum a semigroup with a test for
+the additive identity.
+The built-in classes
+.Pq Fn dtfl_diff_i64 and friends
+cover the common integer and
+.Vt Present
+cases;
+.Fn dtfl_diff_new
+builds a class from a caller-supplied algebra, the C form of
+implementing the
+.Vt Semigroup
+trait and its extensions in
+.Pa difference.rs .
+.Pp
+A value of the class is
+.Fa ops->width
+bytes, stored natively and unaligned, so a callback copies it with
+.Xr memcpy 3
+rather than dereferencing it.
+A zero-width class
+.Pq like Vt Present
+is passed
+.Dv NULL
+value pointers.
+Every callback receives
+.Fa ops->ctx ,
+so a family of related classes can share state.
+The callbacks are:
+.Bl -tag -width "plus_equals"
+.It Fn plus_equals "ctx" "acc" "x"
+Accumulate:
+.Fa acc
+.Li +=
+.Fa x .
+Required
+.Pq the Vt Semigroup No operator .
+.It Fn is_zero "ctx" "x"
+Return true when
+.Fa x
+is the additive identity.
+Required, but a semigroup need not have a zero: this may always return
+false.
+Differential uses it only to drop updates that have cancelled, so a
+class that never reports zero simply keeps more updates alive.
+.It Fn cmp "ctx" "a" "b"
+Rust's
+.Vt Ord
+on values: a negative, zero or positive result as
+.Fa a
+sorts before, equal to or after
+.Fa b .
+Required.
+.It Fn multiply "ctx" "acc" "x"
+Multiply in place:
+.Fa acc
+.Li *=
+.Fa x ,
+both values of this class
+.Pq the Vt Multiply<Self> No operator .
+Optional
+.Pq Dv NULL No if absent .
+Providing it lets a join over this diff multiply the two input
+differences, which is how
+.Xr dtfl_collection_join_map 3
+combines them; omitting it makes a join on this class report
+.Dv DTFL_EALGEBRA .
+.It Fn negate "ctx" "x"
+Negate in place:
+.Fa x
+.Li =
+.Li \-
+.Fa x
+.Pq the Vt Abelian No operator .
+Optional
+.Pq Dv NULL No means the class is not Abelian .
+If set,
+.Fn zero
+must be set too.
+Only an Abelian class may be used with
+.Xr dtfl_collection_negate 3 ,
+.Fn dtfl_arranged_reduce_abelian ,
+.Fn dtfl_collection_count
+and the other operators that retract a prior output; a semigroup-only
+class
+.Pq no negate
+is rejected by them.
+.It Fn zero "ctx" "out"
+Write the zero value to
+.Fa out
+.Pq the Vt Monoid No zero .
+Optional
+.Pq Dv NULL No means the class is a semigroup without an explicit zero .
+.El
+.Pp
+.Fa ops->type
+describes a value of the class when the difference becomes a record
+value, as in
+.Xr dtfl_collection_explode 3 ;
+.Dv NULL
+means the class carries no record value
+.Pq the unit type .
+.Fa ops->ctx
+is passed to every callback and freed by
+.Fa ops->ctx_free
+when the last reference to the class is released; either may be
+.Dv NULL .
+.Pp
+.Fn dtfl_diff_new
+copies
+.Fa *ops
+and retains
+.Fa ops->type ,
+so the caller need not keep
+.Fa ops
+alive.
+.Fn dtfl_diff_retain
+takes another reference;
+.Fn dtfl_diff_free
+releases one and runs
+.Fa ops->ctx_free
+on the last.
+.Fn dtfl_diff_width
+returns the value width and
+.Fn dtfl_diff_is_abelian
+reports whether the class has a
+.Fn negate .
+.Sh RETURN VALUES
+.Fn dtfl_diff_new
+and
+.Fn dtfl_diff_retain
+return a reference-counted diff class the caller releases with
+.Fn dtfl_diff_free .
+.Sh EXAMPLES
+A min-plus semigroup
+.Pq Dv MinSum ,
+whose value is a
+.Vt u32
+distance, whose addition keeps the smaller distance, and whose
+multiplication adds distances
+.Pq the algebra behind the monoid BFS :
+.Bd -literal -offset indent
+static void
+minsum_plus(void *ctx, void *acc, const void *x)
+{
+	uint32_t a, b;
+	(void)ctx;
+	memcpy(&a, acc, 4);
+	memcpy(&b, x, 4);
+	if (b < a)
+		memcpy(acc, &b, 4);
+}
+static bool
+minsum_is_zero(void *ctx, const void *x)
+{
+	(void)ctx; (void)x;
+	return false;		/* a semigroup with no zero */
+}
+static int
+minsum_cmp(void *ctx, const void *a, const void *b)
+{
+	uint32_t x, y;
+	(void)ctx;
+	memcpy(&x, a, 4);
+	memcpy(&y, b, 4);
+	return (x > y) - (x < y);
+}
+static void
+minsum_multiply(void *ctx, void *acc, const void *x)
+{
+	uint32_t a, b, s;
+	(void)ctx;
+	memcpy(&a, acc, 4);
+	memcpy(&b, x, 4);
+	s = a > UINT32_MAX - b ? UINT32_MAX : a + b;
+	memcpy(acc, &s, 4);
+}
+
+dtfl_diff_ops ops = {
+	.name = "MinSum", .width = 4,
+	.plus_equals = minsum_plus, .is_zero = minsum_is_zero,
+	.cmp = minsum_cmp, .multiply = minsum_multiply,
+	.type = dtfl_type_u32(),
+};
+dtfl_diff *d = dtfl_diff_new(&ops);
+/* ... build a collection with d, then: */
+dtfl_diff_free(d);
+.Ed
+.Sh ERRORS
+.Fn dtfl_diff_new
+reports contract violations through the panic hook: a missing
+.Fn plus_equals ,
+.Fn is_zero
+or
+.Fn cmp ,
+or a
+.Fn negate
+set without
+.Fn zero .
+.Sh SEE ALSO
+.Xr dtfl_collection_join_map 3 ,
+.Xr dtfl_collection_negate 3 ,
+.Xr dtfl_input_session_new 3 ,
+.Xr dtfl 7
+.Sh HISTORY
+This is the C form of differential dataflow's
+.Vt Semigroup , Monoid , Abelian
+and
+.Vt Multiply
+traits from
+.Pa difference.rs .
+.Sh THREAD SAFETY
+A diff class is immutable once built and may be shared across worker
+threads; its reference count is atomic.
+The callbacks must be thread safe if the class is used by more than one
+worker, since each worker calls them on its own thread.

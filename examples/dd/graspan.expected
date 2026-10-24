@@ -1,0 +1,5 @@
+Dataflow assembled for Query { productions: [Production { left_hand: "e", relations: [] }, Production { left_hand: "p", relations: [Forward("e")] }, Production { left_hand: "p", relations: [Forward("p"), Forward("e")] }, Production { left_hand: "s", relations: [Reverse("e"), Forward("e")] }] }
+Data loaded
+final size of relation 'e': 4
+final size of relation 's': 5
+final size of relation 'p': 6

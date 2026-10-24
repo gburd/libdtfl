@@ -1,0 +1,202 @@
+.\" SPDX-License-Identifier: MIT
+.Dd October 12, 2026
+.Dt DTFL_COLLECTION_ITERATE 3
+.Os
+.Sh NAME
+.Nm dtfl_collection_iterate ,
+.Nm dtfl_variable_new ,
+.Nm dtfl_variable_new_at ,
+.Nm dtfl_variable_new_from ,
+.Nm dtfl_variable_set ,
+.Nm dtfl_variable_set_concat ,
+.Nm dtfl_collection_enter_dynamic ,
+.Nm dtfl_collection_leave_dynamic ,
+.Nm dtfl_feedback_summary
+.Nd iterate a differential dataflow fragment to a fixed point
+.Sh LIBRARY
+Timely and differential dataflow library
+.Pq libdtfl , \-ldtfl
+.Sh SYNOPSIS
+.In dtfl/iterate.h
+.Ft dtfl_collection *
+.Fn dtfl_collection_iterate "dtfl_collection *c" "dtfl_iterate_fn logic" "dtfl_ctx ctx"
+.Ft dtfl_variable *
+.Fn dtfl_variable_new "dtfl_scope *scope" "const dtfl_type *type" "const dtfl_diff *diff" "dtfl_collection **collection"
+.Ft dtfl_variable *
+.Fn dtfl_variable_new_at "dtfl_scope *scope" "const dtfl_type *type" "const dtfl_diff *diff" "size_t level" "dtfl_collection **collection"
+.Ft dtfl_variable *
+.Fn dtfl_variable_new_from "dtfl_collection *source" "dtfl_collection **collection"
+.Ft void
+.Fn dtfl_variable_set "dtfl_variable *v" "dtfl_collection *result"
+.Ft void
+.Fn dtfl_variable_set_concat "dtfl_variable *v" "dtfl_collection *result" "dtfl_collection *addend"
+.Ft dtfl_collection *
+.Fn dtfl_collection_enter_dynamic "dtfl_collection *c" "size_t level"
+.Ft dtfl_collection *
+.Fn dtfl_collection_leave_dynamic "dtfl_collection *c" "size_t level"
+.Ft void
+.Fn dtfl_feedback_summary "const dtfl_time_class *tc" "size_t level" "uint64_t step" "uint64_t *out"
+.Sh DESCRIPTION
+.Fn dtfl_collection_iterate
+applies the fragment
+.Fa logic
+to
+.Fa c
+repeatedly until the collection it produces stops changing, a fixed point,
+or until the iteration coordinate's range is exhausted.
+It builds an iterative subscope whose time is
+.Fn dtfl_time_product
+of the outer class and a
+.Vt u64 :
+one extra coordinate counts the iteration.
+The source collection enters the subscope, a
+.Vt dtfl_variable
+is seeded from it,
+.Fa logic
+transforms the Variable's collection into the next iterate, the Variable is
+set to that result, and the result leaves the subscope.
+The
+.Fa logic
+callback receives the subscope and the Variable's collection and returns the
+next iterate; it must build the next iterate from the Variable's collection
+with the collection methods, and
+.Fn dtfl_collection_iterate
+consumes the returned collection.
+.Fa c
+must have an Abelian difference class, since iterate negates the source so
+that only the delta circulates.
+.Pp
+.Fn dtfl_collection_iterate
+does not insert a consolidate for you.
+A fragment that can produce cancelling differences must consolidate, or end
+in
+.Fn dtfl_collection_reduce ,
+.Fn dtfl_collection_count
+or
+.Fn dtfl_collection_distinct ,
+which consolidate; otherwise logically empty differences can circulate
+forever and the loop will not terminate.
+.Pp
+A
+.Vt dtfl_variable
+is a recursively defined collection, the mechanism iterate is built on.
+.Fn dtfl_variable_new
+creates an initially empty Variable in
+.Fa scope ,
+an iterative subscope, and stores its collection through
+.Fa collection ;
+its difference class need only be a Semigroup.
+.Fn dtfl_variable_new_at
+is the same for a dynamic
+.Pq PointStamp
+scope whose feedback advances coordinate
+.Fa level
+rather than the innermost Product coordinate, so several loops can share
+one iterative scope at different coordinates.
+.Fn dtfl_variable_new_from
+creates a Variable seeded from
+.Fa source
+and stores the collection
+.Fa source
+concatenated with the feedback;
+.Fa source
+must have an Abelian class, as it is negated and concatenated when the
+Variable is set, binding
+.Li x = logic(x + source) \- source ,
+a fixed point with
+.Li x + source = logic(x + source) .
+.Fn dtfl_variable_set
+binds the Variable to
+.Fa result ,
+advancing every difference's iteration coordinate by one and concatenating
+any negated source, then closing the loop; it consumes the Variable and
+.Fa result .
+.Fn dtfl_variable_set_concat
+is a convenience that concatenates
+.Fa addend
+into
+.Fa result
+first; it consumes the Variable,
+.Fa result
+and
+.Fa addend .
+Variables express mutual recursion that
+.Fn dtfl_collection_iterate
+alone cannot, such as two collections that evolve together in one subscope.
+.Pp
+.Fn dtfl_collection_enter_dynamic ,
+.Fn dtfl_collection_leave_dynamic
+and
+.Fn dtfl_feedback_summary
+support dynamically scoped iteration, where the inner time is a PointStamp
+whose number of coordinates is a run-time
+.Fa level
+rather than a compile-time type
+.Pq Xr dtfl_time_class 3 , the POINTSTAMP shape .
+.Fn dtfl_collection_enter_dynamic
+is the identity: the stream is already in the scope.
+.Fn dtfl_collection_leave_dynamic
+strips all but the first
+.Fa level \- 1
+PointStamp coordinates of every difference's time and of its capability,
+which lets a difference leave one dynamic iteration level.
+.Fn dtfl_feedback_summary
+builds the PointStamp path summary a dynamic feedback uses at coordinate
+.Fa level :
+no coordinates retained
+.Pq retain None ,
+identity actions below the coordinate, and
+.Fa step
+at it, written into
+.Fa out ,
+which is
+.Fn dtfl_summary_depth
+words of
+.Fa tc .
+.Fa tc
+must be a PointStamp class or a Product whose inner class is a PointStamp,
+and
+.Fa level
+must be between one and the PointStamp's maximum length.
+.Sh RETURN VALUES
+.Fn dtfl_collection_iterate ,
+.Fn dtfl_collection_enter_dynamic
+and
+.Fn dtfl_collection_leave_dynamic
+return a new
+.Vt dtfl_collection
+handle the caller frees with
+.Fn dtfl_collection_free .
+.Fn dtfl_variable_new
+and
+.Fn dtfl_variable_new_from
+return a
+.Vt dtfl_variable
+that
+.Fn dtfl_variable_set
+or
+.Fn dtfl_variable_set_concat
+consumes.
+Allocation failure is reported through the panic hook, as elsewhere in the
+library; a non-Abelian class where one is required, or a dynamic level out
+of range, also calls the panic hook.
+.Sh SEE ALSO
+.Xr dtfl_collection_join 3 ,
+.Xr dtfl_collection_new 3 ,
+.Xr dtfl_collection_reduce 3
+.Sh STANDARDS
+These functions port differential dataflow's
+.Fn iterate
+operator and the
+.Vt Variable
+type from
+.Pa src/operators/iterate.rs ,
+and
+.Fn enter_dynamic ,
+.Fn leave_dynamic
+and
+.Fn feedback_summary
+from
+.Pa src/dynamic/mod.rs ,
+in the pinned upstream
+.Pq differential-dataflow-v0.25.1 .

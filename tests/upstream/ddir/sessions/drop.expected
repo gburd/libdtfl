@@ -1,0 +1,23 @@
+installed "prod"
+installed "reach"
+tick -> epoch 1
+epoch: 1
+traces (2):
+  edges (importers: 1)
+  result (importers: 0)
+programs (2):
+  prod (inputs: 1, imports: 0, exports: 1)
+  reach (inputs: 1, imports: 1, exports: 1)
+error: cannot drop "prod": its trace "edges" has 1 live importer(s); drop them first
+dropped "reach"
+dropped "prod"
+epoch: 1
+traces (0):
+programs (0):
+installed "prod"
+tick -> epoch 2
+epoch: 2
+traces (1):
+  edges (importers: 0)
+programs (1):
+  prod (inputs: 1, imports: 0, exports: 1)

@@ -291,9 +291,13 @@ Timestamps in the pinned, non-excluded code:
   `lattice.rs:204`, used by no pinned program).
 
 A C runtime cannot be generic over these the way Rust is.  libdtfl
-represents every time as a short vector of `uint64_t` coordinates,
-`dtfl_time`, with inline storage for four coordinates.  A scope carries
-a `dtfl_time_class` that gives the vector its meaning.
+represents every time as a vector of `uint64_t` coordinates whose
+length, the class _depth_, is fixed per scope.  A scope carries a
+`dtfl_time_class` that gives the vector its meaning.  Internally a time
+is `const uint64_t *` plus the class, and arrays of times are flat runs
+of `depth` words, so traces and progress tracking never chase
+pointers or handle variable lengths.  Depth is at most `DTFL_TIME_MAX`
+(16) coordinates.
 
 **Coordinate kinds.** Each coordinate has a declared kind:
 
@@ -324,7 +328,7 @@ a `dtfl_time_class` that gives the vector its meaning.
 | `Pair<S, T>` and similar user product types | `PRODUCT` | product |
 | `(A, B)` tuple | `LEX` of two child classes | lexicographic, with `maximum` for meet (`lattice.rs:204-230`) |
 | `AltNeu<T>` with `T` totally ordered | `TOTAL`, one coordinate, encoded `2t + neu` | total |
-| `PointStamp<T>` | `POINTSTAMP` of one child kind | product over a variable-length vector, trailing minimum coordinates trimmed (`pointstamp.rs:65-69`) |
+| `PointStamp<T>` | `POINTSTAMP(k)` of one child kind, padded to a declared maximum of `k` coordinates | product order; see below |
 | `Product<A, PointStamp<B>>` | `PRODUCT(A, POINTSTAMP(B))` | product; the PointStamp tail is variable length |
 
 Notes on AltNeu:
@@ -335,8 +339,38 @@ Notes on AltNeu:
 - For a partially ordered `T` it would not be, so the class rejects
   that combination at scope creation.
 - Every pinned use is `AltNeu<usize>`.
-- `t >= 2^63` overflows the encoding and is rejected with
-  `DTFL_ERANGE`.
+- `t >= 2^63` overflows the encoding.  Decoding such a time returns
+  `DTFL_ERANGE`; entering one into an AltNeu scope (`to_inner`) panics,
+  as a contract violation.
+- `dtfl_time_is_total` reports that the partial order is total, which
+  it is for AltNeu over a total base.  Upstream has no `TotalOrder` impl
+  for `AltNeu`, so the `_total` operators accept an AltNeu scope here
+  where Rust would not compile; that is an extension, not a divergence
+  in behavior.
+
+**Ord is word order.**  Every encoding above preserves Rust's derived
+`Ord`: Product and tuples derive field order, AltNeu derives
+`(time, neu)`, PointStamp's derived vector order equals the order of the
+padded vector, and the signed and Duration encodings are monotone.  So
+for every class the `cmp` that upstream gets from `Ord` is the
+lexicographic comparison of the u64 words, and the library implements it
+once, with no vtable call.  `ChangeBatch` and every sorted run of times
+use it.  A property test checks it against each encoding.
+
+**PointStamp padding.**  Upstream stores a `PointStamp` as a variable
+vector with trailing minimum coordinates trimmed, and compares it as if
+missing coordinates were the minimum.  A vector padded with the minimum
+to a fixed `k` is the same value: product order, join (pointwise max),
+meet (pointwise min) and lexicographic `Ord` all agree, because the
+minimum sorts below every other coordinate and a canonical trimmed
+vector has no trailing minimum.  `k` is declared when the dynamic scope
+is created; `enter_dynamic` and `feedback_summary` at a level above `k`
+fail with `DTFL_ERANGE`.  A PointStamp summary is `{ retain, actions }`
+with `actions` padded the same way.  Two summaries that differ only by
+trailing zero actions behave identically and compare equal here, where
+upstream's order (`pointstamp.rs:199-213`) keeps them distinct; treating
+behaviorally equal summaries as equal is sound for the reachability
+antichains that consume the order.
 
 **The class vtable.** Each class supplies the operations that the
 progress tracker, the traces and reduce call:
@@ -371,8 +405,19 @@ progress tracker, the traces and reduce call:
   coordinatewise product order.
 - AltNeu's summary is `()`.
 
-Fast paths: the `UNIT` class, and `TOTAL` with a 64-bit unsigned
-coordinate, are inlined.  Everything else goes through the vtable.
+Dispatch is a `switch` on the class shape in `src/progress/time.c`,
+not a function-pointer vtable.  The shapes form a closed set, so a
+switch keeps every operation in one place and lets the compiler inline
+the common leaves.  Adding a shape means adding a case to each
+operation, which is the same work as filling in a vtable.  Ord is
+word order for every shape, so the hot comparison
+(`__dtfl_words_cmp`) never dispatches at all.
+
+**Refines pairs supported:** identity; `PRODUCT(outer, X)` refining
+`outer`; `ALTNEU(outer)` refining `outer`; anything refining `UNIT`.
+Upstream's `Refines<TOuter> for (TOuter, TInner)` (lexicographic pairs,
+`order.rs:248-259`) is not supported, because no pinned program enters
+a lexicographic scope; asking for it panics.
 
 **Known limit.** There are no user-defined lattices beyond
 compositions of these classes.  The pinned code needs none.
@@ -491,6 +536,9 @@ Allocators:
 - `ProcessBinary`: zero-copy byte queues between threads.
 - `Cluster`: TCP between processes, one send thread and one receive
   thread per remote process, the same as upstream.
+- Process-hosted workers (ADR-0013): the Cluster allocator with one
+  worker per process over a host `dtfl_transport`, its network I/O
+  driven inline by the worker's step (`dtfl_execute_worker`).
 
 Parking and wakeup:
 
@@ -498,8 +546,16 @@ Parking and wakeup:
 - libdtfl gives each worker a futex on Linux, or a mutex/condvar pair
   elsewhere.
 - `dtfl_sync_activator` (upstream `SyncActivator`) is the one
-  cross-thread entry point.  It posts to a lock-free MPSC queue, then
-  wakes the worker.
+  cross-thread entry point.  It posts to an MPSC queue, then wakes the
+  worker.
+
+Channels between threads:
+
+- Upstream's `Process` allocator and its counters use
+  `std::sync::mpsc`, which is lock-free at the pin's toolchain (the
+  crossbeam list channel).
+- `src/comm/queue.c` ports that list channel to C11 atomics (P16.1;
+  the metal futex and throughput measurement is still open).
 
 ### D8. Determinism and the simulation allocator
 
@@ -603,7 +659,10 @@ needs a before/after benchmark (section 9).
 ### D12. Divergences from the pin
 
 The port matches the pin.  Where it does not, the difference is listed
-here and in the ledger note, and it gets its own ADR.  There are two:
+here and in the ledger note, and it gets its own ADR.  There are three
+behavior divergences and one group of examples and emit points that
+cannot be ported literally without reversing a decision made elsewhere
+in this section (see the 2026-10-15 amendment in ADR-0012):
 
 1. **Byte aliasing.** `bytes/src/lib.rs` takes the aliasing and
    regeneration hardening from timely #821, which landed after the
@@ -615,9 +674,50 @@ here and in the ledger note, and it gets its own ADR.  There are two:
    (`diagnostics/src/server.rs:154`), which publishes operator names
    and timings to the network with no authentication.  The address is
    a parameter, so the upstream behavior is one argument away.
+3. **Counter flush.** `channels/pushers/counter.rs` forwards a flush
+   only while the shared `produced` batch is non-empty, but the
+   owning operator drains that batch when it runs, so a flush after a
+   step was dropped and an `Exchange` behind the Counter kept its
+   buffered records forever (a hang; timely issue #824).  The C
+   Counter also forwards a flush when it pushed data since the last
+   one, the fix proposed in #824 (ADR-0012, 2026-10-23).
 
 A new divergence needs an entry here, an ADR and a ledger note, all in
 the same commit.
+
+Separately, a few upstream examples and optional emit points are
+excluded or deferred rather than ported literally, each with a reason
+recorded in the ADR-0012 amendment and the ledger note: comm_hello and
+lgalloc and spill_stress (the raw allocator and MergeQueue are internal,
+D7/D9; the worker is the public entry), logging-recv and logging_replay
+(logging is a subscriber API, not logging-as-data), the progcaster emit
+point (no consumer on the data plane), the ddir multi-worker Sequencer,
+and columnar_spill (subsumed by bench/trace_spill.c, since public
+arrange is not chunk-backed, D2).  These are not divergences in
+behavior; they are the scope boundary of the public API as this plan
+drew it.  The comm and differential log emission, the reduce reference
+tactic, and the progress and spill_compare examples, once listed here,
+are done (ADR-0012, 2026-10-18).
+
+### D13. Host runtime: sync hooks, byte transports, process-hosted workers
+
+ADR-0013 holds the decision in full.  In brief:
+
+- `dtfl_set_sync_hooks()` is a fifth process-wide hook covering every
+  lock and wait libdtfl uses (mutexes, condition variables, a
+  futex-style wait/wake on a word, yield, sleep, the clock, and the
+  thread identity of the owner check).  All of them go through
+  `src/base/os_sync.c`; the defaults stay pthreads and futex.
+- `dtfl_transport` ports upstream's `Stream` trait
+  (`zero_copy/stream.rs`) as a vtable: send, receive, wait, wake.
+  `dtfl_transport_socket()` is the built-in one over connected
+  sockets, and the cluster's send and receive loops run on it.
+- `dtfl_execute_worker()` runs worker i of n on the calling thread
+  over a transport and starts no thread: the worker's own step moves
+  the bytes.  This is how PostgreSQL backends and background workers
+  join one computation.
+- `dtfl_config_set_workers(DTFL_WORKERS_PROCESSES)` makes
+  `dtfl_execute()` fork one child per worker over a socketpair mesh.
 
 ## 5. Thread-safety contract
 
@@ -636,9 +736,12 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
      atomically;
    - `dtfl_event_link_sync`, the `link_sync::EventLink` port;
    - `dtfl_guards` (join and status);
+   - the `wake` member of a `dtfl_transport` (ADR-0013), which a
+     `dtfl_sync_activator` reaches through the worker's parker;
    - the global setters (`dtfl_set_alloc_hooks()`,
-     `dtfl_set_panic_hook()`).  The global setters must be called
-     before the first `dtfl_execute()`.
+     `dtfl_set_panic_hook()`, `dtfl_set_log_hook()`,
+     `dtfl_set_thread_hooks()` and `dtfl_set_sync_hooks()`).  The
+     global setters must be called before the first `dtfl_execute()`.
 
    Upstream's `ProbeHandle` holds an `Rc<RefCell<MutableAntichain>>`
    (`probe.rs:147-149`), so it is worker-owned like everything else in
@@ -652,8 +755,14 @@ The contract (also in `dtfl(7)` and `doc/libdtfl.texi`, node
    `Rc`), and so does libdtfl.  A trace imports only into dataflows on
    the same worker.
 5. **No hidden global state.** All state lives in the worker or the
-   execution.  There are three exceptions:
-   - the two hook setters in rule 2;
+   execution.  There are two kinds of exception:
+   - the five host hooks in rule 2 (allocation, panic, logging,
+     thread spawning and synchronization, ADR-0013), each a
+     process-wide setter that must be called before the first
+     `dtfl_execute()`.  Their backing globals are `hooks`,
+     `hooks_used`, `panic_fn`, `panic_ctx`, `log_fn`, `log_ctx`,
+     `thread_hooks`, `thread_hooks_set`, `sync_hooks`,
+     `sync_hooks_set` and `sync_used`;
    - the thread-local error-detail buffer behind
      `dtfl_last_error_detail()` (D6).
 
@@ -670,9 +779,9 @@ How the contract is verified:
 - `make check-tsan`: ThreadSanitizer over the Process, ProcessBinary
   and localhost Cluster suites;
 - the `Process` allocator under `helgrind`, nightly;
-- `tests/dist/test_no_globals.sh`, which uses `nm` to fail on any
-  writable or thread-local symbol in `libdtfl.so` other than the three
-  in rule 5.
+- `tests/dist/test_symbols.sh`, which uses `nm` to fail on any
+  writable or thread-local symbol in `libdtfl.so` outside the
+  allowlist in rule 5.
 
 ## 6. Verification
 
@@ -728,11 +837,15 @@ need extra tools.
      `src/base/os_alloc.c`; no `pthread_create` outside
      `src/base/os_thread.c`; no `getenv`, `signal` or `getopt` anywhere
      in `src/`; and examples and tools use only the public API.
-   - `test_symbols.sh`: the exported symbols match `src/libdtfl.map`
-     exactly.
+   - `test_symbols.sh`: every exported symbol starts with `dtfl_`,
+     and the exported set equals the union of the per-component
+     `src/*/exports.sym` lists.  Until 1.0, `src/libdtfl.map` exports
+     `dtfl_*` by pattern.  At 1.0 it is generated from the lists and
+     frozen (section 13).
    - `test_headers.sh`: each public header compiles on its own as C11
      and as C++17, with `-Wall -Wextra -Werror -pedantic`.
-   - `test_no_globals.sh`, described in section 5.
+   - the writable-globals check, folded into `test_symbols.sh` and
+     described in section 5.
    - `test_ledger.sh`: every `done` ledger row's target exists and
      carries the provenance header.  Every `done` test-ledger row names
      a C test that exists and is registered.  The ledgers parse.
@@ -750,6 +863,12 @@ need extra tools.
    the WebSocket frame parser), the DDIR parser, and `dtfl-diag`'s
    input path.  Crashing inputs go into `tests/corpus/` and stay there
    as regression tests.
+9. **Simulator coverage** (`make check-sim`, needs hegel).  The
+   multi-worker properties run under `DTFL_COMM_SIM` with a drawn seed,
+   worker count, progress mode, worker stalls and bounded delivery
+   delays that keep each channel's FIFO order (D8).
+   `DTFL_SIM_SEEDS` cases per property, sharded by `DTFL_SIM_JOBS`;
+   100,000 seeds before 1.0 (P16.7).
 
 Rules carried over from the maintainer's other C projects:
 
@@ -822,11 +941,22 @@ those operators exist at the pin (section 2).  Each one gets a short
   the same inputs.
 - The target for 1.0 is within 1.5x of Rust's throughput on every row,
   and the table in the manual says honestly where it is not.
+- Each row is measured along four axes, not one:
+  - throughput at 1, 2, 4, 8, 16 and 48 workers (closed loop);
+  - open-loop latency, p50, p99 and p99.9, at 25%, 50% and 75% of
+    the C build's closed-loop capacity, from upstream's open-loop mode
+    (requests on a fixed schedule, so a stall is charged to every
+    request it delays: no coordinated omission);
+  - instructions, allocations and futex calls per record;
+  - the cost of one step of an idle dataflow (P16.5).
 - Each optimization commit carries its before and after numbers.
-- Benchmarks run on dedicated EC2 hosts through the `aws-benchmark`
-  skill workflow, never on the development laptop.  Every published
-  number records the commit, configure flags, instance type and
-  compiler.
+- Benchmarks run only on a dedicated EC2 bare-metal instance, through
+  `dev/bench-ec2` (P16.3): never on the development laptop and never
+  on a LAN host.  The clock is pinned (performance governor, turbo
+  off, min = max frequency), THP and NUMA balancing are off, C and Rust
+  runs alternate, and the first run of each pair is discarded.  Every
+  published number records the commit, configure flags, instance type,
+  AMI, kernel, compilers and the tuning applied.
 
 ## 10. Phases
 
@@ -864,6 +994,7 @@ by module.
 | P13 | DDIR: parser, lowering, interpreter, explain, `dtfl-ddir` | 42 / 6,548 | P8 | the explain test suite; the upstream `.ddp`/`.ddir` programs give the same results |
 | P14 | Plugin server and its four example plugins | 6 / 520 | P8 | the `dd_server` session scripts replay |
 | P15 | 1.0 release: the three `experiments/` benchmarks, performance table, fuzz campaign, full manual, `make distcheck` on Linux (glibc, musl), FreeBSD and macOS | 3 / 586 | all | section 13 |
+| P16 | Latency and scaling: lock-free channels, the faithful benchmark modes, the EC2 metal harness, allocation discipline, the idle-step cost, exert and idle merge effort, simulator coverage, observability, two-socket runs, an IVM latency target (section 10.1) | - | P15 | section 10.1 |
 
 The table above is a DAG, not a sequence.  After P8, the phases P9,
 P10, P12, P13 and P14 are independent of each other and can run in
@@ -888,6 +1019,40 @@ These are handled as follows:
   the last method lands.
 - **`Arranged::join_core`, `reduce_abelian` and `reduce_core`** are
   declared in P7 and implemented in P8.  P7's tests do not call them.
+
+### 10.1 P16: latency and scaling
+
+A review on a dedicated c7i.metal-24xl (clock pinned at 2.4 GHz, C and
+Rust alternated) found single-worker throughput within the 1.5x goal
+(arrange 1.22x, count 1.40x slower than Rust) but three gaps the
+throughput table did not show:
+
+- **Scaling.**  At 16 workers arrange is 2.14x slower and count 1.71x,
+  with the same instructions per record as at one worker: the loss is
+  contention (about five times Rust's futex calls per record, IPC 2.03
+  against 2.60).
+- **Latency.**  In upstream's open-loop mode, which the port had not
+  ported, one-worker arrange latency is 2.5x to 4.5x Rust's at p50 to
+  p99 (for example 18 against 7 microseconds at p50 under 1M records
+  per second).
+- **Allocation.**  37% of the C build's open-loop cycles are in libc
+  (malloc, realloc, free, memcpy), against 16% for Rust.
+
+P16 addresses them.  Each item has its acceptance check; numbers come
+only from the metal harness.
+
+| Item | Scope | Acceptance |
+|---|---|---|
+| P16.1 | Lock-free MPSC: port the list channel behind `std::sync::mpsc` at the pin's toolchain to C11 atomics in `src/comm/queue.c`, keeping its send, try_recv, drain and close contracts | TSan and the simulator suites pass; a multi-producer stress test checks FIFO per producer, no loss and no duplication across close; on metal, futex calls per record within 1.5x of Rust and throughput within 1.5x at every worker count up to 16 |
+| P16.2 | Faithful `arrange` benchmark: the open-loop mode, the latency histogram arrange.rs prints, the exchange arm, timely arguments (`-w` and the rest) through `dtfl_execute`, per-worker seeds and times, and per-worker core pinning as `core_affinity` does | the ledger row is `done` with no subsumed parts; output lines match upstream's format |
+| P16.3 | `dev/bench-ec2`: launch a tagged metal instance, tune it, build C and the Rust pin, run the alternating matrix of section 9, collect CSV, terminate, and sweep for leftovers | one command produces the section 9 table; no account, VPC, subnet or security-group identifiers are committed |
+| P16.4 | Allocation discipline: per-worker free lists for batches, messages and chunks; upstream's chunk recycling in the merge batcher (VecMerger's stash) | allocations per record within 1.5x of Rust's on every row; open-loop p99 within 1.5x |
+| P16.5 | Idle-step cost: a benchmark that steps a dataflow whose inputs only advance time, C against Rust in nanoseconds per step; optimize the progress tracker and change batches against it | within 1.5x of Rust |
+| P16.6 | Port `Trace::exert`, `set_exert_logic` and `exert_effort` (spine_fueled.rs), `TraceWriter::exert` (writer.rs), the `writer.exert()` calls in arrangement.rs, reduce.rs and upsert.rs, the spine's activator, and `Config::idle_merge_effort` with `configure` (lib.rs) as `dtfl_config_set_idle_merge_effort` | a test that an idle arrangement with effort set reduces to one batch and one without does not; the longest single step on a 10M-key trace is reported |
+| P16.7 | Simulator coverage: run the model and property suites under `DTFL_COMM_SIM` with drawn seeds; add fault injection (worker stalls, bounded delay and reordering within each channel's FIFO guarantee) | a `make check-sim` target; 100,000 seeds green before 1.0 (section 13) |
+| P16.8 | Observability: optional USDT probes (operator schedule, batch seal, merge begin and end, park and unpark); a public `dtfl_trace_stats` (layers, pending batches, merges in flight, updates and bytes); frame pointers kept in release builds | probes listed in the manual; `dtfl_trace_stats` has a man page and a test |
+| P16.9 | Two sockets: run the matrix on a two-socket metal instance (c6i.metal or m6i.metal) with workers spread and packed; document worker placement through the thread hooks | results in the manual |
+| P16.10 | IVM latency: for the persistent maintenance worker of `dev/notes/pg-incremental-views.md`, the p99 delay from a commit's delta to its view delta at a stated commit rate, measured with the `examples/ivm` harness | a stated target and a measured number |
 
 ## 11. License and attribution
 
@@ -937,7 +1102,10 @@ work of all three.  The attribution is applied as follows:
   (musl), FreeBSD and macOS.
 - These are green: ASan/UBSan, TSan, interop, the docs gate, and
   100,000 seeds of the simulator property suites.
-- The performance table is published with honest numbers.
+- The performance table is published with honest numbers, along all
+  four axes of section 9, from the metal harness.
+- P16.1, P16.2, P16.3 and P16.6 are done; the others are done or
+  carry a measured reason in the manual.
 - Every public function has a man page, and the manual has no
   placeholder nodes.
 - The ABI is frozen: `src/libdtfl.map` gets its `DTFL_1.0` node, and

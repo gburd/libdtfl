@@ -84,12 +84,14 @@ ADR in `dev/adr/`.  Do not route around it in code.
    `src/base/os_thread.c`.  Configuration arrives through
    `dtfl_config`, and environment lookup happens only through a
    callback the caller supplies (PLAN D9).
-3. Never cast away an allocation's return code.  Check it, and
-   propagate the error with goto-cleanup.
+3. `__dtfl_alloc()`, `__dtfl_calloc()` and `__dtfl_realloc()` never
+   return NULL.  On failure they call the panic hook, the way Rust aborts
+   on allocation failure.  Public constructors that can fail for other
+   reasons return a `DTFL_E*` code and clean up with goto-cleanup.
 4. Examples and tools use only the public `dtfl_*` API.  If one needs an
    internal, the public API is missing something: add it there.
-5. Every public symbol is listed in `src/libdtfl.map`, has a man page,
-   and is declared in exactly one public header.
+5. Every public symbol is listed in its component's `src/*/exports.sym`,
+   has a man page, and is declared in exactly one public header.
 
 Mark a deliberate single-line exception with `/* DTFL_RAW_OK: reason */`.
 
@@ -114,22 +116,31 @@ out and a comment naming what it synchronizes with.  A change to
 - Comments state invariants and ownership: who frees this, which
   worker owns it, what the frontier must satisfy.  Do not narrate the
   code.
-- `ponytail:` marks a deliberate shortcut, and names its limit and how
-  to remove it.
+- A deliberate shortcut gets a plain comment naming its limit (for
+  example, a linear scan or a fixed cap).  Do not tag comments with a
+  tool or persona name.
 
 ## 8. Never commit
 
 - Build output: `*.o`, `*.lo`, `*.la`, `.libs/`, `.deps/`, binaries,
   `autom4te.cache/`, `config.status`, `config.log`, generated
-  `Makefile`s, and any Rust `target/` from `dev/gen-fixtures`.
+  `Makefile`s, and any Rust `target/` from `dev/gen-fixtures`.  The m4
+  files in `m4/` are vendored inputs, not outputs, and are committed.
 - `configure` and the other autotools outputs.  `./bootstrap`
   generates them, and they ship only in the `make dist` tarball.
 - Core dumps, secrets, and private keys (generate test certificates at
   run time).
-- Agent working notes.  They live in `.agent/`, which is gitignored.
-  Never `git add -f` anything under it.  `dev/` holds the plan, the
-  ADRs and the ledgers, all of which are maintained documents.  It is
-  not a scratchpad.
+- Agent working files.  Status trackers and checklists, investigation
+  and measurement reports, experiment write-ups, benchmark result
+  tables, review notes, handoff notes: all of them live in `.agent/`,
+  which is gitignored.  Never `git add -f` anything under it, and never
+  put such a file in `dev/`, `doc/` or the top level instead.  The
+  project's checklist of non-ledger work is `.agent/dev/COMPLETION.md`;
+  `tests/dist/test_completion.sh` reads it when it is present.  `dev/`
+  holds only the plan, the ADRs, the ledgers, their scripts, and design
+  notes meant for other developers.  If a finding matters to users, put
+  the finding itself in the README, NEWS, a man page or the manual, not
+  a pointer to an agent file.
 
 ## 9. Git
 
@@ -155,10 +166,33 @@ B=$(mktemp -d /scratch/$USER/dtfl-XXXXXX)
 ( cd "$B" && ~/ws/libdtfl/configure --enable-debug && make -j"$(nproc)" check )
 ```
 
-Benchmarks run on EC2 through the `aws-benchmark` skill, never on this
-host.  Terminate what you launch.
+Benchmarks run only on a dedicated EC2 bare-metal instance, through
+`dev/bench-ec2` (or the `aws-benchmark` skill until it exists).  Never
+on this host and never on a LAN machine: their clocks are not pinned
+and other work shares them, so their numbers are not comparable.
+Correctness builds and tests stay local.  Tag what you launch, and
+terminate it, its security group and its key pair when the results are
+copied off.
 
 ## 11. Sub-agent work
+
+Integration happens on the local `build` branch.  `main` holds only
+reviewed integration points.  Each worker gets its own worktree,
+created by the lead:
+
+```sh
+git worktree add .local/worktrees/agent-<task> -b feat/<task> build
+```
+
+A worker commits only on its own `feat/<task>` branch, inside its own
+worktree, and never touches another worktree or `build`.  The lead
+merges into `build` after review.
+
+Each component directory owns a `local.mk` fragment that lists its
+sources, headers and unit tests.  The top-level `Makefile.am` only
+includes fragments.  A worker edits only the fragments of the
+components it owns, which keeps parallel branches merge-clean.
+
 
 A phase in PLAN section 10 is large enough for a worker, reviewer and
 re-reviewer team (the `subagent-teams` skill).  Split a phase by module,
