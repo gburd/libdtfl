@@ -43,6 +43,9 @@
  * ps).
  */
 #define _DEFAULT_SOURCE			/* getrusage */
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE		/* ru_maxrss is opaque under POSIX */
+#endif
 #define _POSIX_C_SOURCE 200809L		/* clock_gettime, nanosleep */
 
 #include "dtfl/record.h"
