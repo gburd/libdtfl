@@ -2,6 +2,16 @@ libdtfl NEWS -- user-visible changes, newest first.
 
 Version 0.1.2 (unreleased)
 
+	The libxtc example in dtfl_set_sync_hooks(3) now runs, as
+	examples/embed/xtc_runtime (configure --with-libxtc), with 4
+	worker fibers under dtfl_execute and 4 under dtfl_execute_worker on
+	1, 2 and 4 carriers.  The page is corrected for libxtc 2.0: its
+	xtc_pid_t is 16 bytes, so the self hook packs the loop and slot;
+	yield and sleep fall back when called off a fiber; and it now says
+	what the hooks do not reach: a worker that waits by looping on
+	dtfl_worker_step holds its carrier, and dtfl_transport_socket's
+	poll(2) blocks it unless the host moves the wait off the carrier.
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.

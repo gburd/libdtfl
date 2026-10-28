@@ -53,6 +53,7 @@
 
 #include <inttypes.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -67,7 +68,7 @@
 #define KEYS 7
 
 /* Evidence that libdtfl's waits reached libxtc. */
-static atomic_ulong n_lock, n_cond_wait, n_offload;
+static atomic_ulong n_lock, n_cond_wait, n_cond_timeout, n_offload;
 
 /* ------------------------------------------------------------------ */
 /* Sync hooks: the dtfl_set_sync_hooks(3) example, plus the counters    */
@@ -169,6 +170,8 @@ cw(void *cv, void *m, uint64_t ns, void *c)
 	for (pp = &k->head; *pp != NULL; pp = &(*pp)->next)
 		if (*pp == &w) {	/* timed out: still queued */
 			*pp = w.next;
+			atomic_fetch_add_explicit(&n_cond_timeout, 1,
+			    memory_order_relaxed);
 			break;
 		}
 	(void)xtc_amutex_unlock(k->lk);
@@ -228,9 +231,10 @@ sl(uint64_t ns, void *c)
 }
 
 /*
- * xtc_pid_t is 16 bytes (32-bit loop and slot, 64-bit generation) and
- * stays the same when the fiber migrates; off a loop it is
- * XTC_PID_NONE.  Fold it into a uintptr_t.
+ * libxtc 2.0's xtc_pid_t is 16 bytes: a 32-bit loop and slot, which name
+ * a live fiber and survive its migration, and a 64-bit generation, which
+ * only tells it from the slot's later occupants.  Off a loop it is
+ * XTC_PID_NONE.
  */
 static uintptr_t
 me(void *c)
@@ -241,8 +245,7 @@ me(void *c)
 	(void)c;
 	if (xtc_pid_is_none(p))
 		return (uintptr_t)pthread_self();
-	id = ((uint64_t)p.loop_id << 32 | p.local_id) ^
-	    p.gen * UINT64_C(0x9e3779b97f4a7c15);
+	id = (uint64_t)p.loop_id << 32 | p.local_id;
 	return sizeof(uintptr_t) >= 8 ? (uintptr_t)id :
 	    (uintptr_t)(id ^ id >> 32);
 }
@@ -362,6 +365,7 @@ wait_on_pool(void *a)
 	return 0;
 }
 
+/* shortcut: a parked worker holds a pool thread for its whole wait. */
 static void
 ft_wait(void *c, uint64_t ns)
 {
@@ -498,6 +502,8 @@ worker(dtfl_worker *w, void *arg)
 	unsigned char buf[8];
 	state s;
 
+	/* Before any dataflow little can end this park: it usually times out. */
+	(void)dtfl_worker_step_or_park(w, 1000000);
 	s.index = dtfl_worker_index(w);
 	s.r = &all[s.index];
 	s.r->peers = dtfl_worker_peers(w);
@@ -717,8 +723,9 @@ main(int argc, char **argv)
 	}
 	(void)xtc_exec_fini(exec);
 	xtc_blocking_shutdown();
-	fprintf(stderr, "hooks: %lu mutex locks, %lu condition waits, %lu "
-	    "transport waits on the pool\n", atomic_load(&n_lock),
-	    atomic_load(&n_cond_wait), atomic_load(&n_offload));
+	fprintf(stderr, "hooks: %lu mutex locks, %lu condition waits (%lu "
+	    "timed out), %lu transport waits on the pool\n",
+	    atomic_load(&n_lock), atomic_load(&n_cond_wait),
+	    atomic_load(&n_cond_timeout), atomic_load(&n_offload));
 	return status;
 }
