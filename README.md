@@ -119,10 +119,11 @@ against the pinned Rust build on the same host:
 | `arrange` arm | 1.16x | 1.05x | 1.16x | 0.91x | 1.07x | 1.01x |
 | `count` arm | 1.29x | 1.29x | 1.30x | 1.23x | 1.28x | 1.00x |
 
-On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz) the
-ratios are the same with workers packed on one socket or spread across
-both (1.27x to 1.40x at 1, 4 and 16 workers); spreading costs C and Rust
-alike, about 20% of throughput at 16 workers.
+On a two-socket c6i.metal (Xeon 8375C, clock pinned at 2.9 GHz, build
+66154af) the ratios are about the same with workers packed on one socket
+or spread across both: 0.95x to 1.33x on the `arrange` arm and 1.21x to
+1.34x on `count`, at 1 to 64 workers.  At 16 workers spreading costs C
+13% of its `arrange` throughput and Rust 18%.
 
 The cost of a step is within 1.5 times too: timely's `barrier` example
 (an idle dataflow) runs a round in 1,845 ns against Rust's 1,350 with
