@@ -465,21 +465,22 @@ share of a commit (feed the delta, step until the view delta is
 complete) should stay under 1 ms at p99 at 1,000 commits per second for
 views whose aggregates are kept in the difference, so it is small
 beside the commit's own WAL flush.  `bench/ivm_latency` measures it: on
-a c7i.metal-24xl (one worker, clock pinned at 2.4 GHz), this note's
+a c7i.metal-24xl (one worker, clock pinned at 2.4 GHz, build 66154af,
+medians of five runs), this note's
 `region_totals` view over 10,000 customers and 100,000 orders, with
 ten-row commits (5 inserts, 2 deletes, 3 updates) arriving on a fixed
-schedule, turns a commit into its view delta in 111 / 138 / 146 us
-(p50 / p99 / p99.9) at 1,000 commits per second and 110 / 138 / 147 us
-at 5,000, with 16 groups; 129 / 192 / 201 us with 1,000 groups.  The
+schedule, turns a commit into its view delta in 104 / 130 / 138 us
+(p50 / p99 / p99.9) at 1,000 commits per second and 103 / 130 / 138 us
+at 5,000, with 16 groups; 122 / 184 / 191 us with 1,000 groups.  The
 target is met.
 
 **Aggregates: keep them in the difference.**  A `reduce` recomputes each
 touched group from its whole multiset, so a commit costs the size of the
 groups it touches, not the size of the change.  On the same host, with
-1,000 groups of about 100 rows a `reduce` commit takes 847 / 1,229 us
-(p50 / p99) at 1,000 commits per second and cannot keep up with 5,000;
-with 16 groups of about 6,000 rows it manages only 27 commits per
-second.  Moving the aggregate into the difference keeps it O(change):
+1,000 groups of about 100 rows a `reduce` commit takes 847 us at p50
+and 1.35 to 1.53 ms at p99 at 1,000 commits per second and cannot keep
+up with 5,000; with 16 groups of about 6,000 rows it manages only 26
+commits per second.  Moving the aggregate into the difference keeps it O(change):
 `dtfl_collection_explode` turns each `(region, amount)` into `region`
 with `amount` as its weight, and `dtfl_collection_count` then maintains
 the sum (and a plain `count` of the unexploded rows maintains

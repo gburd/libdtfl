@@ -169,10 +169,11 @@ at 16 workers are below Rust's.
 
 An incrementally maintained view (`bench/ivm_latency`: a join and a
 grouped sum over 100,000 rows, ten-row commits, one worker) turns a
-commit into its view delta in 111 / 138 microseconds (p50 / p99) at
+commit into its view delta in 104 / 130 microseconds (p50 / p99) at
 1,000 or 5,000 commits per second, when the sum is kept in the
-difference (`explode`, then `count`).  Computed with `reduce` instead,
-each commit costs the size of the groups it touches.
+difference (`explode`, then `count`); c7i.metal-24xl, build 66154af,
+medians of five.  Computed with `reduce` instead, each commit costs the
+size of the groups it touches.
 
 The record and container design (ADR-0001, ADR-0002) is unchanged; the
 gains came from port bugs that kept arranged traces from compacting, a
