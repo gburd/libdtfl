@@ -57,7 +57,12 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 		    m->changes.kw * sizeof(uint64_t)) == 0);
 		FUZZ_ASSERT(__dtfl_cb_delta(&m->changes, i) ==
 		    __dtfl_cb_delta(&m2->changes, i));
-		FUZZ_ASSERT(__dtfl_cb_delta(&m->changes, i) != 0);
+		/*
+		 * Compaction drops zero entries, except that upstream's
+		 * ChangeBatch::compact skips a batch of one entry, so a lone
+		 * zero delta stays (change_batch.rs at timely-v0.31.0).
+		 */
+		FUZZ_ASSERT(len == 1 || __dtfl_cb_delta(&m->changes, i) != 0);
 	}
 	mc->free(mc, mc->clone(mc, m));
 	mc->free(mc, m2);
