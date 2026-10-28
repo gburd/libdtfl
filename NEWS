@@ -8,8 +8,10 @@ Version 0.1.2 (unreleased)
 	two-socket c6i.metal (dev/bench-ec2, full matrix), C's 16-worker
 	arrange throughput rose from 69.4M to 83.8M records/s packed and
 	from 56.3M to 72.7M spread, while Rust's stayed within noise, so C
-	is 1.11x and 1.05x slower where it was 1.34x and 1.39x; the count
-	arm and one worker are unchanged.  On a c7i.metal-24xl, rerunning
+	is 1.11x and 1.05x slower where it was 1.34x and 1.39x (and 1.24x
+	where it was 1.39x at 4 workers packed).  The count arm gained 2%
+	to 7% at 4 and 16 workers (1.39x to 1.33x at 16 packed), and one
+	worker is unchanged.  On a c7i.metal-24xl, rerunning
 	the build each old figure came from beside 66154af:
 	bench/ivm_latency in the difference form is about 5% faster, 104 /
 	130 us (p50 / p99) at 1,000 commits/s with 16 groups where it was
