@@ -2,6 +2,29 @@ libdtfl NEWS -- user-visible changes, newest first.
 
 Version 0.1.2 (unreleased)
 
+	Linux riscv64.  On Bianbu 4.0.7 (Ubuntu 26.04 base, Linux 6.18,
+	a SpacemiT X100 with 8 cores), with gcc 15.2 and clang 21.1: make
+	check with hegel, under ASan and UBSan, and under TSan, all 130
+	tests passing under each compiler; make check without hegel and
+	make distcheck under both; under gcc, the heavy explain sweep, the
+	longrun test and make check-sim with 100,000 seeds for each of its
+	six properties; and the interop tier, with dev/gen-fixtures --check
+	regenerating all five fixtures from the pinned Rust crates byte for
+	byte.  hegel publishes no riscv64 libhegel, so these runs used
+	hegel 0.36.5 built from source with the distribution's Rust 1.93;
+	the manual's platform notes say how.  The TSan runtime on
+	riscv64 aborts under setarch -R, which configure used to apply to
+	every Linux TSan build, so configure now tries a sanitizer program
+	under its test wrapper and drops the wrapper when it fails there
+	and runs without it.  No library code changed.  Not run: valgrind,
+	which cannot start any program on this system (valgrind 3.26 does
+	not decode the Zba instructions in the system's dynamic loader),
+	and the benchmarks.
+
+	make check's summary counted 11 test scripts twice, so TOTAL said
+	141 for 130 tests.  It now counts each test once, and make check
+	fails if a test is listed twice.
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.
