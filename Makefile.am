@@ -91,6 +91,7 @@ include src/algo/local.mk
 include src/dogs/local.mk
 include src/diag/local.mk
 include tests/interop/local.mk
+include tests/fuzz/local.mk
 include bench/local.mk
 
 # Tools (bin_PROGRAMS): command-line programs built on the public API

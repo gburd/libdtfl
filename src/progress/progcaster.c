@@ -28,12 +28,7 @@ struct __dtfl_progcaster {
 	unsigned kw;		/* key words: 2 + depth */
 };
 
-/* A progress message: a change batch tagged with source and sequence. */
-typedef struct progress_msg {
-	uint64_t source;
-	uint64_t seq;
-	__dtfl_change_batch changes;
-} progress_msg;
+typedef __dtfl_progress_msg progress_msg;
 
 static size_t
 pm_encoded_len(const __dtfl_msg_class *mc, const void *m)
@@ -139,6 +134,13 @@ pm_free(const __dtfl_msg_class *mc, void *m)
 static const __dtfl_msg_class progress_class = {
 	"progress", pm_encoded_len, pm_encode, pm_decode, pm_clone, pm_free, NULL
 };
+
+/* The message class, for the codec's fuzz target (tests/fuzz). */
+const __dtfl_msg_class *
+__dtfl_progress_class(void)
+{
+	return &progress_class;
+}
 
 /*
  * Progcaster::new: allocates a broadcast channel for the subgraph at
