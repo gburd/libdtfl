@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 23, 2026
+.Dd October 28, 2026
 .Dt DTFL_SET_SYNC_HOOKS 3
 .Os
 .Sh NAME
@@ -237,16 +237,27 @@ static void wake_some(xcond *k, bool all)
 static void cs(void *cv, void *c) { wake_some(cv, false); }
 static void cb(void *cv, void *c) { wake_some(cv, true); }
 
-static void yl(void *c) { xtc_yield(); }
+/* Off a loop xtc_yield and xtc_proc_sleep return at once. */
+static void yl(void *c)
+{
+	if (xtc_pid_is_none(xtc_self()))
+		(void)sched_yield();
+	else
+		xtc_yield();
+}
 static void sl(uint64_t ns, void *c)
-{ (void)xtc_proc_sleep(ns > INT64_MAX ? INT64_MAX : (int64_t)ns); }
+{
+	int64_t t = ns > INT64_MAX ? INT64_MAX : (int64_t)ns;
 
-/* xtc_pid_t is 64 bits; off a loop xtc_self() is XTC_PID_NONE. */
+	if (xtc_proc_sleep(t) != XTC_OK)	/* not on a proc */
+		(void)xtc_sleep_ns(t);
+}
+
+/* Loop and slot name a live fiber; off a loop xtc_self() is none. */
 static uintptr_t me(void *c)
 {
 	xtc_pid_t p = xtc_self();
-	uint64_t id = (uint64_t)p.loop_id << 48 |
-	    (uint64_t)p.local_id << 32 | p.gen;
+	uint64_t id = (uint64_t)p.loop_id << 32 | p.local_id;
 
 	if (xtc_pid_is_none(p))
 		return (uintptr_t)pthread_self();
@@ -260,13 +271,21 @@ dtfl_set_sync_hooks(&h);
 .Ed
 .Pp
 .Fa self
-packs the whole
+packs the loop and slot of the
 .Vt xtc_pid_t
 into the
 .Vt uintptr_t ,
 folding its halves together where that is 32 bits wide.
-A collision there only weakens the debug check; what matters is that
-one fiber always gets the same value, wherever it runs.
+In libxtc 2.0 the pid is 16 bytes; the loop and slot name a live fiber
+and do not change when it migrates, and the 64-bit generation, left
+out, only tells it from the slot's later occupants.
+A collision only weakens the debug check; what matters is that one
+fiber always gets the same value, wherever it runs.
+Without
+.Fa self ,
+a worker fiber that migrates to another carrier fails the check in a
+debug build with
+.Dq worker used from a thread that does not own it .
 .Pp
 With no
 .Fa wait
@@ -275,6 +294,34 @@ and
 each worker parks on this condition, so a parked worker yields its
 carrier instead of sleeping in
 .Xr futex 2 .
+.Pp
+The hooks cover what libdtfl blocks on, not what the host does with a
+worker.
+A worker function that waits in a loop of
+.Fn dtfl_worker_step ,
+which never parks, holds its carrier, and a peer on the same carrier
+never runs; wait with
+.Fn dtfl_worker_step_or_park .
+The thread hooks
+.Pq Xr dtfl_set_thread_hooks 3
+start each worker as a fiber.
+A transport's
+.Fa wait
+is not a hook: the
+.Xr poll 2
+in
+.Fn dtfl_transport_socket
+blocks its carrier, so a fiber host runs it off the carrier, for
+example through
+.Fn xtc_blocking_run ,
+or supplies a transport whose
+.Fa wait
+parks the fiber
+.Pq Xr dtfl_transport 3 .
+.Pp
+.Pa examples/embed/xtc_runtime.c
+in the source distribution runs these hooks, with thread hooks and a
+transport like that, on one, two and four carriers.
 .Sh ERRORS
 .Bl -tag -width DTFL_ESTATE
 .It Bq Er DTFL_EINVAL
@@ -286,6 +333,7 @@ libdtfl has already locked, waited or read the clock.
 .Sh SEE ALSO
 .Xr dtfl_set_thread_hooks 3 ,
 .Xr dtfl_strerror 3 ,
+.Xr dtfl_transport 3 ,
 .Xr dtfl 7 ,
 .Xr dtfl_embedding 7
 .Sh HISTORY

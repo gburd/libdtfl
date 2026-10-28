@@ -279,6 +279,41 @@ AC_SUBST([HEGEL_LIBS])
 AM_CONDITIONAL([DTFL_HEGEL], [test "x$with_hegel" != xno])
 
 # -------------------------------------------------------------------------
+# libxtc (examples/embed/xtc_runtime only; the library never links it).
+# Found by pkg-config (xtc.pc) unless a PREFIX is given; absent, the
+# example is not built and its test reports SKIP.
+# -------------------------------------------------------------------------
+AC_ARG_WITH([libxtc],
+	[AS_HELP_STRING([--with-libxtc@<:@=PREFIX@:>@], [build the libxtc fiber example (default: if pkg-config finds xtc)])],
+	[], [with_libxtc=check])
+XTC_CFLAGS=""
+XTC_LIBS=""
+dtfl_xtc_asked=yes
+AS_IF([test "x$with_libxtc" = xcheck], [dtfl_xtc_asked=no])
+AS_CASE([$with_libxtc],
+	[no], [],
+	[yes], [PKG_CHECK_MODULES([XTC], [xtc], [],
+		[AC_MSG_ERROR([pkg-config cannot find xtc; pass --with-libxtc=PREFIX])])],
+	[check], [PKG_CHECK_MODULES([XTC], [xtc], [with_libxtc=yes], [with_libxtc=no])],
+	[XTC_CFLAGS="-I$with_libxtc/include"
+	 XTC_LIBS="-L$with_libxtc/lib -lxtc"])
+AS_IF([test "x$with_libxtc" != xno], [
+	dtfl_save_CFLAGS=$CFLAGS dtfl_save_LIBS=$LIBS
+	CFLAGS="$CFLAGS $XTC_CFLAGS" LIBS="$XTC_LIBS $LIBS"
+	AC_MSG_CHECKING([whether libxtc links])
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <xtc_exec.h>]],
+		[[xtc_exec_t *e; return xtc_exec_init(&e, 1);]])],
+		[AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])
+		 AS_IF([test "x$dtfl_xtc_asked" = xyes],
+			[AC_MSG_ERROR([cannot link libxtc with "$XTC_CFLAGS $XTC_LIBS"])])
+		 with_libxtc=no])
+	CFLAGS=$dtfl_save_CFLAGS LIBS=$dtfl_save_LIBS])
+AC_SUBST([XTC_CFLAGS])
+AC_SUBST([XTC_LIBS])
+AM_CONDITIONAL([DTFL_XTC], [test "x$with_libxtc" != xno])
+
+# -------------------------------------------------------------------------
 # Documentation tools (optional at build time; gates report SKIP).
 # -------------------------------------------------------------------------
 AC_CHECK_PROGS([MANDOC], [mandoc], [])
@@ -294,6 +329,7 @@ libdtfl $PACKAGE_VERSION
   debug:        $enable_debug
   sanitizers:   ${DTFL_SAN_FLAGS:-none}
   hegel:        $with_hegel
+  libxtc:       $with_libxtc
   diagnostics:  $enable_diag
   ddir:         $enable_ddir
   server:       $enable_server

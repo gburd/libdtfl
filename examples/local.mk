@@ -423,3 +423,18 @@ examples_embed_forked_workers_SOURCES = examples/embed/forked_workers.c
 examples_embed_forked_workers_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include
 examples_embed_forked_workers_LDADD = libdtfl.la
 EXTRA_DIST += examples/embed/forked_workers.expected
+
+# libdtfl workers as libxtc fibers: the dtfl_set_sync_hooks(3) example
+# hooks, thread hooks that spawn fibers, and dtfl_execute_worker over
+# sockets whose wait runs on libxtc's blocking pool.  Built only when
+# configure finds libxtc (--with-libxtc); otherwise its test SKIPs.
+dist_check_SCRIPTS += tests/dist/test_examples_xtc.sh
+TESTS += tests/dist/test_examples_xtc.sh
+EXTRA_DIST += examples/embed/xtc_runtime.c examples/embed/xtc_runtime.expected
+if DTFL_XTC
+noinst_PROGRAMS += examples/embed/xtc_runtime
+check_PROGRAMS += examples/embed/xtc_runtime
+examples_embed_xtc_runtime_SOURCES = examples/embed/xtc_runtime.c
+examples_embed_xtc_runtime_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/include $(XTC_CFLAGS)
+examples_embed_xtc_runtime_LDADD = libdtfl.la $(XTC_LIBS)
+endif
