@@ -17,6 +17,7 @@
 
 #include "dtfl/arrange.h"
 #include "dtfl/config.h"
+#include "dtfl/iterate.h"
 #include "dtfl/collection.h"
 #include "dtfl/record.h"
 #include "dtfl/reduce.h"
@@ -1028,6 +1029,169 @@ DTFL_TEST(arrange__trace_stats)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* enter an iterative scope: join_core reads the trace in the inner class. */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Every (outer, inner) time join_core hands the result fn, and whether
+ * any inner word was not the minimum.  The entered side's updates are
+ * outer times lifted by to_inner, and the probe side is at iteration 0,
+ * so every joined time has inner word 0.
+ */
+typedef struct enter_seen {
+	size_t n;
+	uint64_t outer[MAX_OUT];
+	uint64_t inner[MAX_OUT];
+} enter_seen;
+
+static enter_seen enter_iter_seen;
+static dtfl_arranged *enter_iter_arr;
+
+static void
+enter_iter_result(void *ctx, const void *key, size_t klen, const void *v1,
+    size_t v1l, const void *v2, size_t v2l, dtfl_join_emit *out)
+{
+	(void)ctx; (void)klen; (void)v1; (void)v1l; (void)v2l;
+	(void)key;
+	dtfl_join_emit_record(out, v2, 8);
+}
+
+static void
+enter_iter_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	enter_seen *s = ctx;
+
+	(void)rec; (void)len; (void)diff;
+	if (s->n >= MAX_OUT)
+		return;
+	s->outer[s->n] = time[0];
+	s->inner[s->n] = time[1];
+	s->n++;
+}
+
+static bool
+enter_iter_none(void *ctx, const void *rec, size_t len)
+{
+	(void)ctx; (void)rec; (void)len;
+	return false;
+}
+
+static dtfl_collection *
+enter_iter_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
+{
+	dtfl_arranged *edges = dtfl_arranged_enter(enter_iter_arr, inner);
+	dtfl_arranged *probe = dtfl_collection_arrange_by_key(var,
+	    dtfl_type_u64(), dtfl_type_unit(), "probe");
+	dtfl_collection *joined = dtfl_arranged_join_core(probe, edges,
+	    dtfl_type_u64(), enter_iter_result, DTFL_NOCTX);
+	dtfl_collection *seen = dtfl_collection_inspect(joined,
+	    enter_iter_sink, DTFL_CTX(&enter_iter_seen, NULL));
+	/* No feedback: the variable stays at its initial value. */
+	dtfl_collection *empty = dtfl_collection_filter(seen,
+	    enter_iter_none, DTFL_NOCTX);
+
+	(void)vctx;
+	dtfl_collection_free(seen);
+	dtfl_collection_free(joined);
+	dtfl_arranged_free(probe);
+	dtfl_arranged_free(edges);
+	return empty;
+}
+
+typedef struct enter_iter_ctx {
+	dtfl_input_session *edges;
+	dtfl_input_session *roots;
+	dtfl_probe *probe;
+} enter_iter_ctx;
+
+static void
+build_enter_iterate(dtfl_scope *scope, void *arg)
+{
+	enter_iter_ctx *c = arg;
+	dtfl_collection *e = dtfl_input_session_to_collection(c->edges, scope);
+	dtfl_collection *r = dtfl_input_session_to_collection(c->roots, scope);
+	dtfl_arranged *arr = dtfl_collection_arrange_by_key(e, dtfl_type_u64(),
+	    dtfl_type_u64(), "edges");
+	dtfl_collection *res, *probed;
+
+	enter_iter_arr = arr;
+	res = dtfl_collection_iterate(r, enter_iter_logic, DTFL_NOCTX);
+	probed = dtfl_collection_probe_with(res, c->probe);
+	dtfl_collection_free(probed);
+	dtfl_collection_free(res);
+	dtfl_arranged_free(arr);
+	dtfl_collection_free(r);
+	dtfl_collection_free(e);
+}
+
+DTFL_TEST(arrange__enter_iterate_inner_times)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	enter_iter_ctx c;
+	size_t i;
+	uint64_t e;
+
+	(void)params; (void)data;
+	memset(&enter_iter_seen, 0, sizeof enter_iter_seen);
+	c.edges = dtfl_input_session_new(pair, r);
+	c.roots = dtfl_input_session_new(dtfl_type_u64(), r);
+	c.probe = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_enter_iterate, &c),
+	    ==, 0);
+
+	/*
+	 * Several edges from node 0 at epochs 1 and 2, so the outer trace
+	 * holds more than one update per batch: reading its one-word times
+	 * as (outer, inner) pairs would take the next update's word as the
+	 * inner coordinate, and the last update's from past the end.
+	 */
+	for (e = 0; e < 6; e++) {
+		unsigned char rec[16];
+		uint64_t next = 1 + e / 3;
+
+		dtfl_put_u64(rec, 0);
+		dtfl_put_u64(rec + 8, 100 + e);
+		dtfl_input_session_insert(c.edges, rec, sizeof rec);
+		if (e % 3 == 2) {
+			dtfl_input_session_advance_to(c.edges, &next);
+			dtfl_input_session_flush(c.edges);
+		}
+	}
+	{
+		unsigned char key[8];
+		uint64_t next = 3;
+
+		dtfl_put_u64(key, 0);
+		dtfl_input_session_insert(c.roots, key, sizeof key);
+		dtfl_input_session_advance_to(c.roots, &next);
+		dtfl_input_session_flush(c.roots);
+	}
+	dtfl_input_session_close(c.edges);
+	dtfl_input_session_close(c.roots);
+	while (dtfl_worker_step(w))
+		;
+
+	/* All six edges join at iteration 0, at the outer time 0..1. */
+	assert_size(enter_iter_seen.n, ==, 6);
+	for (i = 0; i < enter_iter_seen.n; i++) {
+		assert_uint64(enter_iter_seen.inner[i], ==, 0);
+		assert_uint64(enter_iter_seen.outer[i], <=, 1);
+	}
+
+	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
@@ -1038,6 +1202,7 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__idle_merge_effort),
 	DTFL_T(arrange__idle_merge_after_release),
 	DTFL_T(arrange__trace_stats),
+	DTFL_T(arrange__enter_iterate_inner_times),
 	DTFL_T_END
 };
 
