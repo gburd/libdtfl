@@ -35,6 +35,27 @@ Version 0.1.2 (unreleased)
 	dtfl_worker_step holds its carrier, and dtfl_transport_socket's
 	poll(2) blocks it unless the host moves the wait off the carrier.
 
+	Benchmarks rerun at 66154af, five alternated reps per point; the
+	README, the manual's Threads chapter and
+	dev/notes/pg-incremental-views.md now give these figures.  On the
+	two-socket c6i.metal (dev/bench-ec2, full matrix), C's 16-worker
+	arrange throughput rose from 69.4M to 83.8M records/s packed and
+	from 56.3M to 72.7M spread, while Rust's stayed within noise, so C
+	is 1.11x and 1.05x slower where it was 1.34x and 1.39x (and 1.24x
+	where it was 1.39x at 4 workers packed).  The count arm gained 2%
+	to 7% at 4 and 16 workers (1.39x to 1.33x at 16 packed), and one
+	worker is unchanged.  On a c7i.metal-24xl, rerunning
+	the build each old figure came from beside 66154af:
+	bench/ivm_latency in the difference form is about 5% faster, 104 /
+	130 us (p50 / p99) at 1,000 commits/s with 16 groups where it was
+	111 / 138, and p99 184 us where it was 192 with 1,000 groups; with
+	reduce at 1,000 groups, p99 rose from 1.22-1.25 ms to 1.35-1.45
+	ms.  bench/idle_merge's longest idle step on a 10M-key trace is 16
+	to 23 ms over effort 1e3 to 1e5, where it was 13 to 20 ms; at
+	effort 1e4 it went from 14.4-15.0 ms at a8e7815 to 19.5-19.7 ms.
+	The event_driven example is unchanged at 1.24x Rust's time (100
+	dataflows of 100 maps) and 1.22x (10 of 1000).
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.
