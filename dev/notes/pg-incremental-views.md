@@ -564,7 +564,7 @@ These are open design work, not solved by the substrate:
   is within 1.4x of Rust differential dataflow on the pinned `arrange`
   benchmark at 1 to 16 workers (README, Performance).  Latency is not
   yet: one worker's open-loop p99 is about 3x Rust's, and an idle step
-  costs about 1.9x.  Per-commit cost is flat over thousands of commits
+  costs 1.1x to 1.4x.  Per-commit cost is flat over thousands of commits
   now that arranged traces compact (`tests/unit/test_longrun.c` guards
   it).  The comparison that matters for
   IVM is maintenance cost versus REFRESH and versus trigger-based IVM at
