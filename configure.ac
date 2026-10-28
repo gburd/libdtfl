@@ -163,7 +163,22 @@ AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	 AS_CASE(["$DTFL_SAN_FLAGS"], [*thread*],
 		[AS_IF([test -n "$SETARCH"], [DTFL_TEST_WRAPPER="setarch `uname -m` -R"])])
 	 AS_IF([test -z "$DTFL_TEST_WRAPPER" && test -n "$PROCCONTROL"],
-		[DTFL_TEST_WRAPPER="proccontrol -m aslr -s disable"])])
+		[DTFL_TEST_WRAPPER="proccontrol -m aslr -s disable"])
+	 # riscv64 (Sv39) is the reverse of x86_64: TSan finds its shadow
+	 # layout only around the randomized mmap base, and under setarch -R
+	 # every program aborts ("memory layout is incompatible, even though
+	 # ASLR is disabled").  Drop the wrapper when a sanitizer program fails
+	 # under it and runs without it.
+	 AS_IF([test -n "$DTFL_TEST_WRAPPER" && test "x$cross_compiling" != xyes],
+		[AC_CACHE_CHECK([whether sanitizer programs run under $DTFL_TEST_WRAPPER], [dtfl_cv_san_wrapper],
+			[save_CFLAGS="$CFLAGS" save_LDFLAGS="$LDFLAGS"
+			 CFLAGS="$CFLAGS $DTFL_SAN_FLAGS" LDFLAGS="$LDFLAGS $DTFL_SAN_FLAGS"
+			 dtfl_cv_san_wrapper=yes
+			 AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+				[$DTFL_TEST_WRAPPER ./conftest$ac_exeext >&AS_MESSAGE_LOG_FD 2>&1 ||
+				 { ./conftest$ac_exeext >&AS_MESSAGE_LOG_FD 2>&1 && dtfl_cv_san_wrapper=no; }])
+			 CFLAGS="$save_CFLAGS" LDFLAGS="$save_LDFLAGS"])
+		 AS_IF([test "x$dtfl_cv_san_wrapper" = xno], [DTFL_TEST_WRAPPER=""])])])
 AC_SUBST([DTFL_TEST_WRAPPER])
 AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	[CFLAGS="$CFLAGS $DTFL_SAN_FLAGS -fno-omit-frame-pointer -g"
