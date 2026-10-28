@@ -75,6 +75,21 @@ from git; the release tarball ships `configure`), and `pkg-config`.
 present.  Property tests use the hegel engine when configured with
 `--with-hegel=PREFIX`, and report SKIP otherwise.
 
+The libFuzzer tier fuzzes every decoder of untrusted bytes (the TCP
+message framing, the data and progress message codecs, capture events,
+times, log records, recorded log streams and dtfl-diag, the WebSocket
+handshake, DDIR programs and values, record descriptors).  It needs
+clang:
+
+```sh
+./configure CC=clang --enable-fuzz && make
+DTFL_FUZZ_SECONDS=600 DTFL_FUZZ_JOBS=8 make fuzz
+```
+
+Each target first replays its committed corpus in `tests/corpus/fuzz/`,
+crash reproducers included.  Without `--enable-fuzz`, `make fuzz` prints
+SKIP and exits 77.
+
 Link against it with `pkg-config`:
 
 ```sh

@@ -144,6 +144,43 @@ Each property prints PASS, FAIL or SKIP.  A failure prints the minimal
 case hegel shrank it to, including the simulator seed and faults, and a
 @env{DTFL_PBT_REPLAY} command that reruns that one case.
 
+@subheading Fuzzing
+
+@command{make fuzz} is the libFuzzer tier.  It needs a build configured
+with clang and @option{--enable-fuzz}, which compiles the library with
+AddressSanitizer, UndefinedBehaviorSanitizer and fuzzer coverage; in
+any other build @command{make fuzz} prints SKIP and exits 77.  There is
+one target per decoder of bytes from outside the process: the TCP
+message framing, the data and progress message codecs, capture and
+replay events, the time and summary codecs, the timely, differential
+and communication log records, recorded log streams as
+@command{dtfl-diag} reads them, the diagnostics server's WebSocket
+handshake, DDIR programs and values, and the record descriptors and
+batch codec.  Where a decoder has an encoder, the target also checks
+that decoding and re-encoding gives the input back.
+
+Each target first replays every input committed under
+@file{tests/corpus/fuzz/@var{target}/}, the seeds and the reproducer of
+every crash fixed so far, and then fuzzes from them.  Two variables size
+the run:
+
+@table @env
+@item DTFL_FUZZ_SECONDS
+seconds of fuzzing per target (default 60; 0 replays the corpus only);
+@item DTFL_FUZZ_JOBS
+parallel fuzzing processes per target (default 1).
+@end table
+
+New corpus entries go to @file{fuzz-corpus/} in the build directory and
+crashing inputs to @file{fuzz-out/}; neither touches the source tree.
+@command{make fuzz-seeds} regenerates the seed corpus from the library's
+encoders after a wire format changes.
+
+@example
+./configure CC=clang --enable-fuzz && make
+DTFL_FUZZ_SECONDS=1800 DTFL_FUZZ_JOBS=16 make fuzz
+@end example
+
 @section Platform notes
 
 The test suite, with each sanitizer, passes on these platforms:
