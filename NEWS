@@ -1,5 +1,7 @@
 libdtfl NEWS -- user-visible changes, newest first.
 
+Version 0.1.2 (unreleased)
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.
