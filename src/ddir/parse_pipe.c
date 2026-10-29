@@ -248,7 +248,7 @@ tokenize(lexer *lx, const char *input)
 /* ------------------------------------------------------------------ */
 
 typedef struct binder {
-	char *name;
+	const char *name; /* arena-owned */
 	size_t level;
 	size_t field;
 } binder;
@@ -354,11 +354,22 @@ resolve_binder(pparser *p, const char *name)
 
 /* ---- scalar term grammar ---- */
 
+/* Push onto a scratch vec whose backing the arena owns, so an error
+ * unwind reclaims it; dd_arena_free_all frees it on success too. */
+static void
+scratch_push(pparser *p, dd_vec *v, void *x)
+{
+	void *prev = v->data;
+
+	dd_vec_push(v, x);
+	if (v->data != prev)
+		dd_arena_retrack(p->pc, prev, v->data);
+}
+
 /*
- * The case/pattern scratch vecs (tags, tagged, names) are freed on the
- * normal path and on the handled error paths; a longjmp out of
- * parse_term mid-arm leaks their small backing arrays.  Bounded to
- * malformed case input; track them in the arena if it ever matters.
+ * Every scratch allocation here (the constructor and binder names, the
+ * tags, tagged and names vecs) is arena-owned, so a parse error anywhere
+ * in an arm unwinds without leaking.  Binders borrow their names.
  */
 static dd_term *
 parse_pattern_case(pparser *p)
@@ -375,10 +386,9 @@ parse_pattern_case(pparser *p)
 	scrutinee = parse_term(p);
 	expect(p, T_LBRACE);
 	while (pk(p)->kind != T_RBRACE) {
-		char *name = parse_ident_local(p);
+		char *name = parse_ident(p);
 
 		if (strcmp(name, "_") == 0) {
-			__dtfl_free(name);
 			expect(p, T_FATARROW);
 			dflt = parse_term(p);
 		} else {
@@ -393,21 +403,17 @@ parse_pattern_case(pparser *p)
 				    "unknown constructor in pattern: `%s`", name);
 			expect(p, T_LPAREN);
 			if (pk(p)->kind != T_RPAREN) {
-				dd_vec_push(&names, parse_ident_local(p));
+				scratch_push(p, &names, parse_ident(p));
 				while (pk(p)->kind == T_COMMA) {
 					nx(p);
-					dd_vec_push(&names, parse_ident_local(p));
+					scratch_push(p, &names, parse_ident(p));
 				}
 			}
 			expect(p, T_RPAREN);
-			if (names.len != c->arity) {
-				for (j = 0; j < names.len; j++)
-					__dtfl_free(names.data[j]);
-				dd_vec_free(&names);
+			if (names.len != c->arity)
 				dd_parse_error(p->pc,
 				    "pattern `%s` expects %zu binders, got %zu",
 				    name, c->arity, names.len);
-			}
 			expect(p, T_FATARROW);
 			p->depth += 1;
 			level = p->depth;
@@ -420,21 +426,15 @@ parse_pattern_case(pparser *p)
 				dd_vec_push(&p->binders, b);
 			}
 			arm = parse_term(p);
-			for (j = 0; j < names.len; j++) {
-				binder *b = p->binders.data[--p->binders.len];
-
-				__dtfl_free(b->name);
-				__dtfl_free(b);
-			}
+			for (j = 0; j < names.len; j++)
+				__dtfl_free(p->binders.data[--p->binders.len]);
 			p->depth -= 1;
-			dd_vec_free(&names);
 			tagp = dd_arena_raw(p->pc, __dtfl_alloc(sizeof *tagp));
 			*tagp = c->tag;
-			dd_vec_push(&tags, tagp);
-			dd_vec_push(&tagged, arm);
+			scratch_push(p, &tags, tagp);
+			scratch_push(p, &tagged, arm);
 			if (c->tag > max_tag)
 				max_tag = c->tag;
-			__dtfl_free(name);
 		}
 		if (pk(p)->kind == T_COMMA)
 			nx(p);
@@ -454,19 +454,14 @@ parse_pattern_case(pparser *p)
 				break;
 			}
 		if (arm == NULL) {
-			if (dflt == NULL) {
-				dd_vec_free(&tagged);
-				dd_vec_free(&tags);
+			if (dflt == NULL)
 				dd_parse_error(p->pc,
 				    "case has no arm for tag %zu and no `_` "
 				    "default", i);
-			}
 			arm = dd_arena_clone(p->pc, dflt);
 		}
 		dd_vec_push(&result->u.case_.arms, arm);
 	}
-	dd_vec_free(&tagged);
-	dd_vec_free(&tags);
 	return result;
 }
 
@@ -1125,12 +1120,9 @@ pparser_free(pparser *p)
 		__dtfl_free(c);
 	}
 	dd_vec_free(&p->cons);
-	for (i = 0; i < p->binders.len; i++) {
-		binder *b = p->binders.data[i];
-
-		__dtfl_free(b->name);
-		__dtfl_free(b);
-	}
+	/* A binder borrows its name from the arena. */
+	for (i = 0; i < p->binders.len; i++)
+		__dtfl_free(p->binders.data[i]);
 	dd_vec_free(&p->binders);
 }
 
