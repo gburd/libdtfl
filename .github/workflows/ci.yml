@@ -59,6 +59,65 @@ jobs:
       - run: make -C build check -j"$(sysctl -n hw.ncpu)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
       - run: make -C build distcheck -j"$(sysctl -n hw.ncpu)"
 
+  # macOS tiers the plain job does not run: the sanitizers under Apple
+  # clang, and the property tests with hegel.  hegel publishes no
+  # libhegel built from source here, so the job builds hegel-rust's C
+  # crate (the recipe in the manual's platform notes) and caches it.
+  macos-tiers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tier: asan
+            flags: --enable-asan --enable-ubsan
+          - tier: tsan
+            flags: --enable-tsan
+          - tier: hegel
+            flags: --with-hegel=$HOME/hegel
+            hegel: true
+          - tier: hegel-asan
+            flags: --enable-asan --enable-ubsan --with-hegel=$HOME/hegel
+            hegel: true
+    name: macos (${{ matrix.tier }})
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install autoconf automake libtool pkg-config mandoc texinfo
+      - run: echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
+      - if: matrix.hegel
+        id: hegel-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/hegel
+          key: hegel-0.36.5-${{ runner.os }}-${{ runner.arch }}
+      - if: matrix.hegel && steps.hegel-cache.outputs.cache-hit != 'true'
+        name: Build hegel 0.36.5 from source
+        run: |
+          set -e
+          command -v cargo || { curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal; . "$HOME/.cargo/env"; }
+          git clone --depth 1 --branch v0.36.5 https://github.com/hegeldev/hegel-rust.git "$RUNNER_TEMP/hegel-rust"
+          cd "$RUNNER_TEMP/hegel-rust"
+          cargo build --release -p hegeltest-c
+          mkdir -p ~/hegel/lib ~/hegel/include
+          cp target/release/libhegel_c.dylib ~/hegel/lib/libhegel.dylib
+          install_name_tool -id @rpath/libhegel.dylib ~/hegel/lib/libhegel.dylib
+          cp hegel-c/include/hegel.h ~/hegel/include/
+      - run: ./bootstrap
+      - run: mkdir build && cd build && ../configure --enable-debug ${{ matrix.flags }}
+      - run: make -C build -j"$(sysctl -n hw.ncpu)"
+      - name: make check
+        run: |
+          make -C build check -j"$(sysctl -n hw.ncpu)" && exit 0
+          find build -name '*.trs' -exec grep -l -E ':test-result: (FAIL|ERROR)' {} + | sed 's/[.]trs$/.log/' | xargs tail -100
+          exit 1
+      # The counts the manual's platform notes quote.
+      - if: always()
+        name: Results
+        run: |
+          head -12 build/test-suite.log || true
+          find build -name '*.trs' -exec grep -H ':test-result:' {} + | grep -v ': PASS' || true
+
   # FreeBSD: a BSD userland and clang, in a VM.  PLAN section 13.
   freebsd:
     runs-on: ubuntu-24.04
