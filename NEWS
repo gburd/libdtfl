@@ -14,6 +14,22 @@ Version 0.1.2 (unreleased)
 	Every release up to 0.1.1 has the bug.  The entered handle now reads
 	the shared trace through a port of upstream's TraceEnter.
 
+	Platforms.  On Alpine 3.24 (musl 1.2.6) with gcc 15.2 and clang
+	22.1: make check with hegel, under ASan and UBSan, and under UBSan in
+	trap mode, all 129 tests passing and 2 skipped (USDT, libxtc) in each
+	of the six builds; valgrind memcheck over the test programs, with no
+	error and no definite leak in the 81 that finish under it (the 24
+	property tests crash inside libhegel under valgrind, and 5 slow
+	tests hit their time limits).  ThreadSanitizer on musl finds
+	no race but fails 17 tests under clang and 30 under gcc, because its
+	musl runtime cannot longjmp after a thread starts and gcc's also
+	aborts on large TLS blocks; the manual's platform notes say more.
+	On FreeBSD 14.5 with hegel 0.36.5 built from source: make check with
+	the property tests under clang 21 and gcc 14, ASan and UBSan under
+	both, and TSan under clang, 129 passing and 2 skipped each; the
+	manual gives the build recipe.  macOS was not run for this release:
+	no macOS host was available.
+
 	Linux riscv64.  On Bianbu 4.0.7 (Ubuntu 26.04 base, Linux 6.18,
 	a SpacemiT X100 with 8 cores), with gcc 15.2 and clang 21.1: make
 	check with hegel, under ASan and UBSan, and under TSan, all 130
