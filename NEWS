@@ -67,11 +67,22 @@ Version 0.1.2 (unreleased)
 	length near 2^64; dtfl_log_operates_addr and
 	dtfl_log_channels_scope return a valid pointer, not NULL, for an
 	empty address; a DDIR integer literal past i64 is a parse error
-	instead of signed overflow.  Still open: a DDIR program or value
-	with an unresolved name, an unknown scope or an out-of-range
-	variable makes dtfl_ddir_parse and dtfl_ddir_value_parse panic
-	(abort by default) instead of returning an error, so dtfl-ddir
-	server cannot yet keep running on such input.
+	instead of signed overflow.
+
+	dtfl_ddir_parse and dtfl_ddir_value_parse no longer abort on bad
+	input, so dtfl-ddir server keeps running when a session sends a bad
+	program or value.  A program that parses but does not lower (an
+	unresolved name, an unknown scope or scope export, an outer name a
+	scope cannot see, input or import inside a nested scope, a cycle
+	among lets) makes dtfl_ddir_parse return DTFL_EINVAL.  A value term
+	that does not evaluate (a $n or ^n variable, an Int operation on a
+	List, a projection past the end, a case with no arm) makes
+	dtfl_ddir_value_parse return NULL.  dtfl_last_error_detail gives
+	the reason in both cases, worded as upstream's panic message.
+	Upstream panics here and its server catches the panic, which C
+	cannot do; ADR-0012 records the divergence.  Value arithmetic now
+	wraps on overflow as Rust's does, where it was C signed overflow,
+	and a parse error inside a case arm no longer leaks.
 
 Version 0.1.1 (2026-10-24)
 

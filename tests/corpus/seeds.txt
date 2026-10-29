@@ -57,22 +57,33 @@ fuzz_ddir_value tests/fuzz/fuzz_ddir_value $(top_srcdir)/tests/corpus/fuzz/fuzz_
 # The target was corrected in 782f5bb; the input replays clean.
 fuzz_progress tests/fuzz/fuzz_progress $(top_srcdir)/tests/corpus/fuzz/fuzz_progress/regress-lone-zero
 
-## fuzz_ddir_parse, fuzz_ddir_value: DDIR panics on bad names (open)
-# dtfl_ddir_parse aborts through the panic hook on a program that
-# lowers badly, e.g. the 12-byte pipe program  export "" = t;
-# ("unresolved name `t`"), and on unknown scopes, unknown outer names
-# and cyclic lets.  dtfl_ddir_value_parse aborts on a closed term that
-# names a variable, e.g. ^5 ("Bound(5) out of range"; before a5ef099
-# it read out of bounds).  These are upstream's own panic!s
-# (interactive/src/lower.rs, eval in ir.rs at
-# differential-dataflow-v0.25.1); upstream's ddir_server catches them
-# with catch_unwind, which C does not have, so dtfl_ddir_parse is
-# documented to return an error but does not.  The fix is to turn the
-# lowering and evaluation panics into dd_parse_error-style unwinds that
-# return DTFL_EINVAL.  Also open: parse_pattern_case leaks its scratch
-# vectors when a parse error unwinds mid-arm (documented in
-# src/ddir/parse_pipe.c).  No reproducer is committed to the corpus,
-# because make fuzz must replay it clean.
+## fuzz_ddir_parse, fuzz_ddir_value: DDIR panics on bad names (fixed, 30b4d44)
+# dtfl_ddir_parse aborted through the panic hook on a program that
+# parses but does not lower: the 12-byte pipe program  export "" = t;
+# ("unresolved name `t`"), the reviewer's reach program with a typo'd
+# scope ("unknown scope `reqch`", src/ddir/lower.c:344), unknown outer
+# names and cyclic lets.  dtfl_ddir_value_parse aborted on a closed term
+# that does not evaluate: list(8>list(8>8,4)-4) ("dd_value_as_int:
+# expected Int", src/ddir/ir.c:198) and ^5 ("Bound(5) out of range").
+# These are upstream's own panic!s (interactive/src/lower.rs, eval in
+# ir.rs at differential-dataflow-v0.25.1); upstream's ddir_server
+# catches them with catch_unwind.  Now a deliberate divergence
+# (ADR-0012, 2026-10-29): dtfl_ddir_parse returns DTFL_EINVAL and
+# dtfl_ddir_value_parse returns NULL, each with the message in
+# dtfl_last_error_detail.  Same fix: closed-value + - * and negation
+# wrap, as Rust release does (UBSan signed overflow at ir.c:739 before;
+# regress-add-wraps), and parse_pattern_case's scratch vectors are
+# arena-owned, so an error mid-arm no longer leaks (LSan, 234 bytes in
+# 12 allocations before; regress-case-arm-leak).  Checked both ways:
+# each input below aborts, leaks or trips UBSan before 30b4d44 and
+# replays clean after.
+fuzz_ddir_parse tests/fuzz/fuzz_ddir_parse $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_parse/regress-unresolved-name
+fuzz_ddir_parse tests/fuzz/fuzz_ddir_parse $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_parse/regress-unknown-scope
+fuzz_ddir_parse tests/fuzz/fuzz_ddir_parse $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_parse/regress-let-cycle
+fuzz_ddir_parse tests/fuzz/fuzz_ddir_parse $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_parse/regress-case-arm-leak
+fuzz_ddir_value tests/fuzz/fuzz_ddir_value $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_value/regress-expected-int
+fuzz_ddir_value tests/fuzz/fuzz_ddir_value $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_value/regress-bound-range
+fuzz_ddir_value tests/fuzz/fuzz_ddir_value $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_value/regress-add-wraps
 
 ## fuzz_diag_replay: signed overflow in the diagnostics stats (fixed)
 # The in-process diagnostics server and dtfl-diag arrangements and
