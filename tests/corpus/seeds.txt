@@ -73,3 +73,14 @@ fuzz_progress tests/fuzz/fuzz_progress $(top_srcdir)/tests/corpus/fuzz/fuzz_prog
 # vectors when a parse error unwinds mid-arm (documented in
 # src/ddir/parse_pipe.c).  No reproducer is committed to the corpus,
 # because make fuzz must replay it clean.
+
+## fuzz_diag_replay: signed overflow in the diagnostics stats (fixed)
+# The in-process diagnostics server and dtfl-diag arrangements and
+# profile summed stat values, merge lengths and elapsed times from a
+# recorded stream in int64_t, and negated a Drop length, so a hostile
+# stream was C signed overflow (UBSan src/diag/diag_log.c:93 and :322).
+# Upstream's isize arithmetic wraps in a release build; it now wraps
+# here.  Found 523 times in the 45-minute campaign; all 523 replay
+# clean after the fix.  Checked both ways.
+fuzz_diag_replay tests/fuzz/fuzz_diag_replay $(top_srcdir)/tests/corpus/fuzz/fuzz_diag_replay/regress-stat-overflow
+fuzz_diag_replay tests/fuzz/fuzz_diag_replay $(top_srcdir)/tests/corpus/fuzz/fuzz_diag_replay/regress-negate-min
