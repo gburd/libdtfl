@@ -34,6 +34,7 @@
 
 #include "dd/collection_int.h"
 #include "dd/trace/trace_int.h"
+#include "dd/wrap_int.h"
 
 /* dtfl_arranged is the opaque handle from dtfl/arrange.h (defined there). */
 typedef struct dtfl_arranged dtfl_arranged;
@@ -243,6 +244,16 @@ typedef struct __dtfl_trace_agent {
 	const dtfl_type *kt;
 	const dtfl_type *vt;
 	const __dtfl_diff_class *dc;
+	/*
+	 * TraceEnter (enter.rs, enter_at.rs): non-NULL when the agent is an
+	 * entered arrangement's.  Then tc is the inner class the agent
+	 * presents, while the holds above, the box and the batches stay in
+	 * the shared trace's class; every operation maps across.  Retained.
+	 */
+	struct __dtfl_trace_enter *enter;
+	/* get_*_compaction for an entered agent (enter.rs stash2). */
+	__dtfl_antichain logical_view;
+	__dtfl_antichain physical_view;
 } __dtfl_trace_agent;
 
 /*
@@ -273,6 +284,19 @@ void __dtfl_trace_agent_cursor(__dtfl_trace_agent *a, __dtfl_cursor_list *out);
 /* batches_through: the batches with a clean cut at `upper`, or false. */
 bool __dtfl_trace_agent_cursor_through(__dtfl_trace_agent *a,
     const __dtfl_antichain *upper, __dtfl_cursor_list *out);
+/* TraceReader::advance_upper (trace/mod.rs) over the agent's view. */
+void __dtfl_trace_agent_advance_upper(__dtfl_trace_agent *a,
+    __dtfl_antichain *upper);
+/*
+ * Arranged::enter / enter_at: wrap `a` (already a clone the caller owns)
+ * in one TraceEnter layer presenting `inner`.  logic == NULL is enter.rs;
+ * otherwise enter_at.rs with `prior`.  Takes ownership of ctx.
+ */
+void __dtfl_trace_agent_enter(__dtfl_trace_agent *a,
+    const dtfl_time_class *inner, __dtfl_enter_at_fn logic,
+    __dtfl_enter_prior_fn prior, void *ctx, void (*ctx_free)(void *));
+/* Drop the outermost TraceEnter layer, if any (dtfl_arranged_leave). */
+void __dtfl_trace_agent_leave(__dtfl_trace_agent *a);
 
 /*
  * new_listener: attach a new replay queue to the trace, seeded with the
@@ -391,6 +415,16 @@ struct dtfl_collection *__dtfl_arranged_join_core(struct dtfl_arranged *a,
  */
 dtfl_stream *__dtfl_arranged_stream(const dtfl_arranged *a);
 __dtfl_trace_agent *__dtfl_arranged_agent(const dtfl_arranged *a);
+
+/*
+ * Arranged::enter_at (arrangement.rs): enter `child` with each update's
+ * inner time from logic(key, val, outer time), and compaction frontiers
+ * mapped back with prior (enter_at.rs TraceEnter).  Takes ownership of
+ * ctx (ctx_free on the last release).  Returns a handle the caller frees.
+ */
+dtfl_arranged *__dtfl_arranged_enter_at(dtfl_arranged *a, dtfl_scope *child,
+    __dtfl_enter_at_fn logic, __dtfl_enter_prior_fn prior, void *ctx,
+    void (*ctx_free)(void *));
 unsigned __dtfl_arranged_depth(const dtfl_arranged *a);
 const __dtfl_diff_class *__dtfl_arranged_diff_class(const dtfl_arranged *a);
 /* True when the arrangement's trace is a key batch (whole record is key). */

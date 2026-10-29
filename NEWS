@@ -2,6 +2,18 @@ libdtfl NEWS -- user-visible changes, newest first.
 
 Version 0.1.2 (unreleased)
 
+	Fix: an arrangement brought into a nested scope with
+	dtfl_arranged_enter returned wrong times when read through
+	dtfl_arranged_join_core, dtfl_arranged_reduce_core or
+	dtfl_arranged_reduce_abelian.  Its trace handle shared the outer
+	trace's batches without lifting their times into the inner scope,
+	so the operator read each update's inner coordinate from the next
+	update's time, and the last one from uninitialised memory.  A join
+	inside an iterate over an entered arrangement, as in the
+	reachability server plugin, emitted updates at wrong iterations.
+	Every release up to 0.1.1 has the bug.  The entered handle now reads
+	the shared trace through a port of upstream's TraceEnter.
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.

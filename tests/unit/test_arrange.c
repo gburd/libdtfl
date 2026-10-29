@@ -14,6 +14,7 @@
 #include "dtfl_test.h"
 
 #include "dd/arrange_int.h"
+#include "dd/int_proxy_int.h"
 
 #include "dtfl/arrange.h"
 #include "dtfl/config.h"
@@ -1034,15 +1035,18 @@ DTFL_TEST(arrange__trace_stats)
 /* ------------------------------------------------------------------ */
 
 /*
- * Every (outer, inner) time join_core hands the result fn, and whether
- * any inner word was not the minimum.  The entered side's updates are
- * outer times lifted by to_inner, and the probe side is at iteration 0,
- * so every joined time has inner word 0.
+ * Every (edge, outer, inner, diff) update join_core emits.  The entered
+ * side's updates are outer times lifted by to_inner (inner word 0); the
+ * probe side holds the root at iteration 0 and its retraction at 1, so
+ * edge e joins +1 at (2e, 0) and -1 at (2e, 1).  The retraction arrives
+ * after the edges, so it reads them back through the entered trace.
  */
 typedef struct enter_seen {
 	size_t n;
+	uint64_t dst[MAX_OUT];
 	uint64_t outer[MAX_OUT];
 	uint64_t inner[MAX_OUT];
+	int64_t diff[MAX_OUT];
 } enter_seen;
 
 static enter_seen enter_iter_seen;
@@ -1063,12 +1067,56 @@ enter_iter_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
 {
 	enter_seen *s = ctx;
 
-	(void)rec; (void)len; (void)diff;
+	(void)len;
 	if (s->n >= MAX_OUT)
 		return;
+	s->dst[s->n] = dtfl_get_u64(rec);
 	s->outer[s->n] = time[0];
 	s->inner[s->n] = time[1];
+	memcpy(&s->diff[s->n], diff, sizeof(int64_t));
 	s->n++;
+}
+
+/* The summed diff of (dst, outer, inner) over everything seen. */
+static int64_t
+enter_seen_sum(const enter_seen *s, uint64_t dst, uint64_t outer,
+    uint64_t inner)
+{
+	int64_t sum = 0;
+	size_t i;
+
+	for (i = 0; i < s->n; i++)
+		if (s->dst[i] == dst && s->outer[i] == outer &&
+		    s->inner[i] == inner)
+			sum += s->diff[i];
+	return sum;
+}
+
+/*
+ * Checks the join output: edge 100 + e (e < 6, outer time 2e) sums to +1
+ * at (2e, 0), -1 at (2e, 1), and nothing at any other time.
+ */
+static void
+enter_seen_check(const enter_seen *s)
+{
+	uint64_t e, o, it;
+	size_t i;
+
+	for (i = 0; i < s->n; i++) {
+		assert_uint64(s->outer[i], <=, 10);
+		assert_uint64(s->inner[i], <=, 1);
+		assert_uint64(s->dst[i], >=, 100);
+		assert_uint64(s->dst[i], <, 106);
+	}
+	for (e = 0; e < 6; e++)
+		for (o = 0; o <= 10; o++)
+			for (it = 0; it < 2; it++) {
+				int64_t want = o != 2 * e ? 0 :
+				    it == 0 ? 1 : -1;
+
+				assert_int64(enter_seen_sum(s, 100 + e, o, it),
+				    ==, want);
+			}
 }
 
 static bool
@@ -1088,7 +1136,7 @@ enter_iter_logic(void *vctx, dtfl_scope *inner, dtfl_collection *var)
 	    dtfl_type_u64(), enter_iter_result, DTFL_NOCTX);
 	dtfl_collection *seen = dtfl_collection_inspect(joined,
 	    enter_iter_sink, DTFL_CTX(&enter_iter_seen, NULL));
-	/* No feedback: the variable stays at its initial value. */
+	/* The variable is the root at iteration 0 and empty after. */
 	dtfl_collection *empty = dtfl_collection_filter(seen,
 	    enter_iter_none, DTFL_NOCTX);
 
@@ -1134,7 +1182,6 @@ DTFL_TEST(arrange__enter_iterate_inner_times)
 	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
 	    dtfl_type_u64());
 	enter_iter_ctx c;
-	size_t i;
 	uint64_t e;
 
 	(void)params; (void)data;
@@ -1146,30 +1193,26 @@ DTFL_TEST(arrange__enter_iterate_inner_times)
 	    ==, 0);
 
 	/*
-	 * Several edges from node 0 at epochs 1 and 2, so the outer trace
-	 * holds more than one update per batch: reading its one-word times
-	 * as (outer, inner) pairs would take the next update's word as the
-	 * inner coordinate, and the last update's from past the end.
+	 * Six edges from node 0 at outer times 0, 2, ..., 10, all sealed
+	 * into one batch of the outer trace.  Reading its one-word times as
+	 * (outer, inner) pairs would take the next update's outer word as
+	 * the inner coordinate, and the last update's from past the end.
 	 */
 	for (e = 0; e < 6; e++) {
 		unsigned char rec[16];
-		uint64_t next = 1 + e / 3;
+		uint64_t t = 2 * e;
 
+		dtfl_input_session_advance_to(c.edges, &t);
 		dtfl_put_u64(rec, 0);
 		dtfl_put_u64(rec + 8, 100 + e);
 		dtfl_input_session_insert(c.edges, rec, sizeof rec);
-		if (e % 3 == 2) {
-			dtfl_input_session_advance_to(c.edges, &next);
-			dtfl_input_session_flush(c.edges);
-		}
 	}
+	dtfl_input_session_flush(c.edges);
 	{
 		unsigned char key[8];
-		uint64_t next = 3;
 
 		dtfl_put_u64(key, 0);
 		dtfl_input_session_insert(c.roots, key, sizeof key);
-		dtfl_input_session_advance_to(c.roots, &next);
 		dtfl_input_session_flush(c.roots);
 	}
 	dtfl_input_session_close(c.edges);
@@ -1177,18 +1220,338 @@ DTFL_TEST(arrange__enter_iterate_inner_times)
 	while (dtfl_worker_step(w))
 		;
 
-	/* All six edges join at iteration 0, at the outer time 0..1. */
-	assert_size(enter_iter_seen.n, ==, 6);
-	for (i = 0; i < enter_iter_seen.n; i++) {
-		assert_uint64(enter_iter_seen.inner[i], ==, 0);
-		assert_uint64(enter_iter_seen.outer[i], <=, 1);
-	}
+	enter_seen_check(&enter_iter_seen);
 
 	dtfl_probe_free(c.probe);
 	dtfl_type_free(pair);
 	dtfl_time_class_free(tc);
 	dtfl_diff_free(r);
 	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/*
+ * The same shape without a Variable, so nothing retracts: an iterative
+ * scope joins the roots against the edges entered with enter_at (or
+ * enter), and through the int_proxy join and reduce tactics, which read
+ * the trace's batches directly.  Edge e sits at outer time 2e; enter_at
+ * places it at inner time e % 3, enter at 0.
+ */
+typedef enum enter_shape {
+	ENTER_AT_JOIN = 0,	/* enter_at, join_core */
+	ENTER_PROXY_JOIN,	/* enter, int_proxy join */
+	ENTER_PROXY_REDUCE,	/* enter, int_proxy reduce (count) */
+	ENTER_REDUCE		/* enter, reduce_abelian (count) */
+} enter_shape;
+
+typedef struct enter_flat_ctx {
+	dtfl_input_session *edges;
+	dtfl_input_session *roots;	/* (node, 7) pairs */
+	enter_shape shape;
+	dtfl_arranged *outer_edges;	/* set by the outer build */
+	dtfl_collection *outer_roots;
+} enter_flat_ctx;
+
+/* enter_at logic: (t) -> (t, (dst - 100) % 3). */
+static void
+enter_at_logic(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, const uint64_t *outer_time, uint64_t *inner_time)
+{
+	(void)ctx; (void)key; (void)klen; (void)vlen;
+	inner_time[0] = outer_time[0];
+	inner_time[1] = (dtfl_get_u64(val) - 100) % 3;
+}
+
+/* enter_at prior: the outer coordinate, as the times enter at (t, _). */
+static void
+enter_at_prior(void *ctx, const uint64_t *inner_time, uint64_t *outer_time)
+{
+	(void)ctx;
+	outer_time[0] = inner_time[0];
+}
+
+/* key || val as the record, for the reduce outputs. */
+static void
+enter_kv(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, dtfl_arranged_emit *out)
+{
+	unsigned char rec[16];
+
+	(void)ctx;
+	assert_size(klen + vlen, ==, sizeof rec);
+	memcpy(rec, key, klen);
+	memcpy(rec + klen, val, vlen);
+	dtfl_arranged_emit_record(out, rec, sizeof rec);
+}
+
+/* Count the values (sum of diffs), retracting the prior output. */
+static void
+enter_count_proxy(void *ctx, const void *key, size_t klen, size_t n,
+    const void *const *in_vals, const size_t *in_vlens, const void *in_diffs,
+    size_t m, const void *const *out_vals, const size_t *out_vlens,
+    const void *out_diffs, __dtfl_reduce_change *ch)
+{
+	int64_t sum = 0, one = 1, d;
+	unsigned char vb[8];
+	size_t i;
+
+	(void)ctx; (void)key; (void)klen; (void)in_vals; (void)in_vlens;
+	for (i = 0; i < n; i++) {
+		memcpy(&d, (const unsigned char *)in_diffs + 8 * i, 8);
+		sum += d;
+	}
+	if (sum != 0) {
+		dtfl_put_u64(vb, (uint64_t)sum);
+		__dtfl_reduce_change_push(ch, vb, sizeof vb, &one);
+	}
+	for (i = 0; i < m; i++) {
+		memcpy(&d, (const unsigned char *)out_diffs + 8 * i, 8);
+		d = -d;
+		__dtfl_reduce_change_push(ch, out_vals[i], out_vlens[i], &d);
+	}
+}
+
+static void
+enter_count(void *ctx, const void *key, size_t klen, size_t n,
+    const void *const *in_vals, const size_t *in_vlens, const void *in_diffs,
+    size_t m, const void *const *out_vals, const size_t *out_vlens,
+    const void *out_diffs, dtfl_reduce_emit *out)
+{
+	int64_t sum = 0, one = 1, d;
+	unsigned char vb[8];
+	size_t i;
+
+	(void)ctx; (void)key; (void)klen; (void)in_vals; (void)in_vlens;
+	(void)m; (void)out_vals; (void)out_vlens; (void)out_diffs;
+	for (i = 0; i < n; i++) {
+		memcpy(&d, (const unsigned char *)in_diffs + 8 * i, 8);
+		sum += d;
+	}
+	dtfl_put_u64(vb, (uint64_t)sum);
+	dtfl_reduce_emit_pair(out, vb, sizeof vb, &one);
+}
+
+/* For the reduce shapes the sink records (count, outer, inner, diff). */
+static void
+enter_count_sink(void *ctx, const void *rec, size_t len, const uint64_t *time,
+    const void *diff)
+{
+	(void)len;
+	enter_iter_sink(ctx, (const unsigned char *)rec + 8, 8, time, diff);
+}
+
+static void
+build_enter_flat_inner(dtfl_scope *inner, void *arg)
+{
+	enter_flat_ctx *c = arg;
+	const dtfl_type *u64 = dtfl_type_u64();
+	dtfl_arranged *edges, *probe = NULL, *red = NULL;
+	dtfl_collection *roots, *out = NULL, *seen;
+	dtfl_collection_inspect_fn sink = enter_iter_sink;
+
+	if (c->shape == ENTER_AT_JOIN)
+		edges = __dtfl_arranged_enter_at(c->outer_edges, inner,
+		    enter_at_logic, enter_at_prior, NULL, NULL);
+	else
+		edges = dtfl_arranged_enter(c->outer_edges, inner);
+	roots = dtfl_collection_enter(c->outer_roots, inner);
+	switch (c->shape) {
+	case ENTER_AT_JOIN:
+		probe = dtfl_collection_arrange_by_key(roots, u64, u64,
+		    "probe");
+		out = dtfl_arranged_join_core(probe, edges, u64,
+		    enter_iter_result, DTFL_NOCTX);
+		break;
+	case ENTER_PROXY_JOIN:
+		probe = dtfl_collection_arrange_by_key(roots, u64, u64,
+		    "probe");
+		out = __dtfl_arranged_join_with_proxy(probe, edges, u64,
+		    __dtfl_proxy_join_u64_backend(probe, edges,
+		    enter_iter_result, NULL, NULL));
+		break;
+	case ENTER_PROXY_REDUCE: {
+		dtfl_diff *od = dtfl_diff_i64();
+
+		red = __dtfl_arranged_reduce_with_proxy(edges, "CountProxy",
+		    u64, od->cls, __dtfl_proxy_reduce_u64_backend(edges, u64,
+		    od->cls, enter_count_proxy, NULL, NULL));
+		dtfl_diff_free(od);
+		break;
+	}
+	case ENTER_REDUCE: {
+		dtfl_diff *od = dtfl_diff_i64();
+
+		red = dtfl_arranged_reduce_abelian(edges, "Count", u64, od,
+		    enter_count, DTFL_NOCTX);
+		dtfl_diff_free(od);
+		break;
+	}
+	}
+	if (red != NULL) {
+		const dtfl_type *pr = dtfl_type_pair(u64, u64);
+
+		out = dtfl_arranged_as_collection(red, pr, enter_kv,
+		    DTFL_NOCTX);
+		dtfl_type_free(pr);
+		sink = enter_count_sink;
+	}
+	seen = dtfl_collection_inspect(out, sink,
+	    DTFL_CTX(&enter_iter_seen, NULL));
+	dtfl_collection_free(seen);
+	dtfl_collection_free(out);
+	dtfl_arranged_free(red);
+	dtfl_arranged_free(probe);
+	dtfl_collection_free(roots);
+	dtfl_arranged_free(edges);
+}
+
+static void
+build_enter_flat(dtfl_scope *scope, void *arg)
+{
+	enter_flat_ctx *c = arg;
+	dtfl_collection *e = dtfl_input_session_to_collection(c->edges, scope);
+
+	c->outer_roots = dtfl_input_session_to_collection(c->roots, scope);
+	c->outer_edges = dtfl_collection_arrange_by_key(e, dtfl_type_u64(),
+	    dtfl_type_u64(), "edges");
+	assert_int(dtfl_scope_iterative(scope, "Iterate",
+	    build_enter_flat_inner, c), ==, 0);
+	dtfl_arranged_free(c->outer_edges);
+	dtfl_collection_free(c->outer_roots);
+	dtfl_collection_free(e);
+}
+
+static void
+run_enter_flat(enter_shape shape)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	enter_flat_ctx c;
+	unsigned char rec[16];
+	uint64_t e;
+
+	memset(&enter_iter_seen, 0, sizeof enter_iter_seen);
+	memset(&c, 0, sizeof c);
+	c.edges = dtfl_input_session_new(pair, r);
+	c.roots = dtfl_input_session_new(pair, r);
+	c.shape = shape;
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_enter_flat, &c),
+	    ==, 0);
+	/*
+	 * Two outer batches of three edges each (times 0, 2, 4 and 6, 8,
+	 * 10), so the second batch's reduce reads the first back through
+	 * the entered trace.  The root comes after both, so the join reads
+	 * the edges back through it too.
+	 */
+	for (e = 0; e < 6; e++) {
+		uint64_t t = 2 * e;
+		int i;
+
+		dtfl_input_session_advance_to(c.edges, &t);
+		dtfl_put_u64(rec, 0);
+		dtfl_put_u64(rec + 8, 100 + e);
+		dtfl_input_session_insert(c.edges, rec, sizeof rec);
+		if (e == 2) {
+			t = 6;
+			dtfl_input_session_advance_to(c.edges, &t);
+			dtfl_input_session_flush(c.edges);
+			for (i = 0; i < 50; i++)
+				(void)dtfl_worker_step(w);
+		}
+	}
+	dtfl_input_session_close(c.edges);
+	for (e = 0; e < 50; e++)
+		(void)dtfl_worker_step(w);
+	dtfl_put_u64(rec, 0);
+	dtfl_put_u64(rec + 8, 7);
+	dtfl_input_session_insert(c.roots, rec, sizeof rec);
+	dtfl_input_session_close(c.roots);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_type_free(pair);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+}
+
+/* Edge 100 + e joins +1 at (2e, it(e)) and nowhere else. */
+static void
+enter_flat_check_join(bool at)
+{
+	const enter_seen *s = &enter_iter_seen;
+	uint64_t e, o, it;
+	size_t i;
+
+	assert_size(s->n, >, 0);
+	for (i = 0; i < s->n; i++) {
+		assert_uint64(s->outer[i], <=, 10);
+		assert_uint64(s->inner[i], <=, 2);
+	}
+	for (e = 0; e < 6; e++)
+		for (o = 0; o <= 10; o++)
+			for (it = 0; it < 3; it++) {
+				uint64_t want_it = at ? e % 3 : 0;
+				int64_t want = o == 2 * e && it == want_it;
+
+				assert_int64(enter_seen_sum(s, 100 + e, o, it),
+				    ==, want);
+			}
+}
+
+/* The count of key 0 is e + 1 from (2e, 0) on: +1 there, -1 at 2e + 2. */
+static void
+enter_flat_check_count(void)
+{
+	const enter_seen *s = &enter_iter_seen;
+	uint64_t k, o;
+	size_t i;
+
+	assert_size(s->n, >, 0);
+	for (i = 0; i < s->n; i++) {
+		assert_uint64(s->outer[i], <=, 10);
+		assert_uint64(s->inner[i], ==, 0);
+	}
+	for (k = 1; k <= 6; k++)
+		for (o = 0; o <= 10; o++) {
+			int64_t want = o == 2 * (k - 1) ? 1 :
+			    (k < 6 && o == 2 * k) ? -1 : 0;
+
+			assert_int64(enter_seen_sum(s, k, o, 0), ==, want);
+		}
+}
+
+DTFL_TEST(arrange__enter_at_join_inner_times)
+{
+	(void)params; (void)data;
+	run_enter_flat(ENTER_AT_JOIN);
+	enter_flat_check_join(true);
+	return MUNIT_OK;
+}
+
+DTFL_TEST(arrange__enter_proxy_join_inner_times)
+{
+	(void)params; (void)data;
+	run_enter_flat(ENTER_PROXY_JOIN);
+	enter_flat_check_join(false);
+	return MUNIT_OK;
+}
+
+DTFL_TEST(arrange__enter_proxy_reduce_inner_times)
+{
+	(void)params; (void)data;
+	run_enter_flat(ENTER_PROXY_REDUCE);
+	enter_flat_check_count();
+	return MUNIT_OK;
+}
+
+DTFL_TEST(arrange__enter_reduce_inner_times)
+{
+	(void)params; (void)data;
+	run_enter_flat(ENTER_REDUCE);
+	enter_flat_check_count();
 	return MUNIT_OK;
 }
 
@@ -1203,6 +1566,10 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__idle_merge_after_release),
 	DTFL_T(arrange__trace_stats),
 	DTFL_T(arrange__enter_iterate_inner_times),
+	DTFL_T(arrange__enter_at_join_inner_times),
+	DTFL_T(arrange__enter_proxy_join_inner_times),
+	DTFL_T(arrange__enter_proxy_reduce_inner_times),
+	DTFL_T(arrange__enter_reduce_inner_times),
 	DTFL_T_END
 };
 

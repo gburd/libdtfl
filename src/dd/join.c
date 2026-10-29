@@ -234,6 +234,12 @@ static const join_tactic_ops cursor_join_tactic_ops = { deferred_step, NULL };
 static void
 proxy_join_step(join_ctx *jc, deferred *d)
 {
+	/*
+	 * The backend walks the batches with its own cursors, so an entered
+	 * side's batches must carry their inner times (BatchEnter).
+	 */
+	__dtfl_cursor_list_materialize(&d->cursor1);
+	__dtfl_cursor_list_materialize(&d->cursor2);
 	__dtfl_proxy_join_prep(jc->tactic_state, d->cursor1.batches,
 	    d->cursor1.n, d->cursor2.batches, d->cursor2.n, d->advance2,
 	    d->meet, jc->depth, &d->con);
@@ -513,8 +519,8 @@ join_logic(dtfl_op *op, void *vctx)
 	 * with no data and does not send it, so without this step an input
 	 * that stays quiet pins the physical compaction of its trace.
 	 */
-	__dtfl_trace_advance_upper(jc->reader1.box->trace, &jc->acknowledged1);
-	__dtfl_trace_advance_upper(jc->reader2.box->trace, &jc->acknowledged2);
+	__dtfl_trace_agent_advance_upper(&jc->reader1, &jc->acknowledged1);
+	__dtfl_trace_agent_advance_upper(&jc->reader2, &jc->acknowledged2);
 
 	/*
 	 * Perform fuel-bounded work: each direction drains half the budget so

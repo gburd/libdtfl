@@ -12,9 +12,9 @@
  * val, time)` rather than from to_inner (enter_at.rs BatchCursorEnter).  The
  * batch description is still lifted with to_inner.  libdtfl applies the logic
  * eagerly over the flat container, producing a batch over the inner class.
- * The compaction frontier maps back through the caller-supplied `prior`
- * inverse, which the arrange operator installs on the trace wrapper, not
- * here (this transform only re-times batch updates).
+ * The trace-level TraceEnter of enter_at.rs, which maps compaction
+ * frontiers back through the caller-supplied `prior` inverse, shares the
+ * enter.rs wrapper in wrap_enter.c (__dtfl_trace_enter with a logic).
  */
 #include "dd/wrap_int.h"
 #include "progress/time_int.h"

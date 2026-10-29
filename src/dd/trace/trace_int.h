@@ -508,6 +508,8 @@ void __dtfl_cursor_rewind_vals(__dtfl_cursor *c, const __dtfl_batch_ord *b);
  * It owns references to its batches (TraceReader::cursor_through returns the
  * batch vector as storage; here the list holds them).
  */
+struct __dtfl_trace_enter;	/* dd/wrap_int.h */
+
 typedef struct __dtfl_cursor_list {
 	__dtfl_cursor *cursors;		/* one per batch */
 	__dtfl_batch_ord **batches;	/* retained */
@@ -517,6 +519,11 @@ typedef struct __dtfl_cursor_list {
 	const dtfl_type *kt;
 	const dtfl_type *vt;
 	bool all_keyed;			/* every batch is a key batch */
+	/*
+	 * The TraceEnter chain the batches are read through (dd/wrap_int.h),
+	 * retained; NULL for a plain list.  map_times lifts each time.
+	 */
+	struct __dtfl_trace_enter *enter;
 } __dtfl_cursor_list;
 
 /* Takes ownership of the n batch references in `batches`. */
@@ -830,6 +837,9 @@ const __dtfl_spine *__dtfl_trace_spine(const __dtfl_trace *t);
  */
 void __dtfl_trace_advance_upper(const __dtfl_trace *t,
     __dtfl_antichain *upper);
+/* Visit every batch in map_batches order, empty ones included. */
+void __dtfl_trace_each_batch(const __dtfl_trace *t,
+    void (*fn)(const __dtfl_batch_ord *b, void *ctx), void *ctx);
 
 /* ------------------------------------------------------------------ */
 /* DifferentialEvent encoders (src/dd/dd_log.c), logging to `l`.        */
