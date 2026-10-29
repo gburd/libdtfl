@@ -138,6 +138,28 @@ AC_ARG_ENABLE([ubsan],
 AC_ARG_ENABLE([tsan],
 	[AS_HELP_STRING([--enable-tsan], [build with ThreadSanitizer])],
 	[AS_IF([test "x$enableval" = xyes], [DTFL_SAN_FLAGS="$DTFL_SAN_FLAGS -fsanitize=thread"])])
+# The libFuzzer tier (make fuzz, PLAN section 6 item 8): the library and
+# the tests get ASan, UBSan and fuzzer coverage; the fuzz targets link
+# libFuzzer's main.  Needs clang with compiler-rt.
+AC_ARG_ENABLE([fuzz],
+	[AS_HELP_STRING([--enable-fuzz], [build the libFuzzer targets for make fuzz (clang; implies ASan and UBSan)])],
+	[], [enable_fuzz=no])
+AS_IF([test "x$enable_fuzz" = xyes],
+	[DTFL_SAN_FLAGS="$DTFL_SAN_FLAGS -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined"
+	 AC_CACHE_CHECK([whether $CC links a libFuzzer target], [dtfl_cv_fuzz_link],
+		[save_CFLAGS="$CFLAGS" save_LDFLAGS="$LDFLAGS"
+		 CFLAGS="$CFLAGS -fsanitize=fuzzer,address,undefined"
+		 LDFLAGS="$LDFLAGS -fsanitize=fuzzer,address,undefined"
+		 AC_LINK_IFELSE([AC_LANG_SOURCE([[#include <stddef.h>
+#include <stdint.h>
+int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n);
+int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n) { (void)d; (void)n; return 0; }]])],
+			[dtfl_cv_fuzz_link=yes], [dtfl_cv_fuzz_link=no])
+		 CFLAGS="$save_CFLAGS" LDFLAGS="$save_LDFLAGS"])
+	 AS_IF([test "x$dtfl_cv_fuzz_link" != xyes],
+		[AC_MSG_ERROR([--enable-fuzz needs libFuzzer: $CC cannot link -fsanitize=fuzzer (use CC=clang with compiler-rt; see config.log)])])])
+DTFL_ENABLE_FUZZ=$enable_fuzz
+AC_SUBST([DTFL_ENABLE_FUZZ])
 # Fail here, not halfway through make, when the compiler has no runtime
 # for a sanitizer (gcc on FreeBSD has no libtsan).
 AS_IF([test -n "$DTFL_SAN_FLAGS"],
@@ -334,6 +356,7 @@ libdtfl $PACKAGE_VERSION
   ddir:         $enable_ddir
   server:       $enable_server
   columnar:     $enable_columnar
+  fuzz:         $enable_fuzz
   usdt probes:  $enable_usdt
   frame ptrs:   ${DTFL_FP_CFLAGS:-omitted}
 ])

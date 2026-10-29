@@ -529,8 +529,14 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 {
 	switch (term->kind) {
 	case DD_T_VAR:
+		/* Upstream's env[i] panics out of range; so does this. */
+		if (term->u.var >= *len)
+			__dtfl_panic("Var(%zu) out of range", (size_t)term->u.var);
 		return dd_value_clone((*env)[term->u.var]);
 	case DD_T_BOUND:
+		if (term->u.bound >= *len)
+			__dtfl_panic("Bound(%zu) out of range",
+			    (size_t)term->u.bound);
 		return dd_value_clone((*env)[*len - 1 - term->u.bound]);
 	case DD_T_INT:
 		return dd_value_int(term->u.int_lit);

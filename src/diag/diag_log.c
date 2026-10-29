@@ -75,6 +75,23 @@ dup_usizes(const size_t *v, size_t n)
 }
 
 /* Adds a stat delta to the running total; drops the entry at zero. */
+/*
+ * isize arithmetic as a Rust release build does it: two's complement
+ * wrapping, where C signed overflow is undefined.  Stat values and
+ * merge lengths come from a recorded stream and may be anything.
+ */
+static int64_t
+wrap_add(int64_t a, int64_t b)
+{
+	return (int64_t)((uint64_t)a + (uint64_t)b);
+}
+
+static int64_t
+wrap_neg(int64_t a)
+{
+	return (int64_t)(0 - (uint64_t)a);
+}
+
 static void
 apply_stat(__dtfl_diag_shared *sh, __dtfl_diag_stat_kind kind, size_t id,
     int64_t diff)
@@ -90,7 +107,7 @@ apply_stat(__dtfl_diag_shared *sh, __dtfl_diag_stat_kind kind, size_t id,
 		__dtfl_vec_push(&sh->stats, &ns);
 		return;
 	}
-	st->value += diff;
+	st->value = wrap_add(st->value, diff);
 	if (st->value == 0) {
 		size_t idx = (size_t)(st - (__dtfl_diag_stat *)(void *)sh->stats.data);
 
@@ -284,8 +301,8 @@ __dtfl_diag_on_batch(const dtfl_log_batch *batch, void *ctx)
 					    dtfl_log_dd_merge_length1(batch, i);
 					int64_t l2 = (int64_t)
 					    dtfl_log_dd_merge_length2(batch, i);
-					int64_t diff = (int64_t)complete -
-					    (l1 + l2);
+					int64_t diff = (int64_t)((uint64_t)complete -
+					    (uint64_t)wrap_add(l1, l2));
 
 					apply_stat(sh,
 					    DIAG_STAT_ARRANGEMENT_BATCHES, op,
@@ -319,11 +336,11 @@ __dtfl_diag_on_batch(const dtfl_log_batch *batch, void *ctx)
 					if (len != 0) {
 						apply_stat(sh,
 						    DIAG_STAT_ARRANGEMENT_RECORDS,
-						    op, -len);
+						    op, wrap_neg(len));
 						__dtfl_diag_frame_add_stat(
 						    &frame,
 						    DIAG_STAT_ARRANGEMENT_RECORDS,
-						    op, -len);
+						    op, wrap_neg(len));
 					}
 				}
 				break;

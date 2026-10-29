@@ -56,6 +56,23 @@ Version 0.1.2 (unreleased)
 	The event_driven example is unchanged at 1.24x Rust's time (100
 	dataflows of 100 maps) and 1.22x (10 of 1000).
 
+	A libFuzzer tier.  ./configure CC=clang --enable-fuzz, then make
+	fuzz, fuzzes eleven targets covering every decoder of untrusted
+	bytes: TCP message framing, data and progress messages, capture
+	events, times, log records, recorded log streams and dtfl-diag,
+	the WebSocket handshake, DDIR programs and values, and record
+	descriptors.  Each target replays its committed corpus in
+	tests/corpus/fuzz/ first.  Fixes from its first campaign: the
+	capture EventReader no longer reads past its buffer on a frame
+	length near 2^64; dtfl_log_operates_addr and
+	dtfl_log_channels_scope return a valid pointer, not NULL, for an
+	empty address; a DDIR integer literal past i64 is a parse error
+	instead of signed overflow.  Still open: a DDIR program or value
+	with an unresolved name, an unknown scope or an out-of-range
+	variable makes dtfl_ddir_parse and dtfl_ddir_value_parse panic
+	(abort by default) instead of returning an error, so dtfl-ddir
+	server cannot yet keep running on such input.
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.

@@ -51,7 +51,9 @@ add_size(struct arr_state *s, size_t id, int64_t delta)
 
 	for (i = 0; i < s->nsizes; i++)
 		if (s->sizes[i].id == id) {
-			s->sizes[i].count += delta;
+			/* isize wraps in Rust release; C overflow is UB. */
+			s->sizes[i].count = (int64_t)((uint64_t)s->sizes[i].count +
+			    (uint64_t)delta);
 			return;
 		}
 	if (s->nsizes == s->cap_sizes) {
@@ -107,13 +109,14 @@ on_differential(const dtfl_log_batch *batch, void *ctx)
 				int64_t l2 = (int64_t)
 				    dtfl_log_dd_merge_length2(batch, i);
 
-				add_size(s, op, (int64_t)complete - (l1 + l2));
+				add_size(s, op, (int64_t)((uint64_t)complete -
+				    ((uint64_t)l1 + (uint64_t)l2)));
 			}
 			break;
 		}
 		case DTFL_LOG_DD_DROP:
 			add_size(s, op,
-			    -(int64_t)dtfl_log_dd_length(batch, i));
+			    (int64_t)(0 - (uint64_t)dtfl_log_dd_length(batch, i)));
 			break;
 		default:
 			break;

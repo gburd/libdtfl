@@ -34,6 +34,8 @@
 #include "timely/scope_int.h"	/* struct dtfl_worker { __dtfl_worker *w; } */
 #include "timely/worker_int.h"	/* __dtfl_worker_log_*, headers */
 #include "comm/zc_int.h"	/* __dtfl_message_header */
+#include "base/log_int.h"	/* __dtfl_log_event */
+#include "timely/log_codec_int.h"	/* __dtfl_log_decode_and_deliver */
 
 #include <string.h>
 
@@ -648,7 +650,41 @@ DTFL_TEST(subscribe__arrange_emits)
 	return MUNIT_OK;
 }
 
+static void
+empty_addr_check(const void *batch, void *ctx)
+{
+	const dtfl_log_batch *b = batch;
+	size_t n = 99;
+
+	(void)ctx;
+	assert_int(dtfl_log_event_kind_at(b, 0), ==, DTFL_LOG_OPERATES);
+	/* An empty address is a valid pointer to zero words, not NULL. */
+	assert_not_null(dtfl_log_operates_addr(b, 0, &n));
+	assert_size(n, ==, 0);
+}
+
+/*
+ * A batch whose only event has an empty address used to return
+ * NULL + 0 from the accessor, undefined behaviour that UBSan reports
+ * (fuzz_log found it; reproducer tests/corpus/fuzz/fuzz_log/
+ * regress-empty-addr).
+ */
+DTFL_TEST(subscribe__empty_addr)
+{
+	/* Operates { id 7, addr [], name "" } */
+	static const unsigned char rec[4 + 8 + 8 + 8] = { 0, 0, 0, 0, 7 };
+	__dtfl_log_event ev = { 0, rec, sizeof rec };
+	void *scratch = __dtfl_log_scratch_new();
+
+	(void)params; (void)data;
+	__dtfl_log_decode_and_deliver(scratch, "timely", 0, 0, &ev, 1,
+	    empty_addr_check, NULL);
+	__dtfl_log_scratch_free(scratch);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(subscribe__empty_addr),
 	DTFL_T(subscribe__dataflow),
 	DTFL_T(subscribe__roundtrip),
 	DTFL_T(subscribe__differential),
