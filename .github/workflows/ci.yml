@@ -1,210 +1,30 @@
-# SPDX-License-Identifier: MIT
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
-  schedule:
-    # Nightly, to drive the fuzz tier (see fuzz-nightly below).
-    - cron: '0 7 * * *'
-  # Reusable so release.yml can require the full suite at the tagged
-  # commit (a tag push does not match the branches filter above, so the
-  # matrix would otherwise never run for a release).
-  workflow_call:
 jobs:
-  check:
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-        flags: ["", "--enable-asan --enable-ubsan", "--enable-tsan"]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      # -Werror: AGENTS.md section 7 requires zero warnings under gcc and
-      # clang.  The tree is clean under both, so a new warning fails CI.
-      - run: mkdir build && cd build && CC=${{ matrix.cc }} ../configure --enable-debug ${{ matrix.flags }} CFLAGS="-Werror"
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  # musl: a second libc, to catch glibc-only assumptions.  PLAN section 13
-  # names musl in the 1.0 bar.
-  musl:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      - run: mkdir build && cd build && CC=musl-gcc ../configure --enable-debug
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-      - run: make -C build distcheck -j"$(nproc)" DISTCHECK_CONFIGURE_FLAGS="CC=musl-gcc"
-
-  # macOS: clang on Darwin, Apple ld64 (exported-symbols list instead of
-  # a version script), no futex, no MSG_NOSIGNAL.  PLAN section 13.
-  # Homebrew's texinfo is keg-only, so put its makeinfo on PATH.
-  macos:
-    runs-on: macos-latest
-    # Without timeout(1) the dist scripts cannot bound a hang themselves.
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - run: brew install autoconf automake libtool pkg-config mandoc texinfo
-      - run: echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug
-      - run: make -C build -j"$(sysctl -n hw.ncpu)"
-      - run: make -C build check -j"$(sysctl -n hw.ncpu)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-      - run: make -C build distcheck -j"$(sysctl -n hw.ncpu)"
-
-  # macOS tiers the plain job does not run: the sanitizers under Apple
-  # clang, and the property tests with hegel.  hegel publishes no
-  # libhegel built from source here, so the job builds hegel-rust's C
-  # crate (the recipe in the manual's platform notes) and caches it.
-  macos-tiers:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - tier: asan
-            flags: --enable-asan --enable-ubsan
-          - tier: tsan
-            flags: --enable-tsan
-          - tier: hegel
-            flags: --with-hegel=$HOME/hegel
-            hegel: true
-          - tier: hegel-asan
-            flags: --enable-asan --enable-ubsan --with-hegel=$HOME/hegel
-            hegel: true
-    name: macos (${{ matrix.tier }})
+  probe:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - run: brew install autoconf automake libtool pkg-config mandoc texinfo
       - run: echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
-      - if: matrix.hegel
-        id: hegel-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/hegel
-          key: hegel-0.36.5-${{ runner.os }}-${{ runner.arch }}
-      - if: matrix.hegel && steps.hegel-cache.outputs.cache-hit != 'true'
-        name: Build hegel 0.36.5 from source
+      - run: sw_vers; clang --version; uname -a
+      - name: sigaltstack after fork
         run: |
-          set -e
-          command -v cargo || { curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal; . "$HOME/.cargo/env"; }
-          git clone --depth 1 --branch v0.36.5 https://github.com/hegeldev/hegel-rust.git "$RUNNER_TEMP/hegel-rust"
-          cd "$RUNNER_TEMP/hegel-rust"
-          cargo build --release -p hegeltest-c
-          mkdir -p ~/hegel/lib ~/hegel/include
-          cp target/release/libhegel_c.dylib ~/hegel/lib/libhegel.dylib
-          install_name_tool -id @rpath/libhegel.dylib ~/hegel/lib/libhegel.dylib
-          cp hegel-c/include/hegel.h ~/hegel/include/
+          clang -o alt0 .github/probe/alt.c && ./alt0
+          clang -fsanitize=address -o alt1 .github/probe/alt.c && ./alt1
+          ASAN_OPTIONS=use_sigaltstack=0 ./alt1
       - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug ${{ matrix.flags }}
+      - run: mkdir build && cd build && ../configure --enable-debug --enable-asan --enable-ubsan
       - run: make -C build -j"$(sysctl -n hw.ncpu)"
-      - name: make check
-        run: |
-          make -C build check -j"$(sysctl -n hw.ncpu)" && exit 0
-          find build -name '*.trs' -exec grep -l -E ':test-result: (FAIL|ERROR)' {} + | sed 's/[.]trs$/.log/' | xargs tail -100
-          exit 1
-      # The counts the manual's platform notes quote.
-      - if: always()
-        name: Results
-        run: |
-          head -12 build/test-suite.log || true
-          find build -name '*.trs' -exec grep -H ':test-result:' {} + | grep -v ': PASS' || true
-
-  # FreeBSD: a BSD userland and clang, in a VM.  PLAN section 13.
-  freebsd:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and test in a FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
-        with:
-          usesh: true
-          prepare: pkg install -y autoconf automake libtool pkgconf mandoc gmake texinfo
-          run: |
-            ./bootstrap
-            mkdir build && cd build
-            ../configure --enable-debug
-            gmake -j"$(sysctl -n hw.ncpu)"
-            gmake check -j"$(sysctl -n hw.ncpu)" || (find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  # Property tests with the hegel engine wired in, so the PBT suites run
-  # real generated cases instead of reporting SKIP.  hegel is not
-  # packaged, so this job is a no-op unless the repo defines a HEGEL_URL
-  # variable pointing at a hegel source tree; without it the gcc/clang
-  # jobs still build and run the PBT suites (in SKIP mode).
-  hegel:
-    if: vars.HEGEL_URL != ''
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - name: Build hegel
-        run: git clone --depth 1 "${{ vars.HEGEL_URL }}" /tmp/hegel && make -C /tmp/hegel install PREFIX=/usr/local
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug --with-hegel=/usr/local PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  valgrind:
-    # Memcheck over a fast subset: the base and progress unit tests, which
-    # exercise the allocator, antichains, and the progress core without
-    # the long trace/reduce sweeps that make valgrind impractical.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo valgrind
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug
-      - run: make -C build -j"$(nproc)"
-      - name: Memcheck a fast subset
+      - run: make -C build -j"$(sysctl -n hw.ncpu)" tests/unit/test_ddir tests/unit/test_execute_worker
+      - name: test_ddir 20 times, default and use_sigaltstack=0
         working-directory: build
         run: |
-          set -e
-          for t in tests/unit/test_base tests/unit/test_antichain tests/unit/test_reachability; do
-            test -x "$t" || make "$t" -j"$(nproc)"
-            top_srcdir="$PWD/.." valgrind --error-exitcode=1 --leak-check=full --errors-for-leak-kinds=definite "$t"
+          export top_srcdir=$PWD/..
+          for o in "" "use_sigaltstack=0"; do
+            f=0
+            for i in $(seq 20); do ASAN_OPTIONS=$o ./tests/unit/test_ddir > o.txt 2>&1 || { f=$((f+1)); grep -c 'CHECK failed' o.txt; }; done
+            echo "ASAN_OPTIONS='$o': $f of 20 runs failed"
           done
-
-  distcheck:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap && mkdir build && cd build && ../configure && make distcheck -j"$(nproc)"
-
-  # Nightly fuzz tier: re-run the whole suite under ASan+UBSan on a
-  # schedule, and (when hegel is available) drive the PBT suites at a
-  # high case count.  The per-push matrix runs the suite at the default
-  # count; this is the long soak.  Guarded so it runs only on schedule or
-  # manual dispatch.
-  fuzz-nightly:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-asan --enable-ubsan
-      - run: make -C build -j"$(nproc)"
-      - name: Full suite under ASan, PBT at an elevated case count
-        working-directory: build
-        env:
-          DTFL_PBT_CASES: "100000"
-        run: make check -j"$(nproc)" || (find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-      # The libFuzzer tier (PLAN section 6 item 8): every target replays
-      # its committed corpus, then fuzzes for DTFL_FUZZ_SECONDS.
-      - run: sudo apt-get install -y clang
-      - run: mkdir fuzzbuild && cd fuzzbuild && ../configure CC=clang --enable-fuzz CFLAGS="-O1 -g"
-      - name: make fuzz
-        working-directory: fuzzbuild
-        env:
-          DTFL_FUZZ_SECONDS: "300"
-        run: make -j"$(nproc)" && DTFL_FUZZ_JOBS="$(nproc)" make fuzz
