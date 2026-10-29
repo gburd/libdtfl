@@ -38,5 +38,18 @@ jobs:
           cat alt/alt.* | awk '{print $2, $3, $5}' | sort | uniq -c | head -40
           echo "--- children that wrote start but no end"
           for x in alt/alt.*; do [ "$(wc -l < $x)" -lt 2 ] && cat $x; done | head -20
+          echo "--- PROBE lines, first failing run"
+          grep -h PROBE o1.txt | sort | uniq -c
+          grep -h -B2 -A1 'ERROR \]' o1.txt | head -40
           f=0; for i in $(seq 10); do ./tests/unit/test_ddir --no-fork > n$i.txt 2>&1 || { f=$((f+1)); tail -3 n$i.txt; }; done; echo "no-fork: $f of 10 runs failed"
           for t in test_base test_antichain; do make -s tests/unit/$t >/dev/null 2>&1; f=0; for i in $(seq 10); do ./tests/unit/$t > b.txt 2>&1 || { f=$((f+1)); grep -c 'CHECK failed' b.txt; }; done; echo "$t: $f of 10 runs failed"; done
+      - name: candidate fix (sigsetjmp with savemask 0) in a clean copy
+        run: |
+          git worktree add -q ../fixsrc 4ffb82c
+          cd ../fixsrc && git log --oneline -1
+          patch -p1 < "$GITHUB_WORKSPACE/.github/probe/fix.patch"
+          ./bootstrap > /dev/null 2>&1
+          mkdir b && cd b && ../configure --enable-debug --enable-asan --enable-ubsan > /dev/null && make -j"$(sysctl -n hw.ncpu)" > m.log 2>&1 || grep -E 'error' m.log | head
+          make tests/unit/test_ddir > /dev/null 2>&1
+          export top_srcdir=$PWD/..
+          f=0; for i in $(seq 10); do ./tests/unit/test_ddir > o$i.txt 2>&1 || { f=$((f+1)); grep 'ERROR \]' o$i.txt; }; done; echo "fixed fork: $f of 10 runs failed"

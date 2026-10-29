@@ -15,6 +15,8 @@
  */
 #include "ddir_int.h"
 #include "parse_int.h"
+#include <signal.h>
+#include <stdio.h>
 
 #include "../base/base_int.h"
 
@@ -765,12 +767,14 @@ dd_parse_applicative(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	dd_arena_init(pc);
 	*out = (dd_vec){ 0 };
 	if (setjmp(pc->jb) != 0) {
+		{ stack_t ss; sigaltstack(NULL, &ss); fprintf(stderr, "PROBE after jump: flags=%d\n", ss.ss_flags); }
 		dd_arena_free_all(pc);
 		__dtfl_free(out->data);
 		*out = (dd_vec){ 0 };
 		atoks_free(&lx.toks);
 		return false;
 	}
+	fprintf(stderr, "PROBE setjmp saved sigonstack=%#x\n", ((unsigned *)(void *)pc->jb)[0xBC / 4]);
 	atokenize(&lx, input);
 	p.pc = pc;
 	p.toks = (atok **)(void *)lx.toks.data;

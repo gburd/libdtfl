@@ -17,6 +17,8 @@
  */
 #include "ddir_int.h"
 #include "parse_int.h"
+#include <signal.h>
+#include <stdio.h>
 
 #include "../base/base_int.h"
 
@@ -1137,6 +1139,7 @@ dd_parse_pipe(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	dd_arena_init(pc);
 	*out = (dd_vec){ 0 };
 	if (setjmp(pc->jb) != 0) {
+		{ stack_t ss; sigaltstack(NULL, &ss); fprintf(stderr, "PROBE after jump: flags=%d\n", ss.ss_flags); }
 		/* Error unwind: the arena owns every AST node; free it all,
 		 * plus the root body backing and the parser scratch. */
 		dd_arena_free_all(pc);
@@ -1146,6 +1149,7 @@ dd_parse_pipe(const char *input, dd_vec *out, dd_parse_ctx *pc)
 		toks_free(&lx.toks);
 		return false;
 	}
+	fprintf(stderr, "PROBE setjmp saved sigonstack=%#x\n", ((unsigned *)(void *)pc->jb)[0xBC / 4]);
 	tokenize(&lx, input);
 	p.pc = pc;
 	p.toks = (tok **)(void *)lx.toks.data;
@@ -1169,11 +1173,13 @@ dd_parse_pipe_term(const char *input, dd_parse_ctx *pc)
 	pc->msg[0] = '\0';
 	dd_arena_init(pc);
 	if (setjmp(pc->jb) != 0) {
+		{ stack_t ss; sigaltstack(NULL, &ss); fprintf(stderr, "PROBE after jump: flags=%d\n", ss.ss_flags); }
 		dd_arena_free_all(pc);
 		pparser_free(&p);
 		toks_free(&lx.toks);
 		return NULL;
 	}
+	fprintf(stderr, "PROBE setjmp saved sigonstack=%#x\n", ((unsigned *)(void *)pc->jb)[0xBC / 4]);
 	tokenize(&lx, input);
 	p.pc = pc;
 	p.toks = (tok **)(void *)lx.toks.data;

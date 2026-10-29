@@ -19,6 +19,7 @@
 
 #include "../base/base_int.h"
 
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,7 @@ dd_parse_error(dd_parse_ctx *pc, const char *fmt, ...)
 	vsnprintf(pc->msg, sizeof pc->msg, fmt, ap);
 	va_end(ap);
 	pc->error = true;
+	{ stack_t ss; sigaltstack(NULL, &ss); fprintf(stderr, "PROBE dd_parse_error before jump: flags=%d\n", ss.ss_flags); }
 	longjmp(pc->jb, 1);
 }
 
