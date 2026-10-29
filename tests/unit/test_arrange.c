@@ -460,7 +460,7 @@ build_compact(dtfl_scope *scope, void *arg)
 }
 
 typedef struct trace_rows {
-	uint64_t key[64], time[64];
+	uint64_t key[64], val[64], time[64];
 	int64_t diff[64];
 	size_t n;
 } trace_rows;
@@ -471,10 +471,11 @@ trace_row(void *ctx, const void *key, size_t klen, const void *val,
 {
 	trace_rows *r = ctx;
 
-	(void)klen; (void)val; (void)vlen;
+	(void)klen;
 	if (r->n >= 64)
 		return;
 	r->key[r->n] = dtfl_get_u64(key);
+	r->val[r->n] = vlen == 8 ? dtfl_get_u64(val) : 0;
 	r->time[r->n] = time[0];
 	memcpy(&r->diff[r->n], diff, sizeof(int64_t));
 	r->n++;
@@ -1555,6 +1556,431 @@ DTFL_TEST(arrange__enter_reduce_inner_times)
 	return MUNIT_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* An entered trace handle: compaction, to_vec and a quiet input.      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * set_*_compaction through an entered handle (enter.rs): the frontier,
+ * in the inner class, reaches the shared trace mapped with to_outer.
+ * {(4, 6), (2, 9)} maps to {4, 2}, whose antichain is {2}.  Read as
+ * one-word outer times it would be {4, 6}, that is {4}, which compacts
+ * the outer trace past a cut an outer reader may still take.
+ */
+typedef struct ecomp_ctx {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	dtfl_arranged *outer;		/* build only */
+	dtfl_trace *outer_t;		/* a reader of the outer arrangement */
+	dtfl_trace *ent_t;		/* a reader of the entered one */
+	__dtfl_trace_box *box;		/* retained: read the shared holds */
+} ecomp_ctx;
+
+static void
+build_ecomp_inner(dtfl_scope *inner, void *arg)
+{
+	ecomp_ctx *c = arg;
+	dtfl_arranged *ent = dtfl_arranged_enter(c->outer, inner);
+
+	c->ent_t = dtfl_arranged_trace(ent);
+	dtfl_arranged_free(ent);
+}
+
+static void
+build_ecomp(dtfl_scope *scope, void *arg)
+{
+	ecomp_ctx *c = arg;
+	dtfl_collection *e = dtfl_input_session_to_collection(c->in, scope);
+
+	c->outer = dtfl_collection_arrange_by_key(e, dtfl_type_u64(),
+	    dtfl_type_u64(), "edges");
+	(void)dtfl_stream_probe_with(dtfl_arranged_stream(c->outer), c->probe);
+	c->outer_t = dtfl_arranged_trace(c->outer);
+	c->box = __dtfl_trace_box_retain(__dtfl_arranged_agent(c->outer)->box);
+	assert_int(dtfl_scope_iterative(scope, "It", build_ecomp_inner, c),
+	    ==, 0);
+	dtfl_arranged_free(c->outer);
+	c->outer = NULL;
+	dtfl_collection_free(e);
+}
+
+DTFL_TEST(arrange__enter_compaction_maps_to_outer)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	const uint64_t f[4] = { 4, 6, 2, 9 };
+	const __dtfl_antichain *held;
+	const uint64_t *h;
+	ecomp_ctx c;
+	trace_rows rows;
+	uint64_t t, three = 3;
+	size_t n, i;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.in = dtfl_input_session_new(pair, r);
+	c.probe = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_ecomp, &c), ==, 0);
+
+	/* (0, 100 + t) at each outer time t < 8, one batch per time. */
+	for (t = 0; t < 8; t++) {
+		unsigned char rec[16];
+		uint64_t next = t + 1;
+		probe_cond pc = { c.probe, next };
+
+		dtfl_put_u64(rec, 0);
+		dtfl_put_u64(rec + 8, 100 + t);
+		dtfl_input_session_insert(c.in, rec, sizeof rec);
+		dtfl_input_session_advance_to(c.in, &next);
+		dtfl_input_session_flush(c.in);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+
+	/* The outer reader lets go, so the entered reader alone holds. */
+	dtfl_trace_set_logical_compaction(c.outer_t, NULL, 0);
+	dtfl_trace_set_physical_compaction(c.outer_t, NULL, 0);
+	dtfl_trace_set_logical_compaction(c.ent_t, f, 2);
+	dtfl_trace_set_physical_compaction(c.ent_t, f, 2);
+
+	/* The shared trace and its box hold at to_outer, {2}. */
+	held = __dtfl_trace_get_logical_compaction(c.box->trace);
+	assert_size(__dtfl_antichain_len(held), ==, 1);
+	assert_uint64(__dtfl_antichain_at(held, 0)[0], ==, 2);
+	held = __dtfl_trace_get_physical_compaction(c.box->trace);
+	assert_size(__dtfl_antichain_len(held), ==, 1);
+	assert_uint64(__dtfl_antichain_at(held, 0)[0], ==, 2);
+	assert_size(__dtfl_mantichain_frontier_len(&c.box->logical_compaction),
+	    ==, 1);
+	assert_uint64(__dtfl_mantichain_frontier(&c.box->logical_compaction)[0],
+	    ==, 2);
+	assert_size(__dtfl_mantichain_frontier_len(&c.box->physical_compaction),
+	    ==, 1);
+	assert_uint64(
+	    __dtfl_mantichain_frontier(&c.box->physical_compaction)[0], ==, 2);
+
+	/* The entered handle reports its holds in the inner class, (2, 0). */
+	h = dtfl_trace_logical_compaction(c.ent_t, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(h[0], ==, 2);
+	assert_uint64(h[1], ==, 0);
+	h = dtfl_trace_physical_compaction(c.ent_t, &n);
+	assert_size(n, ==, 1);
+	assert_uint64(h[0], ==, 2);
+	assert_uint64(h[1], ==, 0);
+
+	/*
+	 * Not over-compacted: an outer reader can still cut at 3, and the
+	 * cut holds the three values at times up to 2 (advanced to 2 at
+	 * most) and nothing later.
+	 */
+	memset(&rows, 0, sizeof rows);
+	assert_true(dtfl_trace_to_vec_through(c.outer_t, &three, 1, trace_row,
+	    DTFL_CTX(&rows, NULL)));
+	assert_size(rows.n, ==, 3);
+	for (i = 0; i < rows.n; i++) {
+		assert_uint64(rows.key[i], ==, 0);
+		assert_uint64(rows.time[i], <=, 2);
+		assert_int64(rows.diff[i], ==, 1);
+	}
+
+	/*
+	 * Logical compaction at 2 may advance the times before 2 to 2 and
+	 * must leave every later time distinct.
+	 */
+	memset(&rows, 0, sizeof rows);
+	dtfl_trace_to_vec(c.outer_t, trace_row, DTFL_CTX(&rows, NULL));
+	assert_size(rows.n, ==, 8);
+	for (i = 0; i < rows.n; i++) {
+		t = rows.val[i] - 100;
+		if (t >= 2)
+			assert_uint64(rows.time[i], ==, t);
+		else
+			assert_true(rows.time[i] == t || rows.time[i] == 2);
+	}
+
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_trace_free(c.ent_t);
+	dtfl_trace_free(c.outer_t);
+	__dtfl_trace_box_release(c.box);
+	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/*
+ * dtfl_trace_to_vec on an entered handle reads through the agent's
+ * cursor, which must carry the enter chain: each time arrives in the
+ * handle's class, the outer time then zero inner words.  Entered once
+ * (two words), twice (three), and twice then left once (two).  The six
+ * updates share one outer batch, so a one-word time read as two would
+ * take the next update's time as its inner word.
+ */
+typedef struct evec_ctx {
+	dtfl_input_session *in;
+	dtfl_probe *probe;
+	dtfl_arranged *outer, *mid;	/* build only */
+	dtfl_trace *t1;			/* entered once */
+	dtfl_trace *t2;			/* entered twice */
+	dtfl_trace *tl;			/* entered twice, left once */
+} evec_ctx;
+
+typedef struct evec {
+	unsigned depth;
+	size_t n;
+} evec;
+
+/* Value 100 + e sits at outer time 2e; every inner word is zero. */
+static void
+evec_row(void *ctx, const void *key, size_t klen, const void *val,
+    size_t vlen, const uint64_t *time, const void *diff)
+{
+	evec *v = ctx;
+	uint64_t e = dtfl_get_u64(val) - 100;
+	int64_t d;
+	unsigned j;
+
+	(void)klen; (void)vlen;
+	assert_uint64(dtfl_get_u64(key), ==, 0);
+	assert_uint64(e, <, 6);
+	assert_uint64(time[0], ==, 2 * e);
+	for (j = 1; j < v->depth; j++)
+		assert_uint64(time[j], ==, 0);
+	memcpy(&d, diff, sizeof d);
+	assert_int64(d, ==, 1);
+	v->n++;
+}
+
+static void
+evec_check(dtfl_trace *t, unsigned depth)
+{
+	evec v = { depth, 0 };
+
+	dtfl_trace_to_vec(t, evec_row, DTFL_CTX(&v, NULL));
+	assert_size(v.n, ==, 6);
+}
+
+static void
+build_evec_inner2(dtfl_scope *inner, void *arg)
+{
+	evec_ctx *c = arg;
+	dtfl_arranged *ent = dtfl_arranged_enter(c->mid, inner);
+	dtfl_arranged *left = dtfl_arranged_leave(ent);
+
+	c->t2 = dtfl_arranged_trace(ent);
+	c->tl = dtfl_arranged_trace(left);
+	dtfl_arranged_free(left);
+	dtfl_arranged_free(ent);
+}
+
+static void
+build_evec_inner1(dtfl_scope *inner, void *arg)
+{
+	evec_ctx *c = arg;
+
+	c->mid = dtfl_arranged_enter(c->outer, inner);
+	c->t1 = dtfl_arranged_trace(c->mid);
+	assert_int(dtfl_scope_iterative(inner, "It2", build_evec_inner2, c),
+	    ==, 0);
+	dtfl_arranged_free(c->mid);
+	c->mid = NULL;
+}
+
+static void
+build_evec(dtfl_scope *scope, void *arg)
+{
+	evec_ctx *c = arg;
+	dtfl_collection *e = dtfl_input_session_to_collection(c->in, scope);
+
+	c->outer = dtfl_collection_arrange_by_key(e, dtfl_type_u64(),
+	    dtfl_type_u64(), "edges");
+	(void)dtfl_stream_probe_with(dtfl_arranged_stream(c->outer), c->probe);
+	assert_int(dtfl_scope_iterative(scope, "It", build_evec_inner1, c),
+	    ==, 0);
+	dtfl_arranged_free(c->outer);
+	c->outer = NULL;
+	dtfl_collection_free(e);
+}
+
+DTFL_TEST(arrange__enter_trace_to_vec_inner_times)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	evec_ctx c;
+	uint64_t e, end = 11;
+	probe_cond pc;
+
+	(void)params; (void)data;
+	memset(&c, 0, sizeof c);
+	c.in = dtfl_input_session_new(pair, r);
+	c.probe = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_evec, &c), ==, 0);
+	for (e = 0; e < 6; e++) {
+		unsigned char rec[16];
+		uint64_t t = 2 * e;
+
+		dtfl_input_session_advance_to(c.in, &t);
+		dtfl_put_u64(rec, 0);
+		dtfl_put_u64(rec + 8, 100 + e);
+		dtfl_input_session_insert(c.in, rec, sizeof rec);
+	}
+	dtfl_input_session_advance_to(c.in, &end);
+	dtfl_input_session_flush(c.in);
+	pc.probe = c.probe;
+	pc.target = end;
+	dtfl_worker_step_while(w, probe_behind, &pc);
+
+	evec_check(c.t1, 2);
+	evec_check(c.t2, 3);
+	evec_check(c.tl, 2);
+
+	dtfl_input_session_close(c.in);
+	while (dtfl_worker_step(w))
+		;
+	dtfl_trace_free(c.tl);
+	dtfl_trace_free(c.t2);
+	dtfl_trace_free(c.t1);
+	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
+/*
+ * A join over an entered arrangement whose input goes quiet: the outer
+ * writer seals each empty epoch into the shared trace without sending a
+ * batch, so only advance_upper, walking the trace's batches through the
+ * enter chain, moves the join's acknowledged frontier.  The join then
+ * releases physical compaction to it.  The join's reader is the trace's
+ * only hold (the watch handle lets go of both), so the shared physical
+ * frontier is that reader's.
+ */
+typedef struct equiet_ctx {
+	dtfl_input_session *edges, *roots;
+	dtfl_probe *probe;
+	dtfl_arranged *outer;		/* build only */
+	dtfl_collection *outer_roots;	/* build only */
+	dtfl_trace *watch;		/* holds nothing; for stats */
+	__dtfl_trace_box *box;		/* retained */
+} equiet_ctx;
+
+static void
+build_equiet_inner(dtfl_scope *inner, void *arg)
+{
+	equiet_ctx *c = arg;
+	const dtfl_type *u64 = dtfl_type_u64();
+	dtfl_arranged *edges = dtfl_arranged_enter(c->outer, inner);
+	dtfl_collection *roots = dtfl_collection_enter(c->outer_roots, inner);
+	dtfl_arranged *probe = dtfl_collection_arrange_by_key(roots, u64, u64,
+	    "probe");
+	dtfl_collection *out = dtfl_arranged_join_core(probe, edges, u64,
+	    enter_iter_result, DTFL_NOCTX);
+	dtfl_collection *seen = dtfl_collection_inspect(out, enter_iter_sink,
+	    DTFL_CTX(&enter_iter_seen, NULL));
+
+	dtfl_collection_free(seen);
+	dtfl_collection_free(out);
+	dtfl_arranged_free(probe);
+	dtfl_collection_free(roots);
+	dtfl_arranged_free(edges);
+}
+
+static void
+build_equiet(dtfl_scope *scope, void *arg)
+{
+	equiet_ctx *c = arg;
+	dtfl_collection *e = dtfl_input_session_to_collection(c->edges, scope);
+
+	c->outer_roots = dtfl_input_session_to_collection(c->roots, scope);
+	c->outer = dtfl_collection_arrange_by_key(e, dtfl_type_u64(),
+	    dtfl_type_u64(), "edges");
+	(void)dtfl_stream_probe_with(dtfl_arranged_stream(c->outer), c->probe);
+	c->box = __dtfl_trace_box_retain(__dtfl_arranged_agent(c->outer)->box);
+	c->watch = dtfl_arranged_trace(c->outer);
+	dtfl_trace_set_logical_compaction(c->watch, NULL, 0);
+	dtfl_trace_set_physical_compaction(c->watch, NULL, 0);
+	assert_int(dtfl_scope_iterative(scope, "It", build_equiet_inner, c),
+	    ==, 0);
+	dtfl_arranged_free(c->outer);
+	c->outer = NULL;
+	dtfl_collection_free(c->outer_roots);
+	c->outer_roots = NULL;
+	dtfl_collection_free(e);
+}
+
+DTFL_TEST(arrange__enter_quiet_join_releases_physical)
+{
+	dtfl_worker *w = dtfl_worker_new_standalone();
+	dtfl_time_class *tc = dtfl_time_u64();
+	dtfl_diff *r = dtfl_diff_i64();
+	const dtfl_type *pair = dtfl_type_pair(dtfl_type_u64(),
+	    dtfl_type_u64());
+	const __dtfl_antichain *ph;
+	equiet_ctx c;
+	unsigned char rec[16];
+	uint64_t t;
+	int i;
+
+	(void)params; (void)data;
+	memset(&enter_iter_seen, 0, sizeof enter_iter_seen);
+	memset(&c, 0, sizeof c);
+	c.edges = dtfl_input_session_new(pair, r);
+	c.roots = dtfl_input_session_new(pair, r);
+	c.probe = dtfl_probe_new();
+	assert_int(dtfl_worker_dataflow(w, "dd", tc, build_equiet, &c), ==, 0);
+
+	/* Edge (0, 100) and root (0, 7) at time 0, then six quiet epochs. */
+	dtfl_put_u64(rec, 0);
+	dtfl_put_u64(rec + 8, 100);
+	dtfl_input_session_insert(c.edges, rec, sizeof rec);
+	dtfl_put_u64(rec + 8, 7);
+	dtfl_input_session_insert(c.roots, rec, sizeof rec);
+	for (t = 1; t <= 6; t++) {
+		probe_cond pc = { c.probe, t };
+
+		dtfl_input_session_advance_to(c.edges, &t);
+		dtfl_input_session_advance_to(c.roots, &t);
+		dtfl_input_session_flush(c.edges);
+		dtfl_input_session_flush(c.roots);
+		dtfl_worker_step_while(w, probe_behind, &pc);
+	}
+	for (i = 0; i < 50; i++)
+		(void)dtfl_worker_step(w);
+
+	/* The writer sealed to 6; the join's hold followed it there. */
+	ph = __dtfl_trace_get_physical_compaction(c.box->trace);
+	assert_size(__dtfl_antichain_len(ph), ==, 1);
+	assert_uint64(__dtfl_antichain_at(ph, 0)[0], ==, 6);
+
+	dtfl_input_session_close(c.edges);
+	dtfl_input_session_close(c.roots);
+	while (dtfl_worker_step(w))
+		;
+	assert_int64(enter_seen_sum(&enter_iter_seen, 100, 0, 0), ==, 1);
+	assert_size(enter_iter_seen.n, ==, 1);
+
+	dtfl_trace_free(c.watch);
+	__dtfl_trace_box_release(c.box);
+	dtfl_probe_free(c.probe);
+	dtfl_type_free(pair);
+	dtfl_time_class_free(tc);
+	dtfl_diff_free(r);
+	dtfl_worker_free(w);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
 	DTFL_T(arrange__as_collection_equals_consolidate),
 	DTFL_T(arrange__multi_epoch_insert_retract),
@@ -1570,6 +1996,9 @@ static MunitTest tests[] = {
 	DTFL_T(arrange__enter_proxy_join_inner_times),
 	DTFL_T(arrange__enter_proxy_reduce_inner_times),
 	DTFL_T(arrange__enter_reduce_inner_times),
+	DTFL_T(arrange__enter_compaction_maps_to_outer),
+	DTFL_T(arrange__enter_trace_to_vec_inner_times),
+	DTFL_T(arrange__enter_quiet_join_releases_physical),
 	DTFL_T_END
 };
 
