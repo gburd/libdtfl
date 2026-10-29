@@ -243,9 +243,9 @@ Its
 hook should name the fiber, so the debug owner check survives a
 migration between carriers;
 .Fn xtc_self
-returns a 64-bit
+returns a 16-byte
 .Vt xtc_pid_t
-that the hook packs into a
+that the hook folds into a
 .Vt uintptr_t .
 The buffer behind
 .Xr dtfl_last_error_detail 3

@@ -509,7 +509,32 @@ DTFL_TEST(ddir__value_parse)
 	return MUNIT_OK;
 }
 
+/*
+ * An integer literal past i64 is a parse error, as upstream's
+ * num.parse().unwrap(), not signed overflow (fuzz_ddir_value found it).
+ */
+DTFL_TEST(ddir__int_literal_out_of_range)
+{
+	dtfl_ddir_program *p = NULL;
+	dtfl_ddir_value *v;
+
+	(void)params; (void)data;
+	v = dtfl_ddir_value_parse("9223372036854775807");
+	assert_not_null(v);
+	dtfl_ddir_value_free(v);
+	assert_null(dtfl_ddir_value_parse("9223372036854775808"));
+	assert_null(dtfl_ddir_value_parse("55555555555555555555"));
+	assert_int(dtfl_ddir_parse("export \"x\" = input 0 | "
+	    "key($0[0] ; 99999999999999999999);", DTFL_DDIR_PIPE, &p), !=, 0);
+	assert_null(p);
+	assert_int(dtfl_ddir_parse("x = MAP(INPUT 0, 99999999999999999999);",
+	    DTFL_DDIR_APPLICATIVE, &p), !=, 0);
+	assert_null(p);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(ddir__int_literal_out_of_range),
 	DTFL_T(ddir__value_cmp),
 	DTFL_T(ddir__value_clone_roundtrip),
 	DTFL_T(ddir__eval_arith),

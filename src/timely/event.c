@@ -387,7 +387,8 @@ __dtfl_event_decode(const dtfl_time_class *tc, const dtfl_type *type,
 	if (len < 8)
 		return false;
 	body_len = get_u64_le(p);
-	if (len < 8 + body_len)
+	/* 8 + body_len wraps for a hostile length; compare the other way. */
+	if (body_len > len - 8)
 		return false;
 	body = p + 8;
 	if (body_len < 4)

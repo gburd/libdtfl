@@ -140,3 +140,12 @@ jobs:
         env:
           DTFL_PBT_CASES: "100000"
         run: make check -j"$(nproc)" || (find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
+      # The libFuzzer tier (PLAN section 6 item 8): every target replays
+      # its committed corpus, then fuzzes for DTFL_FUZZ_SECONDS.
+      - run: sudo apt-get install -y clang
+      - run: mkdir fuzzbuild && cd fuzzbuild && ../configure CC=clang --enable-fuzz CFLAGS="-O1 -g"
+      - name: make fuzz
+        working-directory: fuzzbuild
+        env:
+          DTFL_FUZZ_SECONDS: "300"
+        run: make -j"$(nproc)" && DTFL_FUZZ_JOBS="$(nproc)" make fuzz

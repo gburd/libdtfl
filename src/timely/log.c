@@ -479,6 +479,18 @@ __dtfl_worker_install_log_subs(__dtfl_worker *w, const dtfl_config *cfg)
 /* Accessors                                                           */
 /* ------------------------------------------------------------------ */
 
+/* The address of an empty Vec<usize>: never NULL, as the API promises. */
+static const size_t no_addr[1];
+
+static const size_t *
+addr_at(const dtfl_log_batch *b, size_t off)
+{
+	/* No event of the batch had an address: the pool has no buffer. */
+	if (b->addrs.data == NULL)
+		return no_addr;
+	return (const size_t *)(void *)b->addrs.data + off;
+}
+
 static const decoded_event *
 at(const dtfl_log_batch *b, size_t i, dtfl_log_event_kind kind)
 {
@@ -545,7 +557,7 @@ dtfl_log_operates_addr(const dtfl_log_batch *b, size_t i, size_t *n)
 		return NULL;
 	}
 	*n = ev->addr_len;
-	return (const size_t *)(void *)b->addrs.data + ev->addr_off;
+	return addr_at(b, ev->addr_off);
 }
 
 const char *
@@ -574,7 +586,7 @@ dtfl_log_channels_scope(const dtfl_log_batch *b, size_t i, size_t *n)
 		return NULL;
 	}
 	*n = ev->scope_len;
-	return (const size_t *)(void *)b->addrs.data + ev->scope_off;
+	return addr_at(b, ev->scope_off);
 }
 
 void

@@ -144,6 +144,43 @@ Each property prints PASS, FAIL or SKIP.  A failure prints the minimal
 case hegel shrank it to, including the simulator seed and faults, and a
 @env{DTFL_PBT_REPLAY} command that reruns that one case.
 
+@subheading Fuzzing
+
+@command{make fuzz} is the libFuzzer tier.  It needs a build configured
+with clang and @option{--enable-fuzz}, which compiles the library with
+AddressSanitizer, UndefinedBehaviorSanitizer and fuzzer coverage; in
+any other build @command{make fuzz} prints SKIP and exits 77.  There is
+one target per decoder of bytes from outside the process: the TCP
+message framing, the data and progress message codecs, capture and
+replay events, the time and summary codecs, the timely, differential
+and communication log records, recorded log streams as
+@command{dtfl-diag} reads them, the diagnostics server's WebSocket
+handshake, DDIR programs and values, and the record descriptors and
+batch codec.  Where a decoder has an encoder, the target also checks
+that decoding and re-encoding gives the input back.
+
+Each target first replays every input committed under
+@file{tests/corpus/fuzz/@var{target}/}, the seeds and the reproducer of
+every crash fixed so far, and then fuzzes from them.  Two variables size
+the run:
+
+@table @env
+@item DTFL_FUZZ_SECONDS
+seconds of fuzzing per target (default 60; 0 replays the corpus only);
+@item DTFL_FUZZ_JOBS
+parallel fuzzing processes per target (default 1).
+@end table
+
+New corpus entries go to @file{fuzz-corpus/} in the build directory and
+crashing inputs to @file{fuzz-out/}; neither touches the source tree.
+@command{make fuzz-seeds} regenerates the seed corpus from the library's
+encoders after a wire format changes.
+
+@example
+./configure CC=clang --enable-fuzz && make
+DTFL_FUZZ_SECONDS=1800 DTFL_FUZZ_JOBS=16 make fuzz
+@end example
+
 @section Platform notes
 
 The test suite, with each sanitizer, passes on these platforms:
@@ -185,6 +222,37 @@ detects that.  @file{tests/dist/test_usdt.sh} reports SKIP.
 @item
 hegel publishes no FreeBSD @file{libhegel}, so the property tests
 report SKIP and @command{make check-sim} exits 77.
+@end itemize
+
+@item Linux riscv64 (Bianbu 4.0 on Ubuntu 26.04, SpacemiT X100, gcc 15.2 and clang 21.1)
+@command{make check} with the property tests, ASan and UBSan, and TSan
+pass under both compilers, and so does @command{make distcheck}, with
+the USDT probes on.  Where it differs from x86_64 and arm64:
+
+@itemize @bullet
+@item
+The ThreadSanitizer tests run with address randomization on.  The
+riscv64 TSan runtime (Sv39 paging) aborts under @command{setarch -R}
+(``memory layout is incompatible, even though ASLR is disabled''), so
+configure tries a sanitizer program under the wrapper and drops the
+wrapper when it fails there and runs without it.
+@item
+hegel publishes no riscv64 @file{libhegel}.  It builds from the
+hegel-rust source (tested with 0.36.5) with the distribution's Rust
+(1.93; the C crate needs 1.86): @command{cargo build --release -p hegeltest-c} makes
+@file{target/release/libhegel_c.so}; install it as
+@file{@var{prefix}/lib/libhegel.so}, with @file{hegel-c/include/hegel.h}
+in @file{@var{prefix}/include}, and configure
+@option{--with-hegel=@var{prefix}}.
+@item
+valgrind 3.26 cannot run programs here: it does not decode the Zba
+instructions (@code{sh3add}) the system's dynamic loader is built
+with, and stops every program, @command{/bin/true} included, with
+SIGILL.
+@item
+On the 8-core X100, @command{make -j8 check} takes about 90 seconds for
+a plain build and five to ten minutes under a sanitizer, well inside
+the default @env{DTFL_TEST_TIMEOUT}.
 @end itemize
 
 @item Linux x86_64 with musl (Ubuntu 24.04, musl 1.2.4, @command{musl-gcc})

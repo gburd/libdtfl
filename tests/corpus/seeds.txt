@@ -24,3 +24,63 @@
 # ("simulation made no progress after 2000001 steps") before c2e9f74,
 # REPLAY PASS after.
 notify_multiworker DTFL_PBT_FLUSH_STEPS=on DTFL_PBT_COMM=sim DTFL_PBT_FAULTS=on DTFL_PBT_ONLY=notify_multiworker DTFL_PBT_REPLAY=AXiczcoxCgAACAJAbewd/f+NCU1B1JqDh2BAcapYoGHLGuF9eUUC8LABtw== tests/pbt/pbt_ops_notify
+
+## libFuzzer tier (make fuzz): first campaign, 2026-10-28
+#
+# Replay a fuzz entry from a build configured CC=clang --enable-fuzz:
+# the target binary followed by the input path runs it once.  Every
+# committed input under tests/corpus/fuzz/ is replayed by make fuzz
+# before it fuzzes, so a fixed entry stays fixed.
+
+## fuzz_event: EventReader frame length wraps (fixed, 1b0495b)
+# __dtfl_event_decode tested len < 8 + body_len; a length near 2^64
+# wrapped it and the body was read past the buffer (ASan
+# heap-buffer-overflow, src/timely/event.c get_u32_le).  Checked both
+# ways: ASan report before 1b0495b, clean after.
+fuzz_event tests/fuzz/fuzz_event $(top_srcdir)/tests/corpus/fuzz/fuzz_event/regress-length-wrap
+
+## fuzz_log: NULL + 0 from the address accessors (fixed, 8630d68)
+# dtfl_log_operates_addr returned addrs.data + off with no address in
+# the batch, NULL + 0 (UBSan, src/timely/log.c:548).  Also reached by
+# fuzz_diag_replay through dtfl_diag_replay_fd.  Checked both ways.
+fuzz_log tests/fuzz/fuzz_log $(top_srcdir)/tests/corpus/fuzz/fuzz_log/regress-empty-addr
+
+## fuzz_ddir_value: integer literal overflows i64 (fixed, a5ef099)
+# Both DDIR lexers computed n * 10 + d in int64_t (UBSan signed
+# overflow, src/ddir/parse_pipe.c:203).  Now a parse error, as
+# upstream's num.parse().unwrap() panics.  Checked both ways.
+fuzz_ddir_value tests/fuzz/fuzz_ddir_value $(top_srcdir)/tests/corpus/fuzz/fuzz_ddir_value/regress-int-overflow
+
+## fuzz_progress: a lone zero delta survives compaction (not a bug)
+# The target asserted no zero delta after compaction; upstream's
+# ChangeBatch::compact skips a one-entry batch, and so does the port.
+# The target was corrected in 782f5bb; the input replays clean.
+fuzz_progress tests/fuzz/fuzz_progress $(top_srcdir)/tests/corpus/fuzz/fuzz_progress/regress-lone-zero
+
+## fuzz_ddir_parse, fuzz_ddir_value: DDIR panics on bad names (open)
+# dtfl_ddir_parse aborts through the panic hook on a program that
+# lowers badly, e.g. the 12-byte pipe program  export "" = t;
+# ("unresolved name `t`"), and on unknown scopes, unknown outer names
+# and cyclic lets.  dtfl_ddir_value_parse aborts on a closed term that
+# names a variable, e.g. ^5 ("Bound(5) out of range"; before a5ef099
+# it read out of bounds).  These are upstream's own panic!s
+# (interactive/src/lower.rs, eval in ir.rs at
+# differential-dataflow-v0.25.1); upstream's ddir_server catches them
+# with catch_unwind, which C does not have, so dtfl_ddir_parse is
+# documented to return an error but does not.  The fix is to turn the
+# lowering and evaluation panics into dd_parse_error-style unwinds that
+# return DTFL_EINVAL.  Also open: parse_pattern_case leaks its scratch
+# vectors when a parse error unwinds mid-arm (documented in
+# src/ddir/parse_pipe.c).  No reproducer is committed to the corpus,
+# because make fuzz must replay it clean.
+
+## fuzz_diag_replay: signed overflow in the diagnostics stats (fixed)
+# The in-process diagnostics server and dtfl-diag arrangements and
+# profile summed stat values, merge lengths and elapsed times from a
+# recorded stream in int64_t, and negated a Drop length, so a hostile
+# stream was C signed overflow (UBSan src/diag/diag_log.c:93 and :322).
+# Upstream's isize arithmetic wraps in a release build; it now wraps
+# here.  Found 523 times in the 45-minute campaign; all 523 replay
+# clean after the fix.  Checked both ways.
+fuzz_diag_replay tests/fuzz/fuzz_diag_replay $(top_srcdir)/tests/corpus/fuzz/fuzz_diag_replay/regress-stat-overflow
+fuzz_diag_replay tests/fuzz/fuzz_diag_replay $(top_srcdir)/tests/corpus/fuzz/fuzz_diag_replay/regress-negate-min

@@ -59,7 +59,9 @@ add_elapsed(struct prof_state *s, size_t id, int64_t ns)
 
 	for (i = 0; i < s->ntotals; i++)
 		if (s->totals[i].id == id) {
-			s->totals[i].ns += ns;
+			/* Wraps as Rust release; C signed overflow is UB. */
+			s->totals[i].ns = (int64_t)((uint64_t)s->totals[i].ns +
+			    (uint64_t)ns);
 			return;
 		}
 	if (s->ntotals == s->cap_totals) {

@@ -183,13 +183,18 @@ atokenize(alexer *lx, const char *input)
 			break;
 		}
 		if (c >= '0' && c <= '9') {
-			atok *t = atok_new(A_INT);
+			atok *t;
 			int64_t n = 0;
 
 			while (*p >= '0' && *p <= '9') {
+				/* i64 parse, as upstream's num.parse().unwrap(). */
+				if (n > (INT64_MAX - (*p - '0')) / 10)
+					dd_parse_error(lx->pc, "integer literal "
+					    "out of range");
 				n = n * 10 + (*p - '0');
 				p++;
 			}
+			t = atok_new(A_INT);
 			t->int_v = n;
 			dd_vec_push(&lx->toks, t);
 			continue;
