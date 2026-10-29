@@ -247,7 +247,7 @@ thr_logic(dtfl_op *op, void *vctx)
 	 * ahead of the trace's upper, and a physical frontier beyond the next
 	 * batch's lower would leave the next cursor_through no clean cut.
 	 */
-	__dtfl_trace_advance_upper(c->trace.box->trace, &c->upper_limit);
+	__dtfl_trace_agent_advance_upper(&c->trace, &c->upper_limit);
 	__dtfl_trace_agent_set_logical(&c->trace,
 	    (const uint64_t *)(void *)c->upper_limit.elems.data,
 	    __dtfl_antichain_len(&c->upper_limit));

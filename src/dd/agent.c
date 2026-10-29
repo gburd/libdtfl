@@ -21,6 +21,7 @@
  * the writer prunes it (agent.rs new_listener, writer.rs insert).
  */
 #include "dd/arrange_int.h"
+#include "progress/time_int.h"
 #include "timely/timely_int.h"
 
 /* ------------------------------------------------------------------ */
@@ -387,6 +388,9 @@ __dtfl_trace_agent_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 	reader->kt = kt;
 	reader->vt = vt;
 	reader->dc = dc;
+	reader->enter = NULL;
+	__dtfl_antichain_init(&reader->logical_view, tc);
+	__dtfl_antichain_init(&reader->physical_view, tc);
 	agent_log_share(reader, 1);
 
 	/*
@@ -395,6 +399,31 @@ __dtfl_trace_agent_new(__dtfl_trace *trace, bool keyed, const dtfl_type *kt,
 	 */
 	__dtfl_trace_writer_init(writer, __dtfl_trace_box_downgrade(box),
 	    queues, tc);
+}
+
+/*
+ * The class of the agent's holds: the shared trace's.  An entered agent
+ * presents a->tc (the inner class) but holds, like the TraceAgent that
+ * upstream's TraceEnter wraps, in the trace's own class.
+ */
+static const dtfl_time_class *
+hold_tc(const __dtfl_trace_agent *a)
+{
+	return a->box->tc;
+}
+
+/* enter.rs get_*_compaction: the holds lifted with to_inner (stash2). */
+static void
+agent_refresh_views(__dtfl_trace_agent *a)
+{
+	if (a->enter == NULL)
+		return;
+	__dtfl_antichain_free(&a->logical_view);
+	__dtfl_antichain_free(&a->physical_view);
+	__dtfl_trace_enter_frontier_in(a->enter, &a->logical_compaction,
+	    &a->logical_view);
+	__dtfl_trace_enter_frontier_in(a->enter, &a->physical_compaction,
+	    &a->physical_view);
 }
 
 void
@@ -411,13 +440,17 @@ __dtfl_trace_agent_clone(const __dtfl_trace_agent *src, __dtfl_trace_agent *dst)
 	dst->kt = src->kt;
 	dst->vt = src->vt;
 	dst->dc = src->dc;
-	__dtfl_antichain_init(&dst->logical_compaction, src->tc);
-	__dtfl_antichain_init(&dst->physical_compaction, src->tc);
+	dst->enter = __dtfl_trace_enter_retain(src->enter);
+	__dtfl_antichain_init(&dst->logical_compaction, hold_tc(src));
+	__dtfl_antichain_init(&dst->physical_compaction, hold_tc(src));
 	__dtfl_antichain_copy(&dst->logical_compaction, &src->logical_compaction);
 	__dtfl_antichain_copy(&dst->physical_compaction, &src->physical_compaction);
+	__dtfl_antichain_init(&dst->logical_view, src->tc);
+	__dtfl_antichain_init(&dst->physical_view, src->tc);
+	agent_refresh_views(dst);
 
 	/* Register this clone's holds on the box (agent.rs Clone). */
-	__dtfl_antichain_init(&empty, src->tc);
+	__dtfl_antichain_init(&empty, hold_tc(src));
 	__dtfl_trace_box_adjust_logical(dst->box,
 	    __dtfl_ac_base(&empty), 0,
 	    (const uint64_t *)(void *)dst->logical_compaction.elems.data,
@@ -438,7 +471,7 @@ __dtfl_trace_agent_free(__dtfl_trace_agent *a)
 		return;
 	agent_log_share(a, -1);
 	/* Decrement holds to zero (agent.rs Drop), letting compaction run. */
-	__dtfl_antichain_init(&empty, a->tc);
+	__dtfl_antichain_init(&empty, hold_tc(a));
 	__dtfl_trace_box_adjust_logical(a->box,
 	    (const uint64_t *)(void *)a->logical_compaction.elems.data,
 	    __dtfl_antichain_len(&a->logical_compaction),
@@ -451,6 +484,10 @@ __dtfl_trace_agent_free(__dtfl_trace_agent *a)
 
 	__dtfl_antichain_free(&a->logical_compaction);
 	__dtfl_antichain_free(&a->physical_compaction);
+	__dtfl_antichain_free(&a->logical_view);
+	__dtfl_antichain_free(&a->physical_view);
+	__dtfl_trace_enter_release(a->enter);
+	a->enter = NULL;
 	__dtfl_queue_list_release(a->queues);
 	__dtfl_trace_box_release(a->box);
 	a->box = NULL;
@@ -468,8 +505,8 @@ agent_set(__dtfl_trace_agent *a, __dtfl_antichain *hold, const uint64_t *frontie
 {
 	__dtfl_antichain joined;
 
-	__dtfl_antichain_init(&joined, a->tc);
-	__dtfl_antichain_join_into(a->tc,
+	__dtfl_antichain_init(&joined, hold_tc(a));
+	__dtfl_antichain_join_into(hold_tc(a),
 	    (const uint64_t *)(void *)hold->elems.data, __dtfl_antichain_len(hold),
 	    frontier, n, &joined);
 	if (physical)
@@ -486,45 +523,157 @@ agent_set(__dtfl_trace_agent *a, __dtfl_antichain *hold, const uint64_t *frontie
 		    __dtfl_antichain_len(&joined));
 	__dtfl_antichain_free(hold);
 	*hold = joined;
+	agent_refresh_views(a);
+}
+
+/*
+ * enter.rs set_*_compaction: an entered agent maps `frontier` from its
+ * inner class to the trace's (to_outer, or prior for enter_at) and sets
+ * that on the wrapped agent, whose holds these are.
+ */
+static void
+agent_set_mapped(__dtfl_trace_agent *a, __dtfl_antichain *hold,
+    const uint64_t *frontier, size_t n, bool physical)
+{
+	__dtfl_antichain stash1;
+
+	if (a->enter == NULL) {
+		agent_set(a, hold, frontier, n, physical);
+		return;
+	}
+	__dtfl_trace_enter_frontier_out(a->enter, frontier, n, true, &stash1);
+	agent_set(a, hold, __dtfl_ac_base(&stash1),
+	    __dtfl_antichain_len(&stash1), physical);
+	__dtfl_antichain_free(&stash1);
 }
 
 void
 __dtfl_trace_agent_set_logical(__dtfl_trace_agent *a, const uint64_t *frontier,
     size_t n)
 {
-	agent_set(a, &a->logical_compaction, frontier, n, false);
+	agent_set_mapped(a, &a->logical_compaction, frontier, n, false);
 }
 
 void
 __dtfl_trace_agent_set_physical(__dtfl_trace_agent *a, const uint64_t *frontier,
     size_t n)
 {
-	agent_set(a, &a->physical_compaction, frontier, n, true);
+	agent_set_mapped(a, &a->physical_compaction, frontier, n, true);
 }
 
 const __dtfl_antichain *
 __dtfl_trace_agent_logical(const __dtfl_trace_agent *a)
 {
-	return &a->logical_compaction;
+	return a->enter != NULL ? &a->logical_view : &a->logical_compaction;
 }
 
 const __dtfl_antichain *
 __dtfl_trace_agent_physical(const __dtfl_trace_agent *a)
 {
-	return &a->physical_compaction;
+	return a->enter != NULL ? &a->physical_view : &a->physical_compaction;
 }
 
 void
 __dtfl_trace_agent_cursor(__dtfl_trace_agent *a, __dtfl_cursor_list *out)
 {
 	__dtfl_trace_cursor(a->box->trace, out);
+	out->enter = __dtfl_trace_enter_retain(a->enter);
 }
 
+/*
+ * enter.rs batches_through: map `upper` to the trace's class with
+ * to_outer, cut there, and present the batches through the chain (the
+ * cursor list lifts each time in map_times, BatchCursorEnter).
+ */
 bool
 __dtfl_trace_agent_cursor_through(__dtfl_trace_agent *a,
     const __dtfl_antichain *upper, __dtfl_cursor_list *out)
 {
-	return __dtfl_trace_cursor_through(a->box->trace, upper, out);
+	__dtfl_antichain stash1;
+	bool ok;
+
+	if (a->enter == NULL)
+		return __dtfl_trace_cursor_through(a->box->trace, upper, out);
+	__dtfl_trace_enter_frontier_out(a->enter, __dtfl_ac_base(upper),
+	    __dtfl_antichain_len(upper), false, &stash1);
+	ok = __dtfl_trace_cursor_through(a->box->trace, &stash1, out);
+	__dtfl_antichain_free(&stash1);
+	if (ok)
+		out->enter = __dtfl_trace_enter_retain(a->enter);
+	return ok;
+}
+
+/* advance_upper over BatchEnter descriptions (lower/upper via to_inner). */
+typedef struct advance_ctx {
+	const __dtfl_trace_enter *e;
+	__dtfl_antichain *upper;
+} advance_ctx;
+
+static void
+advance_entered(const __dtfl_batch_ord *b, void *vctx)
+{
+	advance_ctx *c = vctx;
+	__dtfl_antichain lower, up;
+
+	if (!__dtfl_batch_ord_is_empty(b))
+		return;
+	__dtfl_trace_enter_frontier_in(c->e, __dtfl_batch_ord_lower(b),
+	    &lower);
+	if (__dtfl_antichain_eq(&lower, c->upper)) {
+		__dtfl_trace_enter_frontier_in(c->e, __dtfl_batch_ord_upper(b),
+		    &up);
+		__dtfl_antichain_free(c->upper);
+		*c->upper = up;
+	}
+	__dtfl_antichain_free(&lower);
+}
+
+void
+__dtfl_trace_agent_advance_upper(__dtfl_trace_agent *a,
+    __dtfl_antichain *upper)
+{
+	advance_ctx c;
+
+	if (a->enter == NULL) {
+		__dtfl_trace_advance_upper(a->box->trace, upper);
+		return;
+	}
+	c.e = a->enter;
+	c.upper = upper;
+	__dtfl_trace_each_batch(a->box->trace, advance_entered, &c);
+}
+
+void
+__dtfl_trace_agent_leave(__dtfl_trace_agent *a)
+{
+	__dtfl_trace_enter *e = a->enter;
+
+	if (e == NULL)
+		return;
+	a->enter = __dtfl_trace_enter_retain(e->next);
+	a->tc = e->outer;
+	__dtfl_trace_enter_release(e);
+	__dtfl_antichain_free(&a->logical_view);
+	__dtfl_antichain_free(&a->physical_view);
+	__dtfl_antichain_init(&a->logical_view, a->tc);
+	__dtfl_antichain_init(&a->physical_view, a->tc);
+	agent_refresh_views(a);
+}
+
+void
+__dtfl_trace_agent_enter(__dtfl_trace_agent *a, const dtfl_time_class *inner,
+    __dtfl_enter_at_fn logic, __dtfl_enter_prior_fn prior, void *ctx,
+    void (*ctx_free)(void *))
+{
+	/* The new layer takes over the agent's reference on the old chain. */
+	a->enter = __dtfl_trace_enter_new(a->enter, a->tc, inner, logic, prior,
+	    ctx, ctx_free);
+	a->tc = inner;
+	__dtfl_antichain_free(&a->logical_view);
+	__dtfl_antichain_free(&a->physical_view);
+	__dtfl_antichain_init(&a->logical_view, inner);
+	__dtfl_antichain_init(&a->physical_view, inner);
+	agent_refresh_views(a);
 }
 
 /*
@@ -536,12 +685,17 @@ __dtfl_trace_agent_cursor_through(__dtfl_trace_agent *a,
 __dtfl_replay_queue *
 __dtfl_trace_agent_new_listener(__dtfl_trace_agent *a, dtfl_activator *activator)
 {
-	__dtfl_replay_queue *q = __dtfl_replay_queue_new(activator, a->tc);
+	__dtfl_replay_queue *q;
 	__dtfl_batch_ord **batches;
 	size_t n, i;
 	uint64_t minimum[DTFL_TIME_MAX] = { 0 };
 	const __dtfl_antichain *final_upper;
 
+	/* Upstream imports only a TraceAgent, never a TraceEnter. */
+	if (a->enter != NULL)
+		__dtfl_panic("trace import: the trace was read through an "
+		    "entered arrangement; import the outer trace instead");
+	q = __dtfl_replay_queue_new(activator, a->tc);
 	/* map_batches: all batches currently in the trace. */
 	batches = __dtfl_trace_map_batches(a->box->trace, &n);
 	for (i = 0; i < n; i++)
