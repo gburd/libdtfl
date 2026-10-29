@@ -533,7 +533,166 @@ DTFL_TEST(ddir__int_literal_out_of_range)
 	return MUNIT_OK;
 }
 
+/*
+ * A program that parses but does not lower returns DTFL_EINVAL with the
+ * reason, where upstream's lower.rs panics (ADR-0012, 2026-10-29).  One
+ * case per lowering error class; fuzz_ddir_parse found the first two.
+ */
+static void
+expect_lower_error(const char *src, dtfl_ddir_syntax syn, const char *want)
+{
+	dtfl_ddir_program *p = (dtfl_ddir_program *)(uintptr_t)1;
+	int rc = dtfl_ddir_parse(src, syn, &p);
+
+	if (rc != DTFL_EINVAL || p != NULL ||
+	    strstr(dtfl_last_error_detail(), want) == NULL)
+		munit_errorf("%s: rc %d, detail \"%s\", want \"%s\"", src, rc,
+		    dtfl_last_error_detail(), want);
+}
+
+DTFL_TEST(ddir__lower_errors_return_einval)
+{
+	(void)params; (void)data;
+	expect_lower_error("export \"\" = t;", DTFL_DDIR_PIPE,
+	    "unresolved name `t`");
+	expect_lower_error("export \"x\" = MAP(t, (;));", DTFL_DDIR_APPLICATIVE,
+	    "unresolved name `t`");
+	expect_lower_error("let e = input 0;\n"
+	    "reach: { var r = e; }\n"
+	    "export \"x\" = reqch::r;", DTFL_DDIR_PIPE,
+	    "unknown scope `reqch`");
+	expect_lower_error("s: { let y = zz; }\nexport \"x\" = s::y;",
+	    DTFL_DDIR_PIPE, "scope references unknown outer name `zz`");
+	expect_lower_error("let e = input 0;\ns: { let y = e; }\n"
+	    "export \"x\" = s::q;", DTFL_DDIR_PIPE,
+	    "scope export `q` is not a local name");
+	expect_lower_error("s: { let y = input 3; }\nexport \"x\" = s::y;",
+	    DTFL_DDIR_PIPE, "`input 3` used outside the root scope");
+	expect_lower_error("s: { let y = import \"t\"; }\n"
+	    "export \"x\" = s::y;", DTFL_DDIR_PIPE,
+	    "`import \"t\"` used outside the root scope");
+	expect_lower_error("let a = b;\nlet b = a;\nexport \"x\" = a;",
+	    DTFL_DDIR_PIPE, "Cyclic let/scope dependency");
+	/* An error two scopes down unwinds through both parents (a sibling
+	 * scope is not a name, upstream too). */
+	expect_lower_error("let e = input 0;\na: { c: { let f = e; }\n"
+	    "b: { let y = c::f; }\nlet z = b::y; }\nexport \"x\" = a::z;",
+	    DTFL_DDIR_PIPE, "scope references unknown outer name `c`");
+	/* An error in a var body and in an export. */
+	expect_lower_error("var v = v + w;\nexport \"x\" = v;",
+	    DTFL_DDIR_PIPE, "unresolved name `w`");
+	return MUNIT_OK;
+}
+
+/*
+ * A closed term that does not evaluate returns NULL with the reason, where
+ * upstream's ir::eval panics.  One case per evaluation error class;
+ * fuzz_ddir_value found the first two.
+ */
+static void
+expect_value_error(const char *term, const char *want)
+{
+	dtfl_ddir_value *v;
+
+	dtfl_set_error_detail("%s", "");
+	v = dtfl_ddir_value_parse(term);
+	if (v != NULL || strstr(dtfl_last_error_detail(), want) == NULL)
+		munit_errorf("%s: %s, detail \"%s\", want \"%s\"", term,
+		    v != NULL ? "a value" : "NULL", dtfl_last_error_detail(),
+		    want);
+	dtfl_ddir_value_free(v);
+}
+
+DTFL_TEST(ddir__value_eval_errors_return_null)
+{
+	(void)params; (void)data;
+	expect_value_error("list(8>list(8>8,4)-4)", "expected Int, got List");
+	expect_value_error("^5", "Bound(5) out of range");
+	expect_value_error("$0", "Var(0) out of range");
+	expect_value_error("tuple(1, 2)[2]", "Proj index 2 out of bounds");
+	expect_value_error("7[0]", "Proj on non-aggregate value: Int");
+	expect_value_error("case 7 { _ => 1 }",
+	    "Case scrutinee is not a Variant");
+	expect_value_error("case inject(3, 1) { }",
+	    "Case: no arm for tag 3 and no default");
+	expect_value_error("fold(7, 0, ^0)", "Fold on non-list value: Int");
+	expect_value_error("len(7)", "Len on non-aggregate value: Int");
+	expect_value_error("hash(list(), 1)", "expected Int, got List");
+	expect_value_error("inject(tuple(), 1)", "expected Int, got Tuple");
+	expect_value_error("-tuple()", "expected Int, got Tuple");
+	/* The first error wins, and nothing after it runs or leaks. */
+	expect_value_error("tuple(list(1, 2), len(3), ^9)",
+	    "Len on non-aggregate value: Int");
+	expect_value_error("fold(list(1, 2, 3), 0, ^0 + list())",
+	    "expected Int, got List");
+	expect_value_error("tuple(1,", "Unexpected token in term");
+	return MUNIT_OK;
+}
+
+/* i64 arithmetic wraps, as upstream's does in a release build. */
+DTFL_TEST(ddir__value_arith_wraps)
+{
+	static const struct {
+		const char *term;
+		int64_t want;
+	} cases[] = {
+		{ "9223372036854775807 + 1", INT64_MIN },
+		{ "0 - 9223372036854775807 - 2", INT64_MAX },
+		{ "9223372036854775807 * 2", -2 },
+		{ "-(0 - 9223372036854775807 - 1)", INT64_MIN },
+	};
+	size_t i;
+
+	(void)params; (void)data;
+	for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		dtfl_ddir_value *v = dtfl_ddir_value_parse(cases[i].term);
+		dd_value *dv = v;
+
+		assert_not_null(v);
+		assert_int(dv->kind, ==, DD_V_INT);
+		assert_int64(dv->u.int_v, ==, cases[i].want);
+		dtfl_ddir_value_free(v);
+	}
+	return MUNIT_OK;
+}
+
+/*
+ * A parse error inside a pattern-match arm frees the arm's scratch (the
+ * constructor and binder names, the tag and arm vecs).  Under LSan this
+ * leaked before the arena took them.
+ */
+DTFL_TEST(ddir__pattern_case_error_frees_scratch)
+{
+	static const char *const bad[] = {
+		"con A(2) = 0;\nlet x = input 0 | map(case $0 "
+		    "{ A(p, q) => p + , });",
+		"con A(2) = 0;\nlet x = input 0 | map(case $0 "
+		    "{ A(p, q) => p, A(r) => r });",
+		"con A(1) = 0;\ncon B(1) = 1;\nlet x = input 0 | map("
+		    "case $0 { A(p) => p, B(q) => q, C(z) => z });",
+		"con A(1) = 2;\nlet x = input 0 | map(case $0 "
+		    "{ A(p) => p });",
+		"con A(1) = 0;\nlet x = input 0 | map(case $0 "
+		    "{ A(p) => case p { A(r) => r +",
+	};
+	size_t i;
+
+	(void)params; (void)data;
+	for (i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+		dtfl_ddir_program *p = NULL;
+
+		assert_int(dtfl_ddir_parse(bad[i], DTFL_DDIR_PIPE, &p), ==,
+		    DTFL_EINVAL);
+		assert_null(p);
+	}
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(ddir__lower_errors_return_einval),
+	DTFL_T(ddir__value_eval_errors_return_null),
+	DTFL_T(ddir__value_arith_wraps),
+	DTFL_T(ddir__pattern_case_error_frees_scratch),
 	DTFL_T(ddir__int_literal_out_of_range),
 	DTFL_T(ddir__value_cmp),
 	DTFL_T(ddir__value_clone_roundtrip),

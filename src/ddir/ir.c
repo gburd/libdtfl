@@ -15,11 +15,19 @@
  * against an environment stack of Values, mirroring ir::eval: Var indexes
  * the environment absolutely, Bound counts from the innermost pushed
  * binder, and Case/Fold push and pop their binders around sub-evaluation.
+ *
+ * ir::eval panics on a term that does not fit its values (Proj of an Int,
+ * Add of a List, a Var past the environment).  dd_eval does too: on the
+ * dataflow side those are upstream's runtime panics.  dd_eval_closed, the
+ * path dtfl_ddir_value_parse takes for text a client sent, reports the
+ * same conditions as an error instead (ADR-0012, 2026-10-29).
  */
 #include "ddir_int.h"
 
 #include "../base/base_int.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 /* ------------------------------------------------------------------ */
@@ -191,6 +199,8 @@ dd_value_truthy(const dd_value *v)
 	return v->kind == DD_V_INT && v->u.int_v != 0;
 }
 
+/* Used on the dataflow side only (backend_vec.c enter_at), where a
+ * non-Int is upstream's runtime panic; the interpreter uses as_int. */
 int64_t
 dd_value_as_int(const dd_value *v)
 {
@@ -449,6 +459,83 @@ dd_linear_op_free_fields(dd_linear_op *op)
 /* The Term interpreter: dd_eval (ir::eval)                            */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Where an evaluation error goes.  NULL (dd_eval): panic, as ir::eval
+ * does.  Otherwise (dd_eval_closed): keep the first message, and from then
+ * on every step returns a placeholder Int(0), so the walk unwinds normally
+ * with the environment balanced and every value freed.
+ */
+typedef struct eval_err {
+	bool set;
+	char msg[256];
+} eval_err;
+
+static void eval_note(eval_err *ee, const char *fmt, ...) DTFL_PRINTF(2, 3);
+
+static void
+eval_note(eval_err *ee, const char *fmt, ...)
+{
+	char msg[256];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(msg, sizeof msg, fmt, ap);
+	va_end(ap);
+	if (ee == NULL)
+		__dtfl_panic("%s", msg);
+	if (!ee->set) {
+		memcpy(ee->msg, msg, sizeof msg);
+		ee->set = true;
+	}
+}
+
+static const char *
+kind_name(const dd_value *v)
+{
+	switch (v->kind) {
+	case DD_V_INT:
+		return "Int";
+	case DD_V_TUPLE:
+		return "Tuple";
+	case DD_V_VARIANT:
+		return "Variant";
+	case DD_V_LIST:
+		return "List";
+	}
+	return "?";
+}
+
+/* Value::as_int. */
+static int64_t
+as_int(const dd_value *v, eval_err *ee)
+{
+	if (v->kind != DD_V_INT) {
+		eval_note(ee, "expected Int, got %s", kind_name(v));
+		return 0;
+	}
+	return v->u.int_v;
+}
+
+/* i64 arithmetic as a Rust release build does it: two's complement
+ * wrapping, where C signed overflow is undefined. */
+static int64_t
+wrap_add(int64_t a, int64_t b)
+{
+	return (int64_t)((uint64_t)a + (uint64_t)b);
+}
+
+static int64_t
+wrap_sub(int64_t a, int64_t b)
+{
+	return (int64_t)((uint64_t)a - (uint64_t)b);
+}
+
+static int64_t
+wrap_mul(int64_t a, int64_t b)
+{
+	return (int64_t)((uint64_t)a * (uint64_t)b);
+}
+
 /* Push a value onto the environment stack. */
 static void
 env_push(dd_value ***env, size_t *len, size_t *cap, dd_value *v)
@@ -474,7 +561,7 @@ eval_ref(const dd_term *t, dd_value **env, size_t len)
 	case DD_T_VAR:
 		return t->u.var < len ? env[t->u.var] : NULL;
 	case DD_T_BOUND:
-		if (t->u.bound + 1 > len)
+		if (t->u.bound >= len)
 			return NULL;
 		return env[len - 1 - t->u.bound];
 	case DD_T_PROJ: {
@@ -492,13 +579,17 @@ eval_ref(const dd_term *t, dd_value **env, size_t len)
 	}
 }
 
-static dd_value *eval_unary(dd_unop op, uint32_t tag, dd_value *v);
-static dd_value *eval_binary(dd_binop op, dd_value *l, dd_value *r);
+static dd_value *eval_t(const dd_term *term, dd_value ***env, size_t *len,
+    size_t *cap, eval_err *ee);
+static dd_value *eval_unary(dd_unop op, uint32_t tag, dd_value *v,
+    eval_err *ee);
+static dd_value *eval_binary(dd_binop op, dd_value *l, dd_value *r,
+    eval_err *ee);
 
 /* Build a tuple/list element sequence, splicing any Spread children. */
 static void
 build_seq(const dd_vec *fields, dd_value ***env, size_t *len, size_t *cap,
-    dd_value ***out_items, size_t *out_len)
+    dd_value ***out_items, size_t *out_len, eval_err *ee)
 {
 	dd_vec out = { 0 };
 	size_t i;
@@ -507,17 +598,23 @@ build_seq(const dd_vec *fields, dd_value ***env, size_t *len, size_t *cap,
 		const dd_term *f = fields->data[i];
 
 		if (f->kind == DD_T_SPREAD) {
-			dd_value *inner = dd_eval(f->u.spread, env, len, cap);
+			dd_value *inner = eval_t(f->u.spread, env, len, cap,
+			    ee);
 			size_t j;
 
-			if (inner->kind != DD_V_TUPLE && inner->kind != DD_V_LIST)
-				__dtfl_panic("Spread of non-aggregate value");
+			if (inner->kind != DD_V_TUPLE &&
+			    inner->kind != DD_V_LIST) {
+				eval_note(ee, "Spread of non-aggregate value: "
+				    "%s", kind_name(inner));
+				dd_value_free(inner);
+				continue;
+			}
 			for (j = 0; j < inner->u.seq.len; j++)
 				dd_vec_push(&out,
 				    dd_value_clone(inner->u.seq.items[j]));
 			dd_value_free(inner);
 		} else {
-			dd_vec_push(&out, dd_eval(f, env, len, cap));
+			dd_vec_push(&out, eval_t(f, env, len, cap, ee));
 		}
 	}
 	*out_items = (dd_value **)(void *)out.data;
@@ -527,15 +624,48 @@ build_seq(const dd_vec *fields, dd_value ***env, size_t *len, size_t *cap,
 dd_value *
 dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 {
+	return eval_t(term, env, len, cap, NULL);
+}
+
+dd_value *
+dd_eval_closed(const dd_term *term)
+{
+	eval_err ee = { false, "" };
+	dd_value **env = NULL;
+	size_t len = 0, cap = 0;
+	dd_value *v = eval_t(term, &env, &len, &cap, &ee);
+
+	__dtfl_free(env);
+	if (ee.set) {
+		dd_value_free(v);
+		(void)__dtfl_err(DTFL_EINVAL, "%s", ee.msg);
+		return NULL;
+	}
+	return v;
+}
+
+/* Record an error and return the placeholder the walk continues with. */
+#define EVAL_FAIL(...)							\
+	do {								\
+		eval_note(ee, __VA_ARGS__);				\
+		return dd_value_int(0);					\
+	} while (0)
+
+static dd_value *
+eval_t(const dd_term *term, dd_value ***env, size_t *len, size_t *cap,
+    eval_err *ee)
+{
+	if (ee != NULL && ee->set)
+		return dd_value_int(0);
 	switch (term->kind) {
 	case DD_T_VAR:
-		/* Upstream's env[i] panics out of range; so does this. */
+		/* Upstream's env[i] panics out of range; so does dd_eval. */
 		if (term->u.var >= *len)
-			__dtfl_panic("Var(%zu) out of range", (size_t)term->u.var);
+			EVAL_FAIL("Var(%zu) out of range", (size_t)term->u.var);
 		return dd_value_clone((*env)[term->u.var]);
 	case DD_T_BOUND:
 		if (term->u.bound >= *len)
-			__dtfl_panic("Bound(%zu) out of range",
+			EVAL_FAIL("Bound(%zu) out of range",
 			    (size_t)term->u.bound);
 		return dd_value_clone((*env)[*len - 1 - term->u.bound]);
 	case DD_T_INT:
@@ -545,53 +675,65 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 		dd_value **items;
 		size_t n;
 
-		build_seq(&term->u.seq, env, len, cap, &items, &n);
+		build_seq(&term->u.seq, env, len, cap, &items, &n, ee);
 		return term->kind == DD_T_TUPLE ? dd_value_tuple(items, n)
 						: dd_value_list(items, n);
 	}
 	case DD_T_SPREAD:
-		__dtfl_panic("Spread is only valid as a direct child of "
+		EVAL_FAIL("Spread is only valid as a direct child of "
 		    "Tuple/List");
 	case DD_T_PROJ: {
 		const dd_value *place = eval_ref(term->u.proj.base, *env, *len);
-		dd_value *sel;
+		dd_value *sel, *r;
 
 		if (place != NULL) {
 			if (place->kind != DD_V_TUPLE && place->kind != DD_V_LIST)
-				__dtfl_panic("Proj on non-aggregate value");
+				EVAL_FAIL("Proj on non-aggregate value: %s",
+				    kind_name(place));
 			if (term->u.proj.index >= place->u.seq.len)
-				__dtfl_panic("Proj index out of bounds");
+				EVAL_FAIL("Proj index %zu out of bounds",
+				    term->u.proj.index);
 			return dd_value_clone(place->u.seq.items[term->u.proj.index]);
 		}
-		sel = dd_eval(term->u.proj.base, env, len, cap);
-		if (sel->kind != DD_V_TUPLE && sel->kind != DD_V_LIST)
-			__dtfl_panic("Proj on non-aggregate value");
-		if (term->u.proj.index >= sel->u.seq.len)
-			__dtfl_panic("Proj index out of bounds");
-		{
-			dd_value *r = sel->u.seq.items[term->u.proj.index];
-
-			sel->u.seq.items[term->u.proj.index] = NULL;
+		sel = eval_t(term->u.proj.base, env, len, cap, ee);
+		if (sel->kind != DD_V_TUPLE && sel->kind != DD_V_LIST) {
+			eval_note(ee, "Proj on non-aggregate value: %s",
+			    kind_name(sel));
 			dd_value_free(sel);
-			return r;
+			return dd_value_int(0);
 		}
+		if (term->u.proj.index >= sel->u.seq.len) {
+			eval_note(ee, "Proj index %zu out of bounds",
+			    term->u.proj.index);
+			dd_value_free(sel);
+			return dd_value_int(0);
+		}
+		r = sel->u.seq.items[term->u.proj.index];
+		sel->u.seq.items[term->u.proj.index] = NULL;
+		dd_value_free(sel);
+		return r;
 	}
 	case DD_T_INJECT: {
-		dd_value *tagv = dd_eval(term->u.inject.tag, env, len, cap);
-		uint32_t tag = (uint32_t)dd_value_as_int(tagv);
-		dd_value *payload = dd_eval(term->u.inject.payload, env, len, cap);
+		dd_value *tagv = eval_t(term->u.inject.tag, env, len, cap, ee);
+		uint32_t tag = (uint32_t)as_int(tagv, ee);
+		dd_value *payload = eval_t(term->u.inject.payload, env, len,
+		    cap, ee);
 
 		dd_value_free(tagv);
 		return dd_value_variant(tag, payload);
 	}
 	case DD_T_CASE: {
-		dd_value *scrut = dd_eval(term->u.case_.scrutinee, env, len, cap);
+		dd_value *scrut = eval_t(term->u.case_.scrutinee, env, len,
+		    cap, ee);
 		uint32_t tag;
 		dd_value *payload;
 		dd_value *r;
 
-		if (scrut->kind != DD_V_VARIANT)
-			__dtfl_panic("Case scrutinee is not a Variant");
+		if (scrut->kind != DD_V_VARIANT) {
+			eval_note(ee, "Case scrutinee is not a Variant");
+			dd_value_free(scrut);
+			return dd_value_int(0);
+		}
 		tag = scrut->u.variant.tag;
 		if (tag < term->u.case_.arms.len) {
 			/* Push the payload as Bound(0). */
@@ -599,23 +741,29 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 			scrut->u.variant.payload = NULL;
 			dd_value_free(scrut);
 			env_push(env, len, cap, payload);
-			r = dd_eval(term->u.case_.arms.data[tag], env, len, cap);
+			r = eval_t(term->u.case_.arms.data[tag], env, len, cap,
+			    ee);
 			dd_value_free((*env)[--(*len)]);
 			return r;
 		}
 		dd_value_free(scrut);
 		if (term->u.case_.dflt != NULL)
-			return dd_eval(term->u.case_.dflt, env, len, cap);
-		__dtfl_panic("Case: no arm for tag and no default");
+			return eval_t(term->u.case_.dflt, env, len, cap, ee);
+		EVAL_FAIL("Case: no arm for tag %lu and no default",
+		    (unsigned long)tag);
 	}
 	case DD_T_FOLD: {
-		dd_value *list = dd_eval(term->u.fold.list, env, len, cap);
+		dd_value *list = eval_t(term->u.fold.list, env, len, cap, ee);
 		dd_value *acc;
 		size_t i;
 
-		if (list->kind != DD_V_LIST)
-			__dtfl_panic("Fold on non-list value");
-		acc = dd_eval(term->u.fold.init, env, len, cap);
+		if (list->kind != DD_V_LIST) {
+			eval_note(ee, "Fold on non-list value: %s",
+			    kind_name(list));
+			dd_value_free(list);
+			return dd_value_int(0);
+		}
+		acc = eval_t(term->u.fold.init, env, len, cap, ee);
 		for (i = 0; i < list->u.seq.len; i++) {
 			/* step: elem = Bound(0), acc = Bound(1). */
 			dd_value *elem = dd_value_clone(list->u.seq.items[i]);
@@ -623,7 +771,7 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 
 			env_push(env, len, cap, acc);
 			env_push(env, len, cap, elem);
-			next = dd_eval(term->u.fold.step, env, len, cap);
+			next = eval_t(term->u.fold.step, env, len, cap, ee);
 			dd_value_free((*env)[--(*len)]); /* elem */
 			dd_value_free((*env)[--(*len)]); /* acc */
 			acc = next;
@@ -632,25 +780,27 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 		return acc;
 	}
 	case DD_T_IF: {
-		dd_value *cond = dd_eval(term->u.if_.cond, env, len, cap);
+		dd_value *cond = eval_t(term->u.if_.cond, env, len, cap, ee);
 		bool t = dd_value_truthy(cond);
 
 		dd_value_free(cond);
-		return dd_eval(t ? term->u.if_.then_ : term->u.if_.els,
-		    env, len, cap);
+		return eval_t(t ? term->u.if_.then_ : term->u.if_.els,
+		    env, len, cap, ee);
 	}
 	case DD_T_HASH: {
-		dd_value *boundv = dd_eval(term->u.hash.data[0], env, len, cap);
-		int64_t bound = dd_value_as_int(boundv);
+		dd_value *boundv = eval_t(term->u.hash.data[0], env, len, cap,
+		    ee);
+		int64_t bound = as_int(boundv, ee);
 		uint64_t acc = UINT64_C(0xcbf29ce484222325);
 		int64_t h;
 		size_t i;
 
 		dd_value_free(boundv);
 		for (i = 1; i < term->u.hash.len; i++) {
-			dd_value *a = dd_eval(term->u.hash.data[i], env, len, cap);
+			dd_value *a = eval_t(term->u.hash.data[i], env, len,
+			    cap, ee);
 
-			acc ^= (uint64_t)dd_value_as_int(a);
+			acc ^= (uint64_t)as_int(a, ee);
 			acc = dd_hash_u64(acc);
 			dd_value_free(a);
 		}
@@ -659,55 +809,57 @@ dd_eval(const dd_term *term, dd_value ***env, size_t *len, size_t *cap)
 	}
 	case DD_T_UNARY:
 		return eval_unary(term->u.unary.op, term->u.unary.tag,
-		    dd_eval(term->u.unary.arg, env, len, cap));
+		    eval_t(term->u.unary.arg, env, len, cap, ee), ee);
 	case DD_T_BINARY: {
 		dd_binop op = term->u.binary.op;
+		dd_value *l, *r;
 
 		/* Short-circuit the logical operators. */
 		if (op == DD_BIN_AND) {
-			dd_value *l = dd_eval(term->u.binary.l, env, len, cap);
-			bool lt = dd_value_truthy(l);
-			bool res;
-			dd_value *r;
+			bool lt, res;
 
+			l = eval_t(term->u.binary.l, env, len, cap, ee);
+			lt = dd_value_truthy(l);
 			dd_value_free(l);
 			if (!lt)
 				return dd_value_int(0);
-			r = dd_eval(term->u.binary.r, env, len, cap);
+			r = eval_t(term->u.binary.r, env, len, cap, ee);
 			res = dd_value_truthy(r);
 			dd_value_free(r);
 			return dd_value_int(res);
 		}
 		if (op == DD_BIN_OR) {
-			dd_value *l = dd_eval(term->u.binary.l, env, len, cap);
-			bool lt = dd_value_truthy(l);
-			bool res;
-			dd_value *r;
+			bool lt, res;
 
+			l = eval_t(term->u.binary.l, env, len, cap, ee);
+			lt = dd_value_truthy(l);
 			dd_value_free(l);
 			if (lt)
 				return dd_value_int(1);
-			r = dd_eval(term->u.binary.r, env, len, cap);
+			r = eval_t(term->u.binary.r, env, len, cap, ee);
 			res = dd_value_truthy(r);
 			dd_value_free(r);
 			return dd_value_int(res);
 		}
-		return eval_binary(op,
-		    dd_eval(term->u.binary.l, env, len, cap),
-		    dd_eval(term->u.binary.r, env, len, cap));
+		l = eval_t(term->u.binary.l, env, len, cap, ee);
+		r = eval_t(term->u.binary.r, env, len, cap, ee);
+		return eval_binary(op, l, r, ee);
 	}
 	}
+	/* Not reachable from input: the parsers build only the kinds above. */
 	__dtfl_panic("dd_eval: bad term kind");
 }
 
+#undef EVAL_FAIL
+
 static dd_value *
-eval_unary(dd_unop op, uint32_t tag, dd_value *v)
+eval_unary(dd_unop op, uint32_t tag, dd_value *v, eval_err *ee)
 {
 	dd_value *r;
 
 	switch (op) {
 	case DD_UN_NEG:
-		r = dd_value_int(-dd_value_as_int(v));
+		r = dd_value_int(wrap_sub(0, as_int(v, ee)));
 		break;
 	case DD_UN_NOT:
 		r = dd_value_int(!dd_value_truthy(v));
@@ -717,11 +869,17 @@ eval_unary(dd_unop op, uint32_t tag, dd_value *v)
 		    v->u.variant.tag == tag);
 		break;
 	case DD_UN_LEN:
-		if (v->kind != DD_V_TUPLE && v->kind != DD_V_LIST)
-			__dtfl_panic("Len on non-aggregate value");
+		if (v->kind != DD_V_TUPLE && v->kind != DD_V_LIST) {
+			eval_note(ee, "Len on non-aggregate value: %s",
+			    kind_name(v));
+			r = dd_value_int(0);
+			break;
+		}
 		r = dd_value_int((int64_t)v->u.seq.len);
 		break;
 	default:
+		/* Not reachable from input: the parsers build only the
+		 * operators above. */
 		__dtfl_panic("eval_unary: bad op");
 	}
 	dd_value_free(v);
@@ -729,20 +887,20 @@ eval_unary(dd_unop op, uint32_t tag, dd_value *v)
 }
 
 static dd_value *
-eval_binary(dd_binop op, dd_value *l, dd_value *r)
+eval_binary(dd_binop op, dd_value *l, dd_value *r, eval_err *ee)
 {
 	dd_value *out;
 	int c;
 
 	switch (op) {
 	case DD_BIN_ADD:
-		out = dd_value_int(dd_value_as_int(l) + dd_value_as_int(r));
+		out = dd_value_int(wrap_add(as_int(l, ee), as_int(r, ee)));
 		break;
 	case DD_BIN_SUB:
-		out = dd_value_int(dd_value_as_int(l) - dd_value_as_int(r));
+		out = dd_value_int(wrap_sub(as_int(l, ee), as_int(r, ee)));
 		break;
 	case DD_BIN_MUL:
-		out = dd_value_int(dd_value_as_int(l) * dd_value_as_int(r));
+		out = dd_value_int(wrap_mul(as_int(l, ee), as_int(r, ee)));
 		break;
 	case DD_BIN_EQ:
 		out = dd_value_int(dd_value_cmp(l, r) == 0);
@@ -767,6 +925,7 @@ eval_binary(dd_binop op, dd_value *l, dd_value *r)
 		out = dd_value_int(c >= 0);
 		break;
 	default:
+		/* Not reachable: eval_t handles And and Or itself. */
 		__dtfl_panic("eval_binary: logical ops short-circuit");
 	}
 	dd_value_free(l);

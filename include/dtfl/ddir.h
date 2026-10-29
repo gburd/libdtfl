@@ -79,8 +79,10 @@ DTFL_API int dtfl_ddir_value_cmp(const dtfl_ddir_value *a,
 
 /*
  * Parse a single closed scalar term (no $n input references) into a
- * constant value, e.g. "tuple(1, 2)" or "inject(0, 7)".  Returns NULL and
- * reports DTFL_EINVAL on a malformed term.
+ * constant value, e.g. "tuple(1, 2)" or "inject(0, 7)".  Returns NULL,
+ * with the reason in dtfl_last_error_detail, on a malformed term or one
+ * that does not evaluate (a $n or ^n variable, an Int operation on a
+ * List).  Never aborts on bad input.
  */
 DTFL_API dtfl_ddir_value *dtfl_ddir_value_parse(const char *term);
 

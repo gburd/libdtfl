@@ -360,9 +360,9 @@ differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	
 differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	done	whole program in one iterative dynamic scope; time is literally Product<u64,PointStamp<u64>>; render_linear is one faithful operator with enter_at and lift_iter
 differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	done	the reverse rules over the dd_df backend; one Val row model (the trait's second test-only model is not ported)
 differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	done	clone_into/clone_identity, resolve/site_shapes, Val row model, the reverse walk, explain
-differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	
+differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	divergence: dd_eval_closed (dtfl_ddir_value_parse) returns an error where eval panics, and i64 arithmetic wraps as in Rust release; dataflow-side dd_eval still panics as upstream, ADR D12
 differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	done	parse/build/evaluate entry ported; time class is Product<u64,PointStamp<u64>>; survey_sources subsumed by the lowered import count; gen_row/load_program land with the explain tests
-differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	
+differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	divergence: a program that does not lower returns DTFL_EINVAL with the panic message instead of panicking, ADR D12
 differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	done	
 differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done	
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	

@@ -659,7 +659,7 @@ needs a before/after benchmark (section 9).
 ### D12. Divergences from the pin
 
 The port matches the pin.  Where it does not, the difference is listed
-here and in the ledger note, and it gets its own ADR.  There are three
+here and in the ledger note, and it gets its own ADR.  There are four
 behavior divergences and one group of examples and emit points that
 cannot be ported literally without reversing a decision made elsewhere
 in this section (see the 2026-10-15 amendment in ADR-0012):
@@ -681,6 +681,15 @@ in this section (see the 2026-10-15 amendment in ADR-0012):
    buffered records forever (a hang; timely issue #824).  The C
    Counter also forwards a flush when it pushed data since the last
    one, the fix proposed in #824 (ADR-0012, 2026-10-23).
+4. **DDIR errors on bad programs.** `interactive/src/lower.rs` and
+   `ir::eval` panic on a program that parses but does not lower (an
+   unresolved name, an unknown scope, a let cycle) and on a closed
+   value term that does not evaluate; upstream's `ddir_server`
+   recovers with `catch_unwind`.  C has no unwind, and these functions
+   take client text, so `dtfl_ddir_parse` returns `DTFL_EINVAL` and
+   `dtfl_ddir_value_parse` returns NULL, each with the panic's message
+   as the error detail.  Closed-value arithmetic wraps, as a Rust
+   release build does (ADR-0012, 2026-10-29).
 
 A new divergence needs an entry here, an ADR and a ledger note, all in
 the same commit.
