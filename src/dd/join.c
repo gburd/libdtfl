@@ -237,6 +237,9 @@ proxy_join_step(join_ctx *jc, deferred *d)
 	/*
 	 * The backend walks the batches with its own cursors, so an entered
 	 * side's batches must carry their inner times (BatchEnter).
+	 * shortcut: materialize copies every batch of the entered trace
+	 * through the cut on each unit, O(trace) per unit; upgrade when
+	 * entered proxy joins show up in a profile (see wrap_int.h).
 	 */
 	__dtfl_cursor_list_materialize(&d->cursor1);
 	__dtfl_cursor_list_materialize(&d->cursor2);

@@ -122,6 +122,10 @@ __dtfl_batch_ord *__dtfl_trace_enter_batch(const __dtfl_trace_enter *e,
  * chain and drop the chain, for readers that walk cl->batches with their
  * own cursors (the int_proxy tactics) instead of through map_times.  Call
  * it before the list is navigated.  A list with no chain is unchanged.
+ * shortcut: copies every batch the list holds (the whole trace through the
+ * cut) on each proxy unit, so an entered proxy join or reduce costs
+ * O(trace) per unit; upgrade by teaching the proxy backends to read times
+ * through the chain when entered proxy tactics show up in a profile.
  */
 void __dtfl_cursor_list_materialize(__dtfl_cursor_list *cl);
 
