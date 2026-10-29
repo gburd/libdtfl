@@ -287,7 +287,8 @@ advance_upper_by(const __dtfl_batch_ord *b, __dtfl_antichain *upper)
 }
 
 void
-__dtfl_trace_advance_upper(const __dtfl_trace *t, __dtfl_antichain *upper)
+__dtfl_trace_each_batch(const __dtfl_trace *t,
+    void (*fn)(const __dtfl_batch_ord *b, void *ctx), void *ctx)
 {
 	const __dtfl_spine *s = &t->spine;
 	size_t i;
@@ -298,13 +299,24 @@ __dtfl_trace_advance_upper(const __dtfl_trace *t, __dtfl_antichain *upper)
 		    __dtfl_merge_state, i);
 
 		if (m->kind == DTFL_MERGE_INPROGRESS) {
-			advance_upper_by(m->in1, upper);
-			advance_upper_by(m->in2, upper);
+			fn(m->in1, ctx);
+			fn(m->in2, ctx);
 		} else if (m->kind != DTFL_MERGE_VACANT && m->present) {
-			advance_upper_by(m->batch, upper);
+			fn(m->batch, ctx);
 		}
 	}
 	for (i = 0; i < s->pending.len; i++)
-		advance_upper_by(*DTFL_VEC_AT(&s->pending, __dtfl_batch_ord *,
-		    i), upper);
+		fn(*DTFL_VEC_AT(&s->pending, __dtfl_batch_ord *, i), ctx);
+}
+
+static void
+advance_upper_each(const __dtfl_batch_ord *b, void *ctx)
+{
+	advance_upper_by(b, ctx);
+}
+
+void
+__dtfl_trace_advance_upper(const __dtfl_trace *t, __dtfl_antichain *upper)
+{
+	__dtfl_trace_each_batch(t, advance_upper_each, upper);
 }

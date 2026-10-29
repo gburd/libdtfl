@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: MIT
-.Dd October 12, 2026
+.Dd October 29, 2026
 .Dt DTFL_DDIR_PARSE 3
 .Os
 .Sh NAME
@@ -83,13 +83,24 @@ lowers it to the scope-tree IR, optimizes it, and writes the resulting
 program through
 .Fa out .
 It returns zero on success.
-On a parse or lowering error it returns a
-.Dv DTFL_E Ns *
-code, reports a message through
+On a parse or lowering error it returns
+.Dv DTFL_EINVAL ,
+reports a message through
 .Xr dtfl_last_error_detail 3 ,
 and leaves
 .Pf * Fa out
 .Dv NULL .
+A lowering error is a program that parses but names something it does not
+define: an unresolved name, an unknown scope or scope export, an outer
+name a scope cannot see,
+.Ql input
+or
+.Ql import
+inside a nested scope, or a cycle among
+.Ql let
+bindings.
+Neither function aborts on bad input, so a server can hand them text from
+a client.
 Free the program with
 .Fn dtfl_ddir_program_free .
 .Pp
@@ -174,7 +185,15 @@ constructors never return
 .Fn dtfl_ddir_value_parse
 returns
 .Dv NULL
-on a malformed term.
+and reports a message through
+.Xr dtfl_last_error_detail 3
+on a malformed term, or on one that does not evaluate: a variable such as
+.Ql $0
+or
+.Ql ^0 ,
+which a closed term has no value for, or an operation on the wrong kind
+of value, such as
+.Ql list(1) - 4 .
 .Fn dtfl_ddir_value_format
 returns the number of bytes the full Debug form needs, excluding the
 terminating NUL.

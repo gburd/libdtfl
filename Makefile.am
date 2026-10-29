@@ -46,14 +46,19 @@ check_PROGRAMS =
 noinst_PROGRAMS =
 TESTS =
 CLEANFILES =
-dist_check_SCRIPTS = \
+# Component fragments add their scripts to both dist_check_SCRIPTS and
+# TESTS, so TESTS takes only these, not $(dist_check_SCRIPTS): make
+# expands that late, with the fragments' scripts in it.  A script listed
+# twice runs once but counts twice in the summary's TOTAL.
+DIST_TESTS = \
 	tests/dist/test_api_discipline.sh \
 	tests/dist/test_symbols.sh \
 	tests/dist/test_headers.sh \
 	tests/dist/test_ledger.sh \
 	tests/dist/test_docs.sh \
 	tests/dist/test_completion.sh
-TESTS += $(dist_check_SCRIPTS)
+dist_check_SCRIPTS = $(DIST_TESTS)
+TESTS += $(DIST_TESTS)
 # Every test runs under tests/run-test.sh, which kills it after
 # DTFL_TEST_TIMEOUT seconds (default 600) so a hang reports FAIL.
 # ThreadSanitizer cannot map its shadow memory under the high-entropy
@@ -91,6 +96,7 @@ include src/algo/local.mk
 include src/dogs/local.mk
 include src/diag/local.mk
 include tests/interop/local.mk
+include tests/fuzz/local.mk
 include bench/local.mk
 
 # Tools (bin_PROGRAMS): command-line programs built on the public API
@@ -122,4 +128,8 @@ SIM_PBT = tests/pbt/pbt_comm tests/pbt/pbt_join tests/pbt/pbt_reduce \
 EXTRA_DIST += tests/pbt/check_sim.sh
 check-sim: $(SIM_PBT)
 	$(SHELL) $(top_srcdir)/tests/pbt/check_sim.sh
+# A test listed twice in TESTS runs once but counts twice in TOTAL.
+check-local:
+	@dups=`for t in $(TESTS); do echo $$t; done | sort | uniq -d`; \
+	test -z "$$dups" || { echo "TESTS lists these more than once:" $$dups; exit 1; }
 .PHONY: check-asan check-tsan check-sim

@@ -12,6 +12,7 @@
  * current (key, val).  Keys and values compare through their dtfl_type.
  */
 #include "dd/trace/trace_int.h"
+#include "dd/wrap_int.h"
 
 /*
  * min_key / min_val hold at most n indices, so pushing into a vec sized n
@@ -177,6 +178,7 @@ __dtfl_cursor_list_init(__dtfl_cursor_list *cl, __dtfl_batch_ord **batches,
 	cl->batches = n == 0 ? NULL : __dtfl_alloc(n * sizeof *cl->batches);
 	cl->cursors = n == 0 ? NULL : __dtfl_alloc(n * sizeof *cl->cursors);
 	cl->all_keyed = true;
+	cl->enter = NULL;
 	for (i = 0; i < n; i++) {
 		cl->batches[i] = batches[i];	/* ownership moves in */
 		__dtfl_cursor_init(&cl->cursors[i], cl->batches[i]);
@@ -200,6 +202,8 @@ __dtfl_cursor_list_free(__dtfl_cursor_list *cl)
 	__dtfl_free(cl->cursors);
 	__dtfl_vec_free(&cl->min_key);
 	__dtfl_vec_free(&cl->min_val);
+	__dtfl_trace_enter_release(cl->enter);
+	cl->enter = NULL;
 }
 
 bool
@@ -230,12 +234,44 @@ __dtfl_cursor_list_val(const __dtfl_cursor_list *cl, size_t *len)
 	return __dtfl_cursor_val(&cl->cursors[idx], cl->batches[idx], len);
 }
 
+/* BatchCursorEnter::map_times: hand `logic` the entered time. */
+typedef struct enter_map {
+	const __dtfl_trace_enter *e;
+	const void *key;
+	size_t klen;
+	const void *val;
+	size_t vlen;
+	void (*logic)(const uint64_t *, const void *, void *);
+	void *ctx;
+} enter_map;
+
+static void
+enter_map_time(const uint64_t *t, const void *diff, void *vctx)
+{
+	enter_map *m = vctx;
+	uint64_t inner[DTFL_TIME_MAX];
+
+	__dtfl_trace_enter_time(m->e, m->key, m->klen, m->val, m->vlen, t,
+	    inner);
+	m->logic(inner, diff, m->ctx);
+}
+
 void
 __dtfl_cursor_list_map_times(__dtfl_cursor_list *cl,
     void (*logic)(const uint64_t *, const void *, void *), void *ctx)
 {
 	size_t i;
+	enter_map m;
 
+	if (cl->enter != NULL && cl->min_val.len != 0) {
+		m.e = cl->enter;
+		m.key = __dtfl_cursor_list_key(cl, &m.klen);
+		m.val = __dtfl_cursor_list_val(cl, &m.vlen);
+		m.logic = logic;
+		m.ctx = ctx;
+		logic = enter_map_time;
+		ctx = &m;
+	}
 	for (i = 0; i < cl->min_val.len; i++) {
 		size_t idx = *DTFL_VEC_AT(&cl->min_val, size_t, i);
 

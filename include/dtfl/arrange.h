@@ -111,7 +111,10 @@ DTFL_API dtfl_trace *dtfl_arranged_trace(const dtfl_arranged *a);
  * producing an arrangement over the same backing data.  The scope must
  * belong to the same worker that created the trace.  `name` labels the
  * source operator.  Returns a handle the caller frees with
- * dtfl_arranged_free; the trace handle remains the caller's.
+ * dtfl_arranged_free; the trace handle remains the caller's.  A trace
+ * taken from an entered arrangement (dtfl_arranged_enter) cannot be
+ * imported, as upstream imports only a TraceAgent: this panics.  Import
+ * the outer arrangement's trace and enter the result instead.
  */
 DTFL_API dtfl_arranged *dtfl_trace_import(dtfl_trace *t, dtfl_scope *scope,
     const char *name);

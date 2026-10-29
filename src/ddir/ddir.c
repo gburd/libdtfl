@@ -57,6 +57,8 @@ dtfl_ddir_parse(const char *program, dtfl_ddir_syntax syntax,
 	p = dd_lower_tree(&stmts);
 	__dtfl_free(stmts.data);
 	dd_arena_free_all(&pc);
+	if (p == NULL)
+		return DTFL_EINVAL; /* dd_lower_tree set the detail */
 	dd_program_optimize(p);
 	*out = p;
 	return 0;
@@ -280,18 +282,21 @@ dtfl_ddir_value_parse(const char *term)
 {
 	dd_parse_ctx pc;
 	dd_term *t;
-	dd_value **env = NULL;
-	size_t len = 0, cap = 0;
 	dd_value *v;
 
-	if (term == NULL)
+	if (term == NULL) {
+		(void)__dtfl_err(DTFL_EINVAL, "dtfl_ddir_value_parse: NULL "
+		    "argument");
 		return NULL;
+	}
 	t = dd_parse_pipe_term(term, &pc);
-	if (t == NULL)
+	if (t == NULL) {
+		(void)__dtfl_err(DTFL_EINVAL, "%s", pc.msg);
 		return NULL;
-	/* A closed term evaluates with an empty environment. */
-	v = dd_eval(t, &env, &len, &cap);
-	__dtfl_free(env);
+	}
+	/* A closed term evaluates with an empty environment; one that does
+	 * not evaluate (a type mismatch, a variable) sets the detail. */
+	v = dd_eval_closed(t);
 	dd_arena_free_all(&pc);
 	return v;
 }

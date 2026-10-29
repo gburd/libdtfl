@@ -720,13 +720,13 @@ dtfl_arranged_as_collection(dtfl_arranged *a, const dtfl_type *out_type,
 /* The batch-pointer transform an enter/leave operator applies per record. */
 typedef enum cross_kind {
 	CROSS_REGION = 0,	/* same time class: pass the pointer through */
-	CROSS_ENTER,		/* to_inner: __dtfl_batch_enter */
+	CROSS_ENTER,		/* BatchEnter::make_from through `layer` */
 	CROSS_LEAVE		/* to_outer: handled as region here (same words) */
 } cross_kind;
 
 typedef struct cross_ctx {
 	cross_kind kind;
-	const dtfl_time_class *inner;	/* CROSS_ENTER target class */
+	__dtfl_trace_enter *layer;	/* CROSS_ENTER: retained */
 } cross_ctx;
 
 static bool
@@ -757,7 +757,7 @@ cross_batch_logic(dtfl_op *op, void *vctx)
 			 * builds a fresh batch with lifted times (already owning).
 			 */
 			if (c->kind == CROSS_ENTER) {
-				out = __dtfl_batch_enter(in, c->inner);
+				out = __dtfl_trace_enter_batch(c->layer, in);
 			} else {
 				out = __dtfl_batch_ord_retain(in);
 			}
@@ -775,20 +775,37 @@ cross_free(void *vctx)
 {
 	cross_ctx *c = vctx;
 
+	__dtfl_trace_enter_release(c->layer);
 	__dtfl_free(c);
 }
 
+/*
+ * The enter/leave operator and the new handle.  For CROSS_ENTER the
+ * handle's agent is a TraceEnter over a clone of the outer agent
+ * (arrangement.rs enter: trace: TraceEnter::make_from(self.trace)), and
+ * the operator maps the stream's batches through the same layer
+ * (stream.map(BatchEnter::make_from)).  Takes ownership of ctx.
+ */
 static dtfl_arranged *
 cross_impl(dtfl_arranged *a, dtfl_stream *crossed, dtfl_scope *to_scope,
-    cross_kind kind, const char *name)
+    cross_kind kind, const char *name, __dtfl_enter_at_fn logic,
+    __dtfl_enter_prior_fn prior, void *ctx, void (*ctx_free)(void *))
 {
 	const dtfl_time_class *to = dtfl_scope_time_class(to_scope);
 	cross_ctx *cc = __dtfl_alloc(sizeof *cc);
 	dtfl_arranged *out = __dtfl_alloc(sizeof *out);
 	dtfl_op_builder *b;
 
+	__dtfl_trace_agent_clone(&a->agent, &out->agent);
 	cc->kind = kind;
-	cc->inner = to;
+	cc->layer = NULL;
+	if (kind == CROSS_ENTER) {
+		__dtfl_trace_agent_enter(&out->agent, to, logic, prior, ctx,
+		    ctx_free);
+		cc->layer = __dtfl_trace_enter_retain(out->agent.enter);
+	} else if (kind == CROSS_LEAVE) {
+		__dtfl_trace_agent_leave(&out->agent);
+	}
 	b = dtfl_op_builder_new(to_scope, name);
 	dtfl_op_builder_input(b, crossed, dtfl_pact_pipeline());
 	/*
@@ -799,7 +816,6 @@ cross_impl(dtfl_arranged *a, dtfl_stream *crossed, dtfl_scope *to_scope,
 	out->stream = dtfl_op_builder_output(b, __dtfl_batch_ptr_type());
 	dtfl_op_builder_build(b, cross_batch_logic, cc, cross_free);
 
-	__dtfl_trace_agent_clone(&a->agent, &out->agent);
 	out->type = dtfl_type_retain(a->type);
 	out->diff = dtfl_diff_retain(a->diff);
 	out->depth = dtfl_time_depth(to);
@@ -812,7 +828,8 @@ dtfl_arranged_enter_region(dtfl_arranged *a, dtfl_scope *region)
 {
 	dtfl_stream *inner = dtfl_stream_enter(a->stream, region);
 
-	return cross_impl(a, inner, region, CROSS_REGION, "Enter");
+	return cross_impl(a, inner, region, CROSS_REGION, "Enter", NULL, NULL,
+	    NULL, NULL);
 }
 
 dtfl_arranged *
@@ -821,7 +838,8 @@ dtfl_arranged_leave_region(dtfl_arranged *a)
 	dtfl_scope *outer = dtfl_scope_parent(dtfl_stream_scope(a->stream));
 	dtfl_stream *out = dtfl_stream_leave(a->stream);
 
-	return cross_impl(a, out, outer, CROSS_REGION, "Leave");
+	return cross_impl(a, out, outer, CROSS_REGION, "Leave", NULL, NULL, NULL,
+	    NULL);
 }
 
 dtfl_arranged *
@@ -829,7 +847,20 @@ dtfl_arranged_enter(dtfl_arranged *a, dtfl_scope *child)
 {
 	dtfl_stream *inner = dtfl_stream_enter(a->stream, child);
 
-	return cross_impl(a, inner, child, CROSS_ENTER, "Enter");
+	return cross_impl(a, inner, child, CROSS_ENTER, "Enter", NULL, NULL,
+	    NULL, NULL);
+}
+
+dtfl_arranged *
+__dtfl_arranged_enter_at(dtfl_arranged *a, dtfl_scope *child,
+    __dtfl_enter_at_fn logic, __dtfl_enter_prior_fn prior, void *ctx,
+    void (*ctx_free)(void *))
+{
+	dtfl_stream *inner = dtfl_stream_enter(a->stream, child);
+
+	DTFL_ASSERT(logic != NULL && prior != NULL);
+	return cross_impl(a, inner, child, CROSS_ENTER, "EnterAt", logic,
+	    prior, ctx, ctx_free);
 }
 
 dtfl_arranged *
@@ -846,9 +877,12 @@ dtfl_arranged_leave(dtfl_arranged *a)
 	 * outer words, which the parent reads directly.  No per-batch rewrite
 	 * is needed for the regions and single-level product scopes P7
 	 * exercises; a general to_outer batch rewrite lands with the P8 join
-	 * and reduce consumers that leave non-trivial inner times.
+	 * and reduce consumers that leave non-trivial inner times.  An
+	 * entered arrangement's agent drops its TraceEnter layer, so it is
+	 * the outer agent again.
 	 */
-	return cross_impl(a, out, outer, CROSS_LEAVE, "Leave");
+	return cross_impl(a, out, outer, CROSS_LEAVE, "Leave", NULL, NULL, NULL,
+	    NULL);
 }
 
 /* ------------------------------------------------------------------ */

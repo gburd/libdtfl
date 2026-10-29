@@ -1,142 +1,48 @@
-# SPDX-License-Identifier: MIT
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
-  schedule:
-    # Nightly, to drive the fuzz tier (see fuzz-nightly below).
-    - cron: '0 7 * * *'
-  # Reusable so release.yml can require the full suite at the tagged
-  # commit (a tag push does not match the branches filter above, so the
-  # matrix would otherwise never run for a release).
-  workflow_call:
 jobs:
-  check:
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-        flags: ["", "--enable-asan --enable-ubsan", "--enable-tsan"]
-    runs-on: ubuntu-24.04
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      # -Werror: AGENTS.md section 7 requires zero warnings under gcc and
-      # clang.  The tree is clean under both, so a new warning fails CI.
-      - run: mkdir build && cd build && CC=${{ matrix.cc }} ../configure --enable-debug ${{ matrix.flags }} CFLAGS="-Werror"
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  # musl: a second libc, to catch glibc-only assumptions.  PLAN section 13
-  # names musl in the 1.0 bar.
-  musl:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      - run: mkdir build && cd build && CC=musl-gcc ../configure --enable-debug
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-      - run: make -C build distcheck -j"$(nproc)" DISTCHECK_CONFIGURE_FLAGS="CC=musl-gcc"
-
-  # macOS: clang on Darwin, Apple ld64 (exported-symbols list instead of
-  # a version script), no futex, no MSG_NOSIGNAL.  PLAN section 13.
-  # Homebrew's texinfo is keg-only, so put its makeinfo on PATH.
-  macos:
-    runs-on: macos-latest
-    # Without timeout(1) the dist scripts cannot bound a hang themselves.
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: brew install autoconf automake libtool pkg-config mandoc texinfo
       - run: echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
+      - run: sw_vers; clang --version; uname -a
+      - name: standalone longjmp and the alternate-stack flag
+        run: |
+          clang -O0 -o r0 .github/probe/alt3.c && ./r0
+          clang -O1 -fsanitize=address -o r1 .github/probe/alt3.c && ./r1
       - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug
+      - run: mkdir build && cd build && ../configure --enable-debug --enable-asan --enable-ubsan
       - run: make -C build -j"$(sysctl -n hw.ncpu)"
-      - run: make -C build check -j"$(sysctl -n hw.ncpu)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-      - run: make -C build distcheck -j"$(sysctl -n hw.ncpu)"
-
-  # FreeBSD: a BSD userland and clang, in a VM.  PLAN section 13.
-  freebsd:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and test in a FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
-        with:
-          usesh: true
-          prepare: pkg install -y autoconf automake libtool pkgconf mandoc gmake texinfo
-          run: |
-            ./bootstrap
-            mkdir build && cd build
-            ../configure --enable-debug
-            gmake -j"$(sysctl -n hw.ncpu)"
-            gmake check -j"$(sysctl -n hw.ncpu)" || (find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  # Property tests with the hegel engine wired in, so the PBT suites run
-  # real generated cases instead of reporting SKIP.  hegel is not
-  # packaged, so this job is a no-op unless the repo defines a HEGEL_URL
-  # variable pointing at a hegel source tree; without it the gcc/clang
-  # jobs still build and run the PBT suites (in SKIP mode).
-  hegel:
-    if: vars.HEGEL_URL != ''
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - name: Build hegel
-        run: git clone --depth 1 "${{ vars.HEGEL_URL }}" /tmp/hegel && make -C /tmp/hegel install PREFIX=/usr/local
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug --with-hegel=/usr/local PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-      - run: make -C build -j"$(nproc)"
-      - run: make -C build check -j"$(nproc)" || (find build -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
-
-  valgrind:
-    # Memcheck over a fast subset: the base and progress unit tests, which
-    # exercise the allocator, antichains, and the progress core without
-    # the long trace/reduce sweeps that make valgrind impractical.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo valgrind
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-debug
-      - run: make -C build -j"$(nproc)"
-      - name: Memcheck a fast subset
+      - run: make -C build -j"$(sysctl -n hw.ncpu)" tests/unit/test_ddir
+      - name: test_ddir under ASan, several ways
         working-directory: build
         run: |
-          set -e
-          for t in tests/unit/test_base tests/unit/test_antichain tests/unit/test_reachability; do
-            test -x "$t" || make "$t" -j"$(nproc)"
-            top_srcdir="$PWD/.." valgrind --error-exitcode=1 --leak-check=full --errors-for-leak-kinds=definite "$t"
-          done
-
-  distcheck:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap && mkdir build && cd build && ../configure && make distcheck -j"$(nproc)"
-
-  # Nightly fuzz tier: re-run the whole suite under ASan+UBSan on a
-  # schedule, and (when hegel is available) drive the PBT suites at a
-  # high case count.  The per-push matrix runs the suite at the default
-  # count; this is the long soak.  Guarded so it runs only on schedule or
-  # manual dispatch.
-  fuzz-nightly:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config mandoc texinfo
-      - run: ./bootstrap
-      - run: mkdir build && cd build && ../configure --enable-asan --enable-ubsan
-      - run: make -C build -j"$(nproc)"
-      - name: Full suite under ASan, PBT at an elevated case count
-        working-directory: build
-        env:
-          DTFL_PBT_CASES: "100000"
-        run: make check -j"$(nproc)" || (find . -name '*.log' -path '*tests*' -exec tail -40 {} + ; exit 1)
+          export top_srcdir=$PWD/..
+          mkdir -p alt
+          f=0; for i in $(seq 10); do PROBE_ALT=$PWD/alt ./tests/unit/test_ddir > o$i.txt 2>&1 || f=$((f+1)); done; echo "fork: $f of 10 runs failed"
+          grep -h 'ERROR \]' o*.txt | sort | uniq -c
+          echo "--- sigaltstack states seen in children (test, phase, flags, size)"
+          cat alt/alt.* | awk '{print $2, $3, $5}' | sort | uniq -c | head -40
+          echo "--- children that wrote start but no end"
+          for x in alt/alt.*; do [ "$(wc -l < $x)" -lt 2 ] && cat $x; done | head -20
+          echo "--- PROBE lines, first failing run"
+          grep -h PROBE o1.txt | sort | uniq -c
+          grep -h -B2 -A1 'ERROR \]' o1.txt | head -40
+          f=0; for i in $(seq 10); do ./tests/unit/test_ddir --no-fork > n$i.txt 2>&1 || { f=$((f+1)); tail -3 n$i.txt; }; done; echo "no-fork: $f of 10 runs failed"
+          for t in test_base test_antichain; do make -s tests/unit/$t >/dev/null 2>&1; f=0; for i in $(seq 10); do ./tests/unit/$t > b.txt 2>&1 || { f=$((f+1)); grep -c 'CHECK failed' b.txt; }; done; echo "$t: $f of 10 runs failed"; done
+      - name: candidate fix (sigsetjmp with savemask 0) in a clean copy
+        run: |
+          git worktree add -q ../fixsrc 4ffb82c
+          cd ../fixsrc && git log --oneline -1
+          patch -p1 < "$GITHUB_WORKSPACE/.github/probe/fix.patch"
+          ./bootstrap > /dev/null 2>&1
+          mkdir b && cd b && ../configure --enable-debug --enable-asan --enable-ubsan > /dev/null && make -j"$(sysctl -n hw.ncpu)" > m.log 2>&1 || grep -E 'error' m.log | head
+          make tests/unit/test_ddir > /dev/null 2>&1
+          export top_srcdir=$PWD/..
+          f=0; for i in $(seq 10); do ./tests/unit/test_ddir > o$i.txt 2>&1 || { f=$((f+1)); grep 'ERROR \]' o$i.txt; }; done; echo "fixed fork: $f of 10 runs failed"

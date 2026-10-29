@@ -135,6 +135,12 @@ and
 .Fn dtfl_arranged_leave
 carry an arrangement into a child scope and back, lifting each time with the
 scope refinement.
+The entered arrangement shares the outer trace: operators that read it see
+every time lifted into the child scope, and the compaction holds they set
+reach the outer trace mapped back to its times.
+A trace taken from an entered arrangement cannot be passed to
+.Fn dtfl_trace_import ,
+which panics; import the outer trace and enter the result.
 .Fn dtfl_arranged_enter_region
 and
 .Fn dtfl_arranged_leave_region

@@ -1,5 +1,117 @@
 libdtfl NEWS -- user-visible changes, newest first.
 
+Version 0.1.2 (unreleased)
+
+	Fix: an arrangement brought into a nested scope with
+	dtfl_arranged_enter returned wrong times when read through
+	dtfl_arranged_join_core, dtfl_arranged_reduce_core or
+	dtfl_arranged_reduce_abelian.  Its trace handle shared the outer
+	trace's batches without lifting their times into the inner scope,
+	so the operator read each update's inner coordinate from the next
+	update's time, and the last one from uninitialised memory.  A join
+	inside an iterate over an entered arrangement, as in the
+	reachability server plugin, emitted updates at wrong iterations.
+	Every release up to 0.1.1 has the bug.  The entered handle now reads
+	the shared trace through a port of upstream's TraceEnter.
+
+	Platforms.  On Alpine 3.24 (musl 1.2.6) with gcc 15.2 and clang
+	22.1: make check with hegel, under ASan and UBSan, and under UBSan in
+	trap mode, all 129 tests passing and 2 skipped (USDT, libxtc) in each
+	of the six builds; valgrind memcheck over the test programs, with no
+	error and no definite leak in the 81 that finish under it (the 24
+	property tests crash inside libhegel under valgrind, and 5 slow
+	tests hit their time limits).  ThreadSanitizer on musl finds
+	no race but fails 17 tests under clang and 30 under gcc, because its
+	musl runtime cannot longjmp after a thread starts and gcc's also
+	aborts on large TLS blocks; the manual's platform notes say more.
+	On FreeBSD 14.5 with hegel 0.36.5 built from source: make check with
+	the property tests under clang 21 and gcc 14, ASan and UBSan under
+	both, and TSan under clang, 129 passing and 2 skipped each; the
+	manual gives the build recipe.  macOS was not run for this release:
+	no macOS host was available.
+
+	Linux riscv64.  On Bianbu 4.0.7 (Ubuntu 26.04 base, Linux 6.18,
+	a SpacemiT X100 with 8 cores), with gcc 15.2 and clang 21.1: make
+	check with hegel, under ASan and UBSan, and under TSan, all 130
+	tests passing under each compiler; make check without hegel and
+	make distcheck under both; under gcc, the heavy explain sweep, the
+	longrun test and make check-sim with 100,000 seeds for each of its
+	six properties; and the interop tier, with dev/gen-fixtures --check
+	regenerating all five fixtures from the pinned Rust crates byte for
+	byte.  hegel publishes no riscv64 libhegel, so these runs used
+	hegel 0.36.5 built from source with the distribution's Rust 1.93;
+	the manual's platform notes say how.  The TSan runtime on
+	riscv64 aborts under setarch -R, which configure used to apply to
+	every Linux TSan build, so configure now tries a sanitizer program
+	under its test wrapper and drops the wrapper when it fails there
+	and runs without it.  No library code changed.  Not run: valgrind,
+	which cannot start any program on this system (valgrind 3.26 does
+	not decode the Zba instructions in the system's dynamic loader),
+	and the benchmarks.
+
+	make check's summary counted 11 test scripts twice, so TOTAL said
+	141 for 130 tests.  It now counts each test once, and make check
+	fails if a test is listed twice.
+
+	The libxtc example in dtfl_set_sync_hooks(3) now runs, as
+	examples/embed/xtc_runtime (configure --with-libxtc), with 4
+	worker fibers under dtfl_execute and 4 under dtfl_execute_worker on
+	1, 2 and 4 carriers.  The page is corrected for libxtc 2.0: its
+	xtc_pid_t is 16 bytes, so the self hook packs the loop and slot;
+	yield and sleep fall back when called off a fiber; and it now says
+	what the hooks do not reach: a worker that waits by looping on
+	dtfl_worker_step holds its carrier, and dtfl_transport_socket's
+	poll(2) blocks it unless the host moves the wait off the carrier.
+
+	Benchmarks rerun at 66154af, five alternated reps per point; the
+	README, the manual's Threads chapter and
+	dev/notes/pg-incremental-views.md now give these figures.  On the
+	two-socket c6i.metal (dev/bench-ec2, full matrix), C's 16-worker
+	arrange throughput rose from 69.4M to 83.8M records/s packed and
+	from 56.3M to 72.7M spread, while Rust's stayed within noise, so C
+	is 1.11x and 1.05x slower where it was 1.34x and 1.39x (and 1.24x
+	where it was 1.39x at 4 workers packed).  The count arm gained 2%
+	to 7% at 4 and 16 workers (1.39x to 1.33x at 16 packed), and one
+	worker is unchanged.  On a c7i.metal-24xl, rerunning
+	the build each old figure came from beside 66154af:
+	bench/ivm_latency in the difference form is about 5% faster, 104 /
+	130 us (p50 / p99) at 1,000 commits/s with 16 groups where it was
+	111 / 138, and p99 184 us where it was 192 with 1,000 groups; with
+	reduce at 1,000 groups, p99 rose from 1.22-1.25 ms to 1.35-1.45
+	ms.  bench/idle_merge's longest idle step on a 10M-key trace is 16
+	to 23 ms over effort 1e3 to 1e5, where it was 13 to 20 ms; at
+	effort 1e4 it went from 14.4-15.0 ms at a8e7815 to 19.5-19.7 ms.
+	The event_driven example is unchanged at 1.24x Rust's time (100
+	dataflows of 100 maps) and 1.22x (10 of 1000).
+
+	A libFuzzer tier.  ./configure CC=clang --enable-fuzz, then make
+	fuzz, fuzzes eleven targets covering every decoder of untrusted
+	bytes: TCP message framing, data and progress messages, capture
+	events, times, log records, recorded log streams and dtfl-diag,
+	the WebSocket handshake, DDIR programs and values, and record
+	descriptors.  Each target replays its committed corpus in
+	tests/corpus/fuzz/ first.  Fixes from its first campaign: the
+	capture EventReader no longer reads past its buffer on a frame
+	length near 2^64; dtfl_log_operates_addr and
+	dtfl_log_channels_scope return a valid pointer, not NULL, for an
+	empty address; a DDIR integer literal past i64 is a parse error
+	instead of signed overflow.
+
+	dtfl_ddir_parse and dtfl_ddir_value_parse no longer abort on bad
+	input, so dtfl-ddir server keeps running when a session sends a bad
+	program or value.  A program that parses but does not lower (an
+	unresolved name, an unknown scope or scope export, an outer name a
+	scope cannot see, input or import inside a nested scope, a cycle
+	among lets) makes dtfl_ddir_parse return DTFL_EINVAL.  A value term
+	that does not evaluate (a $n or ^n variable, an Int operation on a
+	List, a projection past the end, a case with no arm) makes
+	dtfl_ddir_value_parse return NULL.  dtfl_last_error_detail gives
+	the reason in both cases, worded as upstream's panic message.
+	Upstream panics here and its server catches the panic, which C
+	cannot do; ADR-0012 records the divergence.  Value arithmetic now
+	wraps on overflow as Rust's does, where it was C signed overflow,
+	and a parse error inside a case arm no longer leaks.
+
 Version 0.1.1 (2026-10-24)
 
 	Packaging fix for 0.1.0; the library is unchanged.
