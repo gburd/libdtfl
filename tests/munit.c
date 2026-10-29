@@ -96,6 +96,7 @@
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -1506,6 +1507,14 @@ munit_test_runner_run_test_with_params(MunitTestRunner *runner,
     fork_pid = fork();
     if (fork_pid == 0) {
       close(pipefd[0]);
+      if (getenv("PROBE_ALT") != NULL) {
+        char fn[64], line[200]; stack_t ss; int loc; FILE *f;
+        sigaltstack(NULL, &ss);
+        snprintf(fn, sizeof fn, "%s/alt.%d", getenv("PROBE_ALT"), (int)getpid());
+        f = fopen(fn, "w");
+        if (f) { fprintf(f, "%s start flags=%d sp=%p size=%zu local=%p\n", test->name, ss.ss_flags, ss.ss_sp, (size_t)ss.ss_size, (void *)&loc); fclose(f); }
+        (void)line;
+      }
 
       orig_stderr = munit_replace_stderr(stderr_buf);
       munit_test_runner_exec(runner, test, params, &report);
@@ -1531,6 +1540,13 @@ munit_test_runner_run_test_with_params(MunitTestRunner *runner,
       if (stderr_buf != NULL)
         fclose(stderr_buf);
       close(pipefd[1]);
+      if (getenv("PROBE_ALT") != NULL) {
+        char fn[64]; stack_t ss; int loc; FILE *f;
+        sigaltstack(NULL, &ss);
+        snprintf(fn, sizeof fn, "%s/alt.%d", getenv("PROBE_ALT"), (int)getpid());
+        f = fopen(fn, "a");
+        if (f) { fprintf(f, "%s end flags=%d sp=%p size=%zu local=%p\n", test->name, ss.ss_flags, ss.ss_sp, (size_t)ss.ss_size, (void *)&loc); fclose(f); }
+      }
 
       exit(EXIT_SUCCESS);
     } else if (fork_pid == -1) {
