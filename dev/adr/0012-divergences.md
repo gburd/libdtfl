@@ -188,3 +188,43 @@ input__advance_flush_step_close_completes (hangs at the pin, passes
 with the fix), and tests/pbt/pbt_ops_notify.c notify_multiworker,
 which now draws the flush-and-step schedule by default (the pinned
 seed in tests/corpus/seeds.txt).  PLAN D12 lists this as divergence 3.
+
+### 2026-10-29: DDIR parse and value parse return errors on bad programs
+
+interactive/src/lower.rs (src/ddir/lower.c) and ir::eval in
+interactive/src/ir.rs (src/ddir/ir.c) diverge from the pin.  At
+differential-dataflow-v0.25.1, lowering panics on a program that
+parses but names something it does not define: an unresolved name,
+an unknown scope (lower.rs:131), a scope export that is not a local
+name, an outer name a scope cannot see (lower.rs:195), `input` or
+`import` inside a nested scope, and a let cycle (lower.rs:239).
+`eval` panics on a closed term that does not fit its values: a
+variable with nothing bound, `Value::as_int` of a List (ir.rs:32), a
+projection past the end, a `case` with no arm.  Upstream's server
+example wraps both calls in `catch_unwind` (examples/ddir_server.rs:104,
+110) and reports the panic message to the client.
+
+C has no unwind, and the default panic hook aborts.  These calls take
+text from clients (`dtfl-ddir server`, examples/server), so the
+library would let a client kill its host with one line.  The C port
+returns the error instead: `dtfl_ddir_parse` returns `DTFL_EINVAL`
+and `dtfl_ddir_value_parse` returns NULL, and the detail
+(`dtfl_last_error_detail`) carries the message upstream's panic would
+have printed.  The lowering keeps upstream's order and stops at the
+first error; the evaluator records the first error and finishes the
+walk on a placeholder, so nothing leaks.  Closed-value Add, Sub, Mul
+and Neg wrap on overflow, as a Rust release build does, where the
+literal port was C signed overflow.
+
+Not changed: `dd_eval` on the dataflow side (a Linear operator's term
+against a record) still panics as upstream does, since the program
+was validated when it was installed and a type mismatch there is the
+same runtime panic upstream has.  The panics left in lower.c and
+ir.c are internal invariants, and each says why input cannot reach
+it.
+
+Tests: tests/unit/test_ddir.c ddir__lower_errors_return_einval and
+ddir__value_eval_errors_return_null (each aborted through the panic
+hook before), ddir__value_arith_wraps, and the fuzz_ddir_parse and
+fuzz_ddir_value regression inputs in tests/corpus/fuzz/ (the entry in
+tests/corpus/seeds.txt).  PLAN D12 lists this as divergence 4.

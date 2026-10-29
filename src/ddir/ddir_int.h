@@ -368,7 +368,9 @@ void dd_scope_free(dd_scope *s);
 void dd_scope_optimize(dd_scope *s);
 void dd_program_optimize(dtfl_ddir_program *p);
 
-/* Lower a parsed AST (vec of dd_stmt*) into a Program (lower.rs). */
+/* Lower a parsed AST (vec of dd_stmt*) into a Program (lower.rs).  NULL,
+ * with the reason in dtfl_last_error_detail, if the program does not lower
+ * (an unresolved name, an unknown scope, a let cycle). */
 dtfl_ddir_program *dd_lower_tree(const dd_vec *stmts);
 /* Free a program and its scope tree. */
 void dd_program_free(dtfl_ddir_program *p);
@@ -429,6 +431,12 @@ void dd_gen_row(uint64_t seed, uint64_t edge_index, uint64_t nodes,
  * owned dd_value.  env is restored on return (Case/Fold push/pop).
  */
 dd_value *dd_eval(const dd_term *t, dd_value ***env, size_t *len, size_t *cap);
+/*
+ * Evaluate a closed term (empty environment) from untrusted text.  Where
+ * dd_eval panics on a term that does not fit its values, this returns NULL
+ * with the reason in dtfl_last_error_detail.
+ */
+dd_value *dd_eval_closed(const dd_term *t);
 
 /* ------------------------------------------------------------------ */
 /* Value serialization: the on-wire record form (backend_vec.c).       */

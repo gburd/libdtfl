@@ -245,7 +245,7 @@ variable, so the host builds one from @code{xtc_notify_t} and
 word and sleep atomically with respect to @code{wake}, as
 @code{futex(2)} does.  @code{self} should name the fiber, not its
 carrier, so the debug owner check survives migration; @code{xtc_self}
-returns a 64-bit @code{xtc_pid_t}, which the hook packs into a
+returns a 16-byte @code{xtc_pid_t}, which the hook folds into a
 @code{uintptr_t}.  The buffer behind @code{dtfl_last_error_detail} is
 per OS thread, so fibers that share a carrier share it: read the detail
 before the fiber can yield.  The thread hooks spawn tasks.  To keep sockets out of the picture too,

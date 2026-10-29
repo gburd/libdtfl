@@ -281,8 +281,8 @@ differential-dataflow	differential-dataflow/src/trace/implementations/mod.rs	594
 differential-dataflow	differential-dataflow/src/trace/implementations/ord_neu.rs	1134	src/dd/trace/ord_neu.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/implementations/spine_fueled.rs	867	src/dd/trace/spine_fueled.c	P6	done	
 differential-dataflow	differential-dataflow/src/trace/mod.rs	439	src/dd/trace/trace.c	P6	done	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	done	
-differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	done	
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter.rs	205	src/dd/trace/wrap_enter.c	P7	done	BatchEnter eagerly on the stream (__dtfl_batch_enter); TraceEnter lazily on the entered agent (__dtfl_trace_enter: frontiers through to_outer/to_inner, cursor lists lift times in map_times), so join/reduce over an entered arrangement read inner times.  Tested by test_wrappers and test_arrange enter_*_inner_times
+differential-dataflow	differential-dataflow/src/trace/wrappers/enter_at.rs	237	src/dd/trace/wrap_enter_at.c	P7	done	BatchEnter here (__dtfl_batch_enter_at); TraceEnter shares the enter.rs wrapper in src/dd/trace/wrap_enter.c (logic for times, prior for compaction).  Reached through the internal __dtfl_arranged_enter_at (no public Arranged::enter_at yet); tested by test_arrange arrange__enter_at_join_inner_times
 differential-dataflow	differential-dataflow/src/trace/wrappers/frontier.rs	175	src/dd/trace/wrap_frontier.c	P7	done	
 differential-dataflow	differential-dataflow/src/trace/wrappers/mod.rs	5	src/dd/wrap_int.h	P7	done	
 differential-dataflow	differential-dataflow/tests/bfs.rs	221	tests/upstream/dd/bfs.c	P9	done	
@@ -360,9 +360,9 @@ differential-dataflow	interactive/src/backend/mod.rs	179	src/ddir/backend.c	P13	
 differential-dataflow	interactive/src/backend/vec.rs	248	src/ddir/backend_vec.c	P13	done	whole program in one iterative dynamic scope; time is literally Product<u64,PointStamp<u64>>; render_linear is one faithful operator with enter_at and lift_iter
 differential-dataflow	interactive/src/explain/decouple.rs	685	src/ddir/explain_decouple.c	P13	done	the reverse rules over the dd_df backend; one Val row model (the trait's second test-only model is not ported)
 differential-dataflow	interactive/src/explain/mod.rs	1129	src/ddir/explain.c	P13	done	clone_into/clone_identity, resolve/site_shapes, Val row model, the reverse walk, explain
-differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	
+differential-dataflow	interactive/src/ir.rs	208	src/ddir/ir.c	P13	done	divergence: dd_eval_closed (dtfl_ddir_value_parse) returns an error where eval panics, and i64 arithmetic wraps as in Rust release; dataflow-side dd_eval still panics as upstream, ADR D12
 differential-dataflow	interactive/src/lib.rs	80	src/ddir/ddir.c	P13	done	parse/build/evaluate entry ported; time class is Product<u64,PointStamp<u64>>; survey_sources subsumed by the lowered import count; gen_row/load_program land with the explain tests
-differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	
+differential-dataflow	interactive/src/lower.rs	497	src/ddir/lower.c	P13	done	divergence: a program that does not lower returns DTFL_EINVAL with the panic message instead of panicking, ADR D12
 differential-dataflow	interactive/src/parse/applicative.rs	279	src/ddir/parse_applicative.c	P13	done	
 differential-dataflow	interactive/src/parse/mod.rs	163	src/ddir/parse.c	P13	done	
 differential-dataflow	interactive/src/parse/pipe.rs	504	src/ddir/parse_pipe.c	P13	done	

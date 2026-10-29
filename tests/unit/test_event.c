@@ -18,6 +18,8 @@
 #include "dtfl/time.h"
 #include "dtfl/timely_ops.h"
 
+#include "timely/capture_int.h"
+
 #define LIMIT 1000000
 
 static void
@@ -55,7 +57,34 @@ DTFL_TEST(dataflow_operators_core_capture_event_link_sync__avoid_stack_overflow_
 	return MUNIT_OK;
 }
 
+/*
+ * A frame length near 2^64 must not wrap the bounds check: with 9 bytes
+ * available the decoder used to accept it (8 + len wrapped to 1) and
+ * read the body past the buffer (fuzz_event found it; the reproducer
+ * is tests/corpus/fuzz/fuzz_event/regress-length-wrap).  The bytes past
+ * len here are a valid empty Progress body, so a decoder that reads
+ * past len accepts the frame instead of refusing it.
+ */
+DTFL_TEST(event__decode_length_wraps)
+{
+	dtfl_time_class *tc = dtfl_time_u64();
+	unsigned char buf[32] = { 0 };
+	dtfl_event e;
+	size_t used = 0;
+	int i;
+
+	(void)params; (void)data;
+	for (i = 0; i < 8; i++)
+		buf[i] = 0xff;
+	buf[0] = 0xf9;		/* body length 2^64 - 7: 8 + it wraps to 1 */
+	assert_false(__dtfl_event_decode(tc, dtfl_type_u64(), buf, 9, &e,
+	    &used));
+	dtfl_time_class_free(tc);
+	return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+	DTFL_T(event__decode_length_wraps),
 	DTFL_T(dataflow_operators_core_capture_event_link__avoid_stack_overflow_in_drop),
 	DTFL_T(dataflow_operators_core_capture_event_link_sync__avoid_stack_overflow_in_drop),
 	DTFL_T_END

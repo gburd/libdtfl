@@ -246,6 +246,15 @@ void __dtfl_progcaster_free(__dtfl_progcaster *pc);
 void __dtfl_progcaster_send(__dtfl_progcaster *pc, __dtfl_change_batch *changes);
 /* Absorbs received updates into `changes` (keyed (Location, T)). */
 void __dtfl_progcaster_recv(__dtfl_progcaster *pc, __dtfl_change_batch *changes);
+/* A progress message: a change batch tagged with source and sequence. */
+typedef struct __dtfl_progress_msg {
+	uint64_t source;
+	uint64_t seq;
+	__dtfl_change_batch changes;
+} __dtfl_progress_msg;
+/* The class of __dtfl_progress_msg (its wire codec), comm/comm_int.h. */
+struct __dtfl_msg_class;
+const struct __dtfl_msg_class *__dtfl_progress_class(void);
 
 /* ------------------------------------------------------------------ */
 /* Subgraph (subgraph.rs)                                              */

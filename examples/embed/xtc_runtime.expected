@@ -1,0 +1,3 @@
+process: 4 workers, records per worker 10000, sum per worker 49995000, misrouted 0, counted per worker 5000 over 7 keys: ok
+binary: 4 workers, records per worker 10000, sum per worker 49995000, misrouted 0, counted per worker 5000 over 7 keys: ok
+inline: 4 workers, records per worker 10000, sum per worker 49995000, misrouted 0, counted per worker 5000 over 7 keys: ok

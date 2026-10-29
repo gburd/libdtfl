@@ -2417,7 +2417,7 @@ reduce_logic(dtfl_op *op, void *vctx)
 	 * batches into the source trace without sending them, and the trace's
 	 * upper may lead the input frontier this activation sees.
 	 */
-	__dtfl_trace_advance_upper(c->source.box->trace, &c->upper_limit);
+	__dtfl_trace_agent_advance_upper(&c->source, &c->upper_limit);
 
 	/* The input frontier as a flat run. */
 	frontier = dtfl_op_frontier(op, 0, &fn);
@@ -2718,6 +2718,9 @@ proxy_tactic_retire(reduce_op_ctx *c, const uint64_t *upper, size_t nupper,
 	have_out = __dtfl_trace_agent_cursor_through(&c->out_reader,
 	    &c->lower_limit, &out_cl);
 	DTFL_ASSERT(have_src && have_out);
+	/* The backend reads the batches directly (see proxy_join_step). */
+	__dtfl_cursor_list_materialize(&src_cl);
+	__dtfl_cursor_list_materialize(&out_cl);
 
 	inst.source_batches = src_cl.batches;
 	inst.nsource = src_cl.n;

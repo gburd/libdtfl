@@ -16,12 +16,47 @@
  * external sources are accepted only at the root scope.  AST terms are
  * owned by the parse arena, so lowering clones them into the independently
  * owned scope_ir nodes.
+ *
+ * Upstream panics on a program that parses but does not lower (an
+ * unresolved name, an unknown scope, a let cycle); its server recovers with
+ * catch_unwind.  Here those are errors (ADR-0012, 2026-10-29): the first
+ * one is recorded in a lower_err, the failing lookup yields a placeholder
+ * ref, and each scope stops at its next check and frees its scratch on the
+ * normal path.  dd_lower_tree then frees the half-built tree, whose
+ * placeholder refs are never followed.
  */
 #include "ddir_int.h"
 
 #include "../base/base_int.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
+
+/* The first lowering error of a dd_lower_tree call; later ones are dropped. */
+typedef struct lower_err {
+	bool set;
+	char msg[256];
+} lower_err;
+
+static dd_ref lower_fail(lower_err *le, const char *fmt, ...)
+    DTFL_PRINTF(2, 3);
+
+/* Record an error (if none yet) and return a placeholder ref. */
+static dd_ref
+lower_fail(lower_err *le, const char *fmt, ...)
+{
+	dd_ref r = { DD_REF_LOCAL, { 0 } };
+	va_list ap;
+
+	if (!le->set) {
+		va_start(ap, fmt);
+		vsnprintf(le->msg, sizeof le->msg, fmt, ap);
+		va_end(ap);
+		le->set = true;
+	}
+	return r;
+}
 
 /* ------------------------------------------------------------------ */
 /* A tiny string-keyed map: name -> value (linear scan; programs are     */
@@ -226,10 +261,12 @@ typedef struct scope_lower {
 	dd_vec trace_import_name;  /* vec of char* */
 	dd_vec trace_import_i;	   /* vec of size_t* */
 	dd_vec children;	   /* vec of child_info* */
+	lower_err *err;		   /* shared by the whole tree */
 } scope_lower;
 
 static dd_scope *lower_scope_tree(const char *scope_name, const dd_vec *body,
-    const env_map *parent_env, const str_set *exports_wanted, bool is_root);
+    const env_map *parent_env, const str_set *exports_wanted, bool is_root,
+    lower_err *le);
 
 static dd_ref
 push_node(scope_lower *sl, dd_node *n)
@@ -265,7 +302,8 @@ input_ref(scope_lower *sl, size_t n)
 	char buf[32];
 
 	if (!sl->is_root)
-		__dtfl_panic("`input %zu` used outside the root scope", n);
+		return lower_fail(sl->err,
+		    "`input %zu` used outside the root scope", n);
 	for (i = 0; i < sl->input_import_n.len; i++)
 		if (*(size_t *)(void *)sl->input_import_n.data[i] == n) {
 			r.kind = DD_REF_IMPORT;
@@ -298,7 +336,8 @@ trace_ref(scope_lower *sl, const char *name)
 	dd_ref r;
 
 	if (!sl->is_root)
-		__dtfl_panic("`import` used outside the root scope");
+		return lower_fail(sl->err,
+		    "`import \"%s\"` used outside the root scope", name);
 	for (i = 0; i < sl->trace_import_name.len; i++)
 		if (strcmp(sl->trace_import_name.data[i], name) == 0) {
 			r.kind = DD_REF_IMPORT;
@@ -341,13 +380,16 @@ qualified_ref(const scope_lower *sl, const char *scope, const char *field)
 	dd_ref r;
 
 	if (c == NULL)
-		__dtfl_panic("unknown scope `%s`", scope);
+		return lower_fail(sl->err, "unknown scope `%s`", scope);
 	pos = SIZE_MAX;
 	for (i = 0; i < c->exports.names.len; i++)
 		if (strcmp(c->exports.names.data[i], field) == 0) {
 			pos = i;
 			break;
 		}
+	/* Not reachable from input: c->exports is qualified_fields() of the
+	 * body this expression came from, so it holds every `scope::field`
+	 * the body names, and the child exports all of them or fails. */
 	if (pos == SIZE_MAX)
 		__dtfl_panic("scope `%s` does not export `%s`", scope, field);
 	r.kind = DD_REF_CHILD_EXPORT;
@@ -432,7 +474,8 @@ lower_expr(scope_lower *sl, const dd_expr *e)
 		return trace_ref(sl, e->u.name);
 	case DD_E_NAME:
 		if (!env_get(&sl->env, e->u.name, &r))
-			__dtfl_panic("unresolved name `%s`", e->u.name);
+			return lower_fail(sl->err, "unresolved name `%s`",
+			    e->u.name);
 		return r;
 	case DD_E_QUALIFIED:
 		return qualified_ref(sl, e->u.qualified.scope,
@@ -502,6 +545,7 @@ lower_expr(scope_lower *sl, const dd_expr *e)
 		return push_node(sl, n);
 	}
 	}
+	/* Not reachable from input: the parsers build only the kinds above. */
 	__dtfl_panic("lower_expr: bad expr kind");
 }
 
@@ -618,13 +662,43 @@ typedef struct pending_item {
 	bool done;
 } pending_item;
 
+/* Record the let/scope cycle among the items not yet lowered. */
+static void
+lower_cycle(lower_err *le, const dd_vec *pending)
+{
+	size_t i, n;
+	const char *sep = "";
+
+	if (le->set)
+		return;
+	le->set = true;
+	n = (size_t)snprintf(le->msg, sizeof le->msg, "Cyclic let/scope "
+	    "dependency; use `var` for recursion: [");
+	for (i = 0; i < pending->len && n < sizeof le->msg; i++) {
+		const pending_item *pi = pending->data[i];
+
+		if (pi->done)
+			continue;
+		n += (size_t)snprintf(le->msg + n, sizeof le->msg - n,
+		    "%s\"%s\"", sep, pi->name);
+		sep = ", ";
+	}
+	if (n < sizeof le->msg)
+		snprintf(le->msg + n, sizeof le->msg - n, "]");
+}
+
 /* ------------------------------------------------------------------ */
 /* lower_scope_tree                                                    */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Always returns a scope the caller owns and can free.  On an error it is
+ * partial, le->set is true, and the caller discards it.
+ */
 static dd_scope *
 lower_scope_tree(const char *scope_name, const dd_vec *body,
-    const env_map *parent_env, const str_set *exports_wanted, bool is_root)
+    const env_map *parent_env, const str_set *exports_wanted, bool is_root,
+    lower_err *le)
 {
 	dd_scope *s = __dtfl_calloc(1, sizeof *s);
 	scope_lower sl;
@@ -639,6 +713,7 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 	memset(&sl, 0, sizeof sl);
 	sl.is_root = is_root;
 	sl.out = s;
+	sl.err = le;
 
 	/* Pre-create imports from the scope's transitive free names. */
 	if (!is_root) {
@@ -650,9 +725,11 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 			dd_ref from, r;
 			dd_import *imp;
 
-			if (!env_get(parent_env, name, &from))
-				__dtfl_panic("scope references unknown outer "
-				    "name `%s`", name);
+			if (!env_get(parent_env, name, &from)) {
+				(void)lower_fail(le, "scope references unknown "
+				    "outer name `%s`", name);
+				break;
+			}
 			imp = __dtfl_alloc(sizeof *imp);
 			imp->name = __dtfl_strdup(name);
 			imp->from.kind = DD_SRC_PARENT;
@@ -663,6 +740,8 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 			env_set(&sl.env, name, r);
 		}
 		set_free(&free);
+		if (le->set)
+			goto cleanup;
 	}
 
 	/* Bucket statements: lets/scopes into `pending` (dependency order),
@@ -735,9 +814,10 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 				break;
 			}
 		}
-		if (pos == SIZE_MAX)
-			__dtfl_panic("Cyclic let/scope dependency; use `var` "
-			    "for recursion");
+		if (pos == SIZE_MAX) {
+			lower_cycle(le, &pending);
+			goto cleanup;
+		}
 		pi = pending.data[pos];
 		pi->done = true;
 		remaining--;
@@ -772,7 +852,7 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 
 			qualified_fields(body, pi->name, &wanted);
 			child = lower_scope_tree(pi->name, pi->body, &sl.env,
-			    &wanted, false);
+			    &wanted, false, le);
 			it = __dtfl_alloc(sizeof *it);
 			it->kind = DD_I_SUB;
 			it->op = NULL;
@@ -785,6 +865,8 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 			ci->exports = wanted; /* move */
 			dd_vec_push(&sl.children, ci);
 		}
+		if (le->set)
+			goto cleanup;
 	}
 
 	/* Lower var bodies and emit binds. */
@@ -796,6 +878,8 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 		b->value = r;
 		dd_vec_push(&s->binds, b);
 	}
+	if (le->set)
+		goto cleanup;
 
 	/* Exports: root takes its export statements; a child surrenders the
 	 * fields its parent asked for. */
@@ -817,9 +901,11 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 			dd_export *e;
 			dd_ref r;
 
-			if (!env_get(&sl.env, field, &r))
-				__dtfl_panic("scope export `%s` is not a local "
-				    "name", field);
+			if (!env_get(&sl.env, field, &r)) {
+				(void)lower_fail(le, "scope export `%s` is not "
+				    "a local name", field);
+				break;
+			}
 			e = __dtfl_alloc(sizeof *e);
 			e->name = __dtfl_strdup(field);
 			e->value = r;
@@ -827,7 +913,8 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 		}
 	}
 
-	/* Cleanup lowering scratch. */
+cleanup:
+	/* Lowering scratch; the scope itself goes to the caller. */
 	for (i = 0; i < pending.len; i++) {
 		pending_item *pi = pending.data[i];
 
@@ -867,17 +954,26 @@ lower_scope_tree(const char *scope_name, const dd_vec *body,
 
 /*
  * Lower a parsed AST (a vec of dd_stmt*) into a Program.  The returned
- * program's root scope owns the IR independently of the AST arena.
+ * program's root scope owns the IR independently of the AST arena.  A
+ * program that does not lower returns NULL with the reason in
+ * dtfl_last_error_detail.
  */
 dtfl_ddir_program *
 dd_lower_tree(const dd_vec *stmts)
 {
-	dtfl_ddir_program *p = __dtfl_alloc(sizeof *p);
+	dtfl_ddir_program *p;
 	env_map empty = { 0 };
 	str_set no_exports = { 0 };
+	lower_err le = { false, "" };
 	dd_scope *root = lower_scope_tree("root", stmts, &empty, &no_exports,
-	    true);
+	    true, &le);
 
+	if (le.set) {
+		dd_scope_free(root);
+		(void)__dtfl_err(DTFL_EINVAL, "%s", le.msg);
+		return NULL;
+	}
+	p = __dtfl_alloc(sizeof *p);
 	p->root = *root;
 	__dtfl_free(root);
 	return p;

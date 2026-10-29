@@ -138,6 +138,28 @@ AC_ARG_ENABLE([ubsan],
 AC_ARG_ENABLE([tsan],
 	[AS_HELP_STRING([--enable-tsan], [build with ThreadSanitizer])],
 	[AS_IF([test "x$enableval" = xyes], [DTFL_SAN_FLAGS="$DTFL_SAN_FLAGS -fsanitize=thread"])])
+# The libFuzzer tier (make fuzz, PLAN section 6 item 8): the library and
+# the tests get ASan, UBSan and fuzzer coverage; the fuzz targets link
+# libFuzzer's main.  Needs clang with compiler-rt.
+AC_ARG_ENABLE([fuzz],
+	[AS_HELP_STRING([--enable-fuzz], [build the libFuzzer targets for make fuzz (clang; implies ASan and UBSan)])],
+	[], [enable_fuzz=no])
+AS_IF([test "x$enable_fuzz" = xyes],
+	[DTFL_SAN_FLAGS="$DTFL_SAN_FLAGS -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined"
+	 AC_CACHE_CHECK([whether $CC links a libFuzzer target], [dtfl_cv_fuzz_link],
+		[save_CFLAGS="$CFLAGS" save_LDFLAGS="$LDFLAGS"
+		 CFLAGS="$CFLAGS -fsanitize=fuzzer,address,undefined"
+		 LDFLAGS="$LDFLAGS -fsanitize=fuzzer,address,undefined"
+		 AC_LINK_IFELSE([AC_LANG_SOURCE([[#include <stddef.h>
+#include <stdint.h>
+int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n);
+int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n) { (void)d; (void)n; return 0; }]])],
+			[dtfl_cv_fuzz_link=yes], [dtfl_cv_fuzz_link=no])
+		 CFLAGS="$save_CFLAGS" LDFLAGS="$save_LDFLAGS"])
+	 AS_IF([test "x$dtfl_cv_fuzz_link" != xyes],
+		[AC_MSG_ERROR([--enable-fuzz needs libFuzzer: $CC cannot link -fsanitize=fuzzer (use CC=clang with compiler-rt; see config.log)])])])
+DTFL_ENABLE_FUZZ=$enable_fuzz
+AC_SUBST([DTFL_ENABLE_FUZZ])
 # Fail here, not halfway through make, when the compiler has no runtime
 # for a sanitizer (gcc on FreeBSD has no libtsan).
 AS_IF([test -n "$DTFL_SAN_FLAGS"],
@@ -163,7 +185,22 @@ AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	 AS_CASE(["$DTFL_SAN_FLAGS"], [*thread*],
 		[AS_IF([test -n "$SETARCH"], [DTFL_TEST_WRAPPER="setarch `uname -m` -R"])])
 	 AS_IF([test -z "$DTFL_TEST_WRAPPER" && test -n "$PROCCONTROL"],
-		[DTFL_TEST_WRAPPER="proccontrol -m aslr -s disable"])])
+		[DTFL_TEST_WRAPPER="proccontrol -m aslr -s disable"])
+	 # riscv64 (Sv39) is the reverse of x86_64: TSan finds its shadow
+	 # layout only around the randomized mmap base, and under setarch -R
+	 # every program aborts ("memory layout is incompatible, even though
+	 # ASLR is disabled").  Drop the wrapper when a sanitizer program fails
+	 # under it and runs without it.
+	 AS_IF([test -n "$DTFL_TEST_WRAPPER" && test "x$cross_compiling" != xyes],
+		[AC_CACHE_CHECK([whether sanitizer programs run under $DTFL_TEST_WRAPPER], [dtfl_cv_san_wrapper],
+			[save_CFLAGS="$CFLAGS" save_LDFLAGS="$LDFLAGS"
+			 CFLAGS="$CFLAGS $DTFL_SAN_FLAGS" LDFLAGS="$LDFLAGS $DTFL_SAN_FLAGS"
+			 dtfl_cv_san_wrapper=yes
+			 AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+				[$DTFL_TEST_WRAPPER ./conftest$ac_exeext >&AS_MESSAGE_LOG_FD 2>&1 ||
+				 { ./conftest$ac_exeext >&AS_MESSAGE_LOG_FD 2>&1 && dtfl_cv_san_wrapper=no; }])
+			 CFLAGS="$save_CFLAGS" LDFLAGS="$save_LDFLAGS"])
+		 AS_IF([test "x$dtfl_cv_san_wrapper" = xno], [DTFL_TEST_WRAPPER=""])])])
 AC_SUBST([DTFL_TEST_WRAPPER])
 AS_IF([test -n "$DTFL_SAN_FLAGS"],
 	[CFLAGS="$CFLAGS $DTFL_SAN_FLAGS -fno-omit-frame-pointer -g"
@@ -264,6 +301,41 @@ AC_SUBST([HEGEL_LIBS])
 AM_CONDITIONAL([DTFL_HEGEL], [test "x$with_hegel" != xno])
 
 # -------------------------------------------------------------------------
+# libxtc (examples/embed/xtc_runtime only; the library never links it).
+# Found by pkg-config (xtc.pc) unless a PREFIX is given; absent, the
+# example is not built and its test reports SKIP.
+# -------------------------------------------------------------------------
+AC_ARG_WITH([libxtc],
+	[AS_HELP_STRING([--with-libxtc@<:@=PREFIX@:>@], [build the libxtc fiber example (default: if pkg-config finds xtc)])],
+	[], [with_libxtc=check])
+XTC_CFLAGS=""
+XTC_LIBS=""
+dtfl_xtc_asked=yes
+AS_IF([test "x$with_libxtc" = xcheck], [dtfl_xtc_asked=no])
+AS_CASE([$with_libxtc],
+	[no], [],
+	[yes], [PKG_CHECK_MODULES([XTC], [xtc], [],
+		[AC_MSG_ERROR([pkg-config cannot find xtc; pass --with-libxtc=PREFIX])])],
+	[check], [PKG_CHECK_MODULES([XTC], [xtc], [with_libxtc=yes], [with_libxtc=no])],
+	[XTC_CFLAGS="-I$with_libxtc/include"
+	 XTC_LIBS="-L$with_libxtc/lib -lxtc"])
+AS_IF([test "x$with_libxtc" != xno], [
+	dtfl_save_CFLAGS=$CFLAGS dtfl_save_LIBS=$LIBS
+	CFLAGS="$CFLAGS $XTC_CFLAGS" LIBS="$XTC_LIBS $LIBS"
+	AC_MSG_CHECKING([whether libxtc links])
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <xtc_exec.h>]],
+		[[xtc_exec_t *e; return xtc_exec_init(&e, 1);]])],
+		[AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])
+		 AS_IF([test "x$dtfl_xtc_asked" = xyes],
+			[AC_MSG_ERROR([cannot link libxtc with "$XTC_CFLAGS $XTC_LIBS"])])
+		 with_libxtc=no])
+	CFLAGS=$dtfl_save_CFLAGS LIBS=$dtfl_save_LIBS])
+AC_SUBST([XTC_CFLAGS])
+AC_SUBST([XTC_LIBS])
+AM_CONDITIONAL([DTFL_XTC], [test "x$with_libxtc" != xno])
+
+# -------------------------------------------------------------------------
 # Documentation tools (optional at build time; gates report SKIP).
 # -------------------------------------------------------------------------
 AC_CHECK_PROGS([MANDOC], [mandoc], [])
@@ -279,10 +351,12 @@ libdtfl $PACKAGE_VERSION
   debug:        $enable_debug
   sanitizers:   ${DTFL_SAN_FLAGS:-none}
   hegel:        $with_hegel
+  libxtc:       $with_libxtc
   diagnostics:  $enable_diag
   ddir:         $enable_ddir
   server:       $enable_server
   columnar:     $enable_columnar
+  fuzz:         $enable_fuzz
   usdt probes:  $enable_usdt
   frame ptrs:   ${DTFL_FP_CFLAGS:-omitted}
 ])
