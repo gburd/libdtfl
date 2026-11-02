@@ -368,7 +368,8 @@ cpu_us(const struct rusage *r)
  * then, and poll(2) reports a socket at end of file readable at once,
  * so a driver that stopped reading a peer at its end-of-stream header,
  * without reading on to the end of file, spun for the whole 2 s.  The
- * three children together should use a few milliseconds of CPU.
+ * three children together use about 13 ms of CPU, and 546 ms under TSan
+ * on macOS; one spinning worker costs 2 s, so 1 s separates the two.
  */
 DTFL_TEST(execute_worker_waits_idle_for_a_late_peer)
 {
@@ -383,7 +384,7 @@ DTFL_TEST(execute_worker_waits_idle_for_a_late_peer)
 	used = cpu_us(&r1) - cpu_us(&r0);
 	munit_logf(MUNIT_LOG_INFO, "workers used %llu us of CPU",
 	    (unsigned long long)used);
-	assert_ullong(used, <, 500000);
+	assert_ullong(used, <, 1000000);
 	return MUNIT_OK;
 }
 
