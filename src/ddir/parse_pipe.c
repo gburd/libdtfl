@@ -1136,6 +1136,7 @@ dd_parse_pipe(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	pc->msg[0] = '\0';
 	dd_arena_init(pc);
 	*out = (dd_vec){ 0 };
+	memset(pc->jb, 0, sizeof pc->jb);
 	if (setjmp(pc->jb) != 0) {
 		/* Error unwind: the arena owns every AST node; free it all,
 		 * plus the root body backing and the parser scratch. */
@@ -1168,6 +1169,7 @@ dd_parse_pipe_term(const char *input, dd_parse_ctx *pc)
 	pc->error = false;
 	pc->msg[0] = '\0';
 	dd_arena_init(pc);
+	memset(pc->jb, 0, sizeof pc->jb);
 	if (setjmp(pc->jb) != 0) {
 		dd_arena_free_all(pc);
 		pparser_free(&p);

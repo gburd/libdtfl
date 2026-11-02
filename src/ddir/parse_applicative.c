@@ -764,6 +764,7 @@ dd_parse_applicative(const char *input, dd_vec *out, dd_parse_ctx *pc)
 	pc->msg[0] = '\0';
 	dd_arena_init(pc);
 	*out = (dd_vec){ 0 };
+	memset(pc->jb, 0, sizeof pc->jb);
 	if (setjmp(pc->jb) != 0) {
 		dd_arena_free_all(pc);
 		__dtfl_free(out->data);
