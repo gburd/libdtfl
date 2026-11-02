@@ -27,8 +27,22 @@ Version 0.1.2 (unreleased)
 	On FreeBSD 14.5 with hegel 0.36.5 built from source: make check with
 	the property tests under clang 21 and gcc 14, ASan and UBSan under
 	both, and TSan under clang, 129 passing and 2 skipped each; the
-	manual gives the build recipe.  macOS was not run for this release:
-	no macOS host was available.
+	manual gives the build recipe.
+
+	macOS.  On GitHub's macos-15 arm64 runner with Apple clang: make
+	check under ASan and UBSan and under TSan, 104 passing and 27
+	skipped (the property tests and three ELF or USDT checks) with no
+	sanitizer report, and make check with hegel 0.36.5 built from
+	source, plain and under ASan and UBSan, 128 passing and 3 skipped.
+	EC2 offered no mac2 dedicated host in any us-west-2 zone
+	("UnsupportedHostConfiguration"), so these ran in CI, where the
+	ci workflow now runs them on every push.  The runs found two
+	things.  On Darwin a parse error in dtfl_ddir_parse or
+	dtfl_ddir_value_parse could leave the thread marked as running on
+	an alternate signal stack, because longjmp restored that flag from
+	a word of the jump buffer setjmp had left as stack garbage; ASan
+	then aborted.  The buffer is now zeroed before each setjmp.  And
+	one test's CPU limit was too tight for a TSan build.
 
 	Linux riscv64.  On Bianbu 4.0.7 (Ubuntu 26.04 base, Linux 6.18,
 	a SpacemiT X100 with 8 cores), with gcc 15.2 and clang 21.1: make

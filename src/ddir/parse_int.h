@@ -33,7 +33,14 @@ typedef struct dd_arena_ent {
 
 /* The parse error context.  One per parse; shared by lexer and parser. */
 typedef struct dd_parse_ctx {
-	jmp_buf jb;	   /* unwind target on error */
+	/*
+	 * Unwind target on error.  Zero it before each setjmp: Darwin's
+	 * longjmp restores the alternate-signal-stack flag from a word its
+	 * setjmp may leave unwritten, and stack garbage there made ASan see
+	 * the thread on an alternate stack at address 0 (CHECK failed in
+	 * asan_poisoning.cpp).
+	 */
+	jmp_buf jb;
 	bool error;	   /* set once an error is recorded */
 	char msg[256];	   /* the error message */
 	dd_arena_ent *arena; /* every AST allocation, for error cleanup */

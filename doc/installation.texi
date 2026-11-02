@@ -288,7 +288,16 @@ crashes under valgrind here, so run the property tests without it.
 relative (@code{pthread_cond_timedwait_relative_np}).  macOS has no
 @command{timeout}, so the test scripts run without their time limits.
 @file{tests/dist/test_symbols.sh} reads ELF symbol tables and reports
-SKIP on Mach-O, and the USDT probes are off.  The sanitizer builds and
-the property tests are not run on macOS, and release 0.1.2 was not run
-on macOS at all: no macOS host was available.
+SKIP on Mach-O, and the USDT probes are off.  On the macos-15 arm64
+runner, ASan with UBSan and TSan pass under Apple clang (104 passing,
+27 skipped: the property tests and the ELF and USDT checks).  hegel
+publishes no macOS @file{libhegel}; build it from source with
+@command{cargo build --release -p hegeltest-c} in a clone of hegel-rust
+at its release tag, copy @file{target/release/libhegel_c.dylib} to
+@file{@var{prefix}/lib/libhegel.dylib}, set its install name with
+@command{install_name_tool -id @@rpath/libhegel.dylib}, copy
+@file{hegel-c/include/hegel.h} to @file{@var{prefix}/include}, and pass
+@option{--with-hegel=@var{prefix}}.  With it the property tests pass,
+plain and under ASan (128 passing, 3 skipped).  The @code{ci} workflow
+runs all four of these builds.
 @end table
